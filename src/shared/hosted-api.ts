@@ -4,7 +4,9 @@
  *
  * 翻譯與 Notes：body 是 TranslateInput／NotesInput 原樣（結構化輸入，不是 prompt）；回應是 TranslateOutput／NotesOutput
  * （latencyMs 只算 Worker 到 Anthropic，外掛換成自己量的）。翻譯回應帶 usageRecordId，同一頁的 Notes 請求放在 pageUsageRecordId 帶回來，
- * Notes 的用量就歸到這一頁。要帶 `Authorization: Bearer <session token>`。
+ * Notes 的用量就歸到這一頁。直式捲動的長 Page（spec #142）的接續翻譯也用 pageUsageRecordId 帶回來：Worker 在條件內
+ * （同一個 Account、1 小時內、接續 ≤ 10 次）只記用量、不扣頁，回應的 usageRecordId 還是那一筆；條件不符就扣一頁、回新的。
+ * 要帶 `Authorization: Bearer <session token>`。
  *
  * 錯誤回應一律是 HostedError：401 沒登入（reason signedOut）、400 輸入格式不符或驗證碼不對、402 額度用完、
  * 413 body 超過 256 KiB、429 寄送或驗證太頻繁、404 沒有這個端點、502 Anthropic 重試後仍失敗。

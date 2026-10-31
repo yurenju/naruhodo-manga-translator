@@ -1,11 +1,11 @@
 /**
  * 匯出／匯入 JSON（spec #27 第 4.2、8 節、#38）：兩台電腦之間不同步，靠這個搬 Series、網址模式、Series Notes 與翻譯快取。
- * **不含 API key**：只讀這五個 store，apiKeys store 碰都不碰（spec 第 5 節）。
+ * **不含 API key**：只讀這五個 store，apiKeys store 碰都不碰（spec 第 5 節）。翻譯快取裡的擦除小圖也不帶（#149）。
  *
  * 匯入＝合併，本機優先（跟 #36 合併 Series 同一套規則）：本機沒有的 Series／網址模式才加；Notes 照只能新增規則併入，
  * 譯文衝突變成建議修改；同一個 Page 的快取保留本機那份。Notes 經過 notes-ledger 寫，不會跟翻譯中的套用互相蓋掉。
  */
-import type { PageTranslation } from '../shared/page-text.ts';
+import { forBackup, type PageTranslation } from '../shared/page-text.ts';
 import { mergeImportedNotes, type NotesSuggestion, type SeriesNotes } from '../shared/series-notes.ts';
 import type { Series, UrlPattern } from '../shared/series.ts';
 import type { NotesEntry } from '../shared/translator.ts';
@@ -70,7 +70,17 @@ export function createBackup(deps: BackupDeps) {
     async exportAll(): Promise<BackupFile> {
       // 只挑這五個陣列：repo 多讀了別的 store（例如 apiKeys）也不會跟著寫進檔案
       const { series, urlPatterns, seriesNotes, notesSuggestions, pageTranslations } = await repo.dump();
-      return { format: FORMAT, version: 1, exportedAt: deps.now(), series, urlPatterns, seriesNotes, notesSuggestions, pageTranslations };
+      return {
+        format: FORMAT,
+        version: 1,
+        exportedAt: deps.now(),
+        series,
+        urlPatterns,
+        seriesNotes,
+        notesSuggestions,
+        // 擦除小圖（#149）與長 Page 的扣頁紀錄只留在本機
+        pageTranslations: pageTranslations.map(forBackup),
+      };
     },
 
     /** 回傳 Notes 有寫入的 Series ID（要通知 side panel）。 */

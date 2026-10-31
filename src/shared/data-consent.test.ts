@@ -15,6 +15,11 @@ describe('資料使用同意', () => {
     expect(readConsent({ hosted: DATA_CONSENT_VERSION - 1 })).toEqual({ hosted: false, ownKey: false });
   });
 
+  it('版本 2 的說明還寫著不送作品名（#144 起會送）：兩種模式都要重新同意', () => {
+    expect(readConsent({ hosted: 2, ownKey: 2 })).toEqual({ hosted: false, ownKey: false });
+    expect(readConsent({ hosted: 3, ownKey: 3 })).toEqual({ hosted: true, ownKey: true });
+  });
+
   it('沒有同意過', () => {
     expect(readConsent(undefined)).toEqual({ hosted: false, ownKey: false });
   });

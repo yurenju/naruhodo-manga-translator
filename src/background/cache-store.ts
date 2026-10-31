@@ -1,4 +1,5 @@
 import { BY_SERIES, openDb, STORES, storeRequest } from '../shared/db.ts';
+import { sameLongPage } from '../shared/long-page.ts';
 import { findSamePage } from '../shared/page-hash.ts';
 import type { PageTranslation } from '../shared/page-text.ts';
 import type { PageCache } from './transcribe.ts';
@@ -14,7 +15,14 @@ export function indexedDbPageCache(): PageCache {
   return {
     async find(seriesId, pageHash) {
       const entries = await run('readonly', (s) => s.index(BY_SERIES).getAll(seriesId) as IDBRequest<PageTranslation[]>);
-      return findSamePage(entries, pageHash);
+      return findSamePage(
+        entries.filter((e) => !e.stripes),
+        pageHash,
+      );
+    },
+    async findLong(seriesId, stripes) {
+      const entries = await run('readonly', (s) => s.index(BY_SERIES).getAll(seriesId) as IDBRequest<PageTranslation[]>);
+      return entries.find((e) => e.stripes && sameLongPage(e.stripes, stripes));
     },
     save: (translation) => run('readwrite', (s) => s.put(translation)).then(() => {}),
   };

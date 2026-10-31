@@ -39,6 +39,53 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
     ]);
   });
 
+  it('Series 有名稱時，作品名放在 user message 最前面，之後是 Prior Pages 與這一頁', () => {
+    const body = translateRequest({ ...input, seriesName: '星屑バンド' });
+
+    expect(body.messages[0]?.content.map((c) => c.text)).toEqual([
+      '作品名：星屑バンド',
+      'context（前面的頁，依閱讀順序）：\n[[{"kind":"balloon","ja":"湊！","zh":"湊！"}]]',
+      '這一頁要翻譯的文字：\n[{"id":"b1","kind":"balloon","ja":"おはよう"}]',
+    ]);
+    // 作品名每部不同，不放進 system，指示那段的 prompt cache 照樣命中
+    expect(body.system).toEqual(translateRequest(input).system);
+  });
+
+  it('沒有 Prior Pages 也有作品名時，這一頁的原文同樣標出來', () => {
+    const body = translateRequest({ ...input, priorPages: [], seriesName: '星屑バンド' });
+
+    expect(body.messages[0]?.content.map((c) => c.text)).toEqual([
+      '作品名：星屑バンド',
+      '這一頁要翻譯的文字：\n[{"id":"b1","kind":"balloon","ja":"おはよう"}]',
+    ]);
+  });
+
+  it('沒有作品名時不送作品名', () => {
+    const body = translateRequest(input);
+
+    expect(JSON.stringify(body.messages)).not.toContain('作品名');
+  });
+
+  it('翻譯的指示含作品名、真實專有名詞與敬稱的翻法', () => {
+    const [instructions] = translateRequest(input).system;
+
+    // 作品名：不當狀聲詞，有官方譯名就用
+    expect(instructions?.text).toMatch(/作品名[^\n]*狀聲詞/);
+    // T2：真實世界的樂團、品牌、作品名用官方寫法或保留原文
+    expect(instructions?.text).toMatch(/真實世界[^\n]*樂團[^\n]*品牌[^\n]*官方[^\n]*保留原文/);
+    // T3：さん 依場景翻成「同學」、只叫名字或省略，不要一律翻成先生／小姐
+    expect(instructions?.text).toMatch(/さん[^\n]*同學[^\n]*省略[^\n]*先生／小姐/);
+  });
+
+  it('翻譯的 schema 每一項都要回 sfx，指示寫明擬音、擬態算 Sound Effect，角色自己的感嘆不算', () => {
+    const body = translateRequest(input);
+    const item = (body.output_config.format.schema as { properties: { items: { items: { properties: Record<string, { type: string }>; required: string[] } } } }).properties.items.items;
+
+    expect(item.properties.sfx?.type).toBe('boolean');
+    expect(item.required).toContain('sfx');
+    expect(body.system[0]?.text).toMatch(/sfx[^\n]*擬音[^\n]*擬態[^\n]*感嘆[^\n]*不算/);
+  });
+
   it('整理 Notes 的 request body：沒有 Series Notes 時 system 只有指示一段', () => {
     const body = notesRequest(notesInput);
 
@@ -49,11 +96,11 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
 
   it('解析翻譯回應：譯文、讀音、用量與模型', () => {
     const out = parseTranslateResponse(
-      apiResponse({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false }] }),
+      apiResponse({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false, sfx: false }] }),
     );
 
     expect(out).toEqual({
-      items: [{ id: 'b1', 讀音: 'おはよう', 譯文: '早安', unreadable: false }],
+      items: [{ id: 'b1', 讀音: 'おはよう', 譯文: '早安', unreadable: false, sfx: false }],
       usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 700, costUsd: 0.000137 },
       model: CLAUDE_MODEL,
     });
@@ -80,5 +127,6 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
   it('回應被截斷或不符合 schema 時丟錯', () => {
     expect(() => parseTranslateResponse(apiResponse({ items: [] }, 'max_tokens'))).toThrow('stop_reason: max_tokens');
     expect(() => parseNotesResponse(apiResponse({ items: [] }))).toThrow('不符合 schema');
+    expect(() => parseTranslateResponse(apiResponse({ items: [{ id: 'b1', reading: '', zh: '', unreadable: false }] }))).toThrow('不符合 schema');
   });
 });

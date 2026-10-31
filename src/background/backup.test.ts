@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PageTranslation } from '../shared/page-text.ts';
+import { eraseFill } from '../content/overlay-layout.ts';
+import type { BalloonText, PageTranslation } from '../shared/page-text.ts';
 import type { NotesSuggestion, SeriesNotes } from '../shared/series-notes.ts';
 import type { Series, UrlPattern } from '../shared/series.ts';
 import type { NotesEntry } from '../shared/translator.ts';
@@ -65,7 +66,7 @@ const translation = (seriesId: string, pageHash: string, 譯文: string): PageTr
 /** 兩部 Series，每個 store 都有東西（含一個 locked 條目與一個待處理的建議）。 */
 const SAMPLE: BackupData = {
   series: [
-    { id: 's1', name: '火ノ丸相撲', provisional: false, createdAt: 1 },
+    { id: 's1', name: '範例作品', provisional: false, createdAt: 1 },
     { id: 's2', name: '未命名', provisional: true, createdAt: 2 },
   ],
   urlPatterns: [{ pattern: 'https://manga.example/episode/1', seriesId: 's1', lastUsedAt: 3 }],
@@ -104,5 +105,51 @@ describe('importAll', () => {
     for (const key of ['series', 'urlPatterns', 'seriesNotes', 'notesSuggestions', 'pageTranslations'] as const)
       expect(sorted(imported[key]), key).toEqual(sorted(SAMPLE[key]));
     expect(touched.sort()).toEqual(['s1', 's2']);
+  });
+});
+
+describe('擦除資料只留在本機', () => {
+  it('匯出檔不含擦除小圖；匯入後那頁跟舊快取一樣，擦除退回矩形加 eraseLuminance', async () => {
+    const balloon: BalloonText = {
+      id: 'b1',
+      order: 1,
+      balloonBbox: { x: 0.1, y: 0.1, w: 0.3, h: 0.3 },
+      textBbox: { x: 0.15, y: 0.15, w: 0.2, h: 0.2 },
+      orientation: 'vertical',
+      原文: 'パン',
+      讀音: 'ぱん',
+      讀音來源: 'llm',
+      譯文: '麵包',
+      unreadable: false,
+      eraseLuminance: 250,
+      erase: { box: { x: 0.14, y: 0.14, w: 0.22, h: 0.22 }, image: 'data:image/png;base64,ERASE-IMAGE' },
+    };
+    const source = memoryDb();
+    source.seed({ ...SAMPLE, pageTranslations: [{ ...translation('s1', 'aaaa', '麵包'), balloons: [balloon] }] });
+
+    const file = JSON.parse(JSON.stringify(await source.backup.exportAll()));
+    const clean = memoryDb();
+    await clean.backup.importAll(file);
+
+    expect(JSON.stringify(file)).not.toContain('ERASE-IMAGE');
+    const [restored] = clean.stores().pageTranslations.find((t) => t.pageHash === 'aaaa')!.balloons;
+    const { erase: _, ...rest } = balloon;
+    expect(restored).toEqual(rest);
+    expect(eraseFill(restored!)).toEqual({ kind: 'rect', luminance: 250 });
+    // 本機那份不受影響
+    expect(source.stores().pageTranslations[0]!.balloons[0]!.erase).toEqual(balloon.erase);
+  });
+
+  it('長 Page 的扣頁紀錄不進備份：匯入的那頁之後的截當成新的一頁扣', async () => {
+    const long: PageTranslation = { ...translation('s1', 'aaaa', '麵包'), stripes: [{ index: 0, hash: 'ff' }], charge: { usageRecordId: 7, chargedAt: 400 } };
+    const source = memoryDb();
+    source.seed({ ...SAMPLE, pageTranslations: [long] });
+
+    const file = JSON.parse(JSON.stringify(await source.backup.exportAll()));
+    const clean = memoryDb();
+    await clean.backup.importAll(file);
+
+    const { charge: _, ...rest } = long;
+    expect(clean.stores().pageTranslations).toEqual([rest]);
   });
 });

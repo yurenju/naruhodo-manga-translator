@@ -3,7 +3,7 @@
  * offscreen document 用它；e2e build 的 test-pipeline.html 也用它量 #7 的指標。
  */
 import type { ModelStatus, PipelineConfig } from '../shared/messages.ts';
-import type { PageText } from '../shared/page-text.ts';
+import type { PageText, RatioRect } from '../shared/page-text.ts';
 import recordedOcr from '../../testdata/synthetic/recorded-ocr.json' with { type: 'json' };
 import { createFakeEngine, type RecordedOcr } from './fake-engine.ts';
 import { createKuromojiReading } from './kuromoji-reading.ts';
@@ -92,12 +92,12 @@ export function createLocalPipeline({ onStatus, idleMs = IDLE_RELEASE_MS }: Loca
     return resident;
   }
 
-  /** source 是截圖（或原圖），rect 是 Page 在裡面的範圍（像素）。 */
-  function analyze(source: ImageBitmap, rect: { x: number; y: number; width: number; height: number }): Promise<PageText> {
+  /** source 是截圖（或原圖），rect 是 Page 在裡面的範圍（像素）；accept 見 analyzePage（長 Page 篩框用）。 */
+  function analyze(source: ImageBitmap, rect: { x: number; y: number; width: number; height: number }, accept?: (box: RatioRect) => boolean): Promise<PageText> {
     const task = queue.then(() =>
       getResident().use(async (engine) => {
         const reading = await createKuromojiReading(chrome.runtime.getURL('kuromoji/dict/'));
-        return analyzePage(engine, createPageImage(source, rect), reading);
+        return analyzePage(engine, createPageImage(source, rect), reading, accept);
       }),
     );
     queue = task.catch(() => {});

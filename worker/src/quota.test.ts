@@ -12,7 +12,7 @@ import { freshEmail, get, post, signIn } from './test/http.ts';
 
 const input: TranslateInput = { seriesNotes: [], priorPages: [], items: [{ id: 'b1', kind: 'balloon', 原文: 'おはよう', orientation: 'vertical' }] };
 
-const ok = reply({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false }] });
+const ok = reply({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false, sfx: false }] });
 
 const failed = () => Response.json({ error: { message: 'invalid x-api-key' } }, { status: 401 });
 
@@ -92,6 +92,91 @@ describe('Free Pages', () => {
   });
 });
 
+describe('長 Page 的接續翻譯（spec #142「計費」）', () => {
+  /** 翻一次，回傳回應的 usageRecordId；pageUsageRecordId 有值就是同一個 Page 的接續請求。 */
+  async function translateAs(token: string, pageUsageRecordId?: number): Promise<{ status: number; usageRecordId?: number }> {
+    fakeAnthropic([ok]);
+    const response = await post(TRANSLATE_PATH, { ...input, ...(pageUsageRecordId === undefined ? {} : { pageUsageRecordId }) }, { token });
+    vi.restoreAllMocks();
+    if (!response.ok) return { status: response.status };
+    return { status: response.status, usageRecordId: ((await response.json()) as { usageRecordId: number }).usageRecordId };
+  }
+
+  it('帶第一次回應的 usageRecordId：只記用量、不扣頁，回應帶回同一個 id', async () => {
+    const email = freshEmail();
+    const token = await signIn(email);
+    const first = await translateAs(token);
+
+    const next = await translateAs(token, first.usageRecordId);
+
+    expect(next).toEqual({ status: 200, usageRecordId: first.usageRecordId });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+    expect(await usageRecords(email)).toEqual([
+      { id: first.usageRecordId, kind: 'translate', page_record_id: null },
+      { id: expect.any(Number), kind: 'translate', page_record_id: first.usageRecordId },
+    ]);
+  });
+
+  it('接續 10 次都不扣，第 11 次當成新的一頁扣，之後接續它', async () => {
+    const token = await signIn();
+    const first = await translateAs(token);
+    for (let i = 0; i < 10; i++) expect((await translateAs(token, first.usageRecordId)).usageRecordId).toBe(first.usageRecordId);
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+
+    const eleventh = await translateAs(token, first.usageRecordId);
+
+    expect(eleventh.usageRecordId).not.toBe(first.usageRecordId);
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 48 });
+    expect((await translateAs(token, eleventh.usageRecordId)).usageRecordId).toBe(eleventh.usageRecordId);
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 48 });
+  });
+
+  it('第一次翻譯超過 1 小時：當成新的一頁扣', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-01T00:00:00Z'));
+    const token = await signIn();
+    const first = await translateAs(token);
+    vi.setSystemTime(new Date('2026-11-01T00:59:59Z'));
+    await translateAs(token, first.usageRecordId);
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+
+    vi.setSystemTime(new Date('2026-11-01T01:00:01Z'));
+    const late = await translateAs(token, first.usageRecordId);
+    vi.useRealTimers();
+
+    expect(late.usageRecordId).not.toBe(first.usageRecordId);
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 48 });
+  });
+
+  it('紀錄不是自己的第一次翻譯（別人的、接續的、Notes 的、不存在的）：當成新的一頁扣', async () => {
+    const email = freshEmail();
+    const token = await signIn(email);
+    const others = await translateAs(await signIn());
+    const first = await translateAs(token);
+    await translateAs(token, first.usageRecordId);
+    const [, continued] = await usageRecords(email);
+    fakeAnthropic([notesOk]);
+    await post(NOTES_PATH, { ...notesInput, pageUsageRecordId: first.usageRecordId }, { token });
+    vi.restoreAllMocks();
+    const [, , notes] = await usageRecords(email);
+
+    for (const id of [others.usageRecordId!, continued!.id, notes!.id, 999_999]) await translateAs(token, id);
+
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 45 });
+  });
+
+  it('額度用完時，條件內的接續請求照樣翻譯（這頁已經扣過）', async () => {
+    const email = freshEmail();
+    const token = await signIn(email);
+    expect((await post(DEV_FREE_PAGES_PATH, { email, remaining: 1 })).status).toBe(204);
+    const first = await translateAs(token);
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 0 });
+
+    expect((await translateAs(token, first.usageRecordId)).status).toBe(200);
+    expect((await translateAs(token)).status).toBe(402);
+  });
+});
+
 describe('用量紀錄', () => {
   it('Notes 不扣額度', async () => {
     const token = await signIn();
@@ -108,7 +193,7 @@ describe('用量紀錄', () => {
     fakeAnthropic([ok, notesOk]);
     const seriesNotes = [{ seriesId: 's1', 原文: '霧島湊', 讀音: 'きりしまみなと', 譯文: '霧島湊', 類別: '人名', locked: false }];
 
-    await post(TRANSLATE_PATH, { ...input, seriesNotes, url: 'https://manga.example/episode/1' }, { token });
+    await post(TRANSLATE_PATH, { ...input, seriesName: '星屑バンド', seriesNotes, url: 'https://manga.example/episode/1' }, { token });
     await post(NOTES_PATH, notesInput, { token });
 
     const { results } = await env.DB.prepare(
@@ -129,7 +214,7 @@ describe('用量紀錄', () => {
     });
     expect(results).toEqual([record('translate'), record('notes')]);
     const stored = JSON.stringify(results);
-    for (const content of ['おはよう', '早安', '霧島湊', 'パン屋', '麵包店', 'manga.example']) expect(stored).not.toContain(content);
+    for (const content of ['おはよう', '早安', '星屑バンド', '霧島湊', 'パン屋', '麵包店', 'manga.example']) expect(stored).not.toContain(content);
   });
 
   it('Notes 的用量歸到同一頁：翻譯回應帶回用量紀錄 id，Notes 請求帶回來，Notes 那筆就記下它', async () => {

@@ -13,7 +13,7 @@ import { del, freshEmail, get, post, signIn } from './test/http.ts';
 import { checkoutAccountId, fakePaddle, subscriptionEvent, webhook } from './test/paddle.ts';
 
 const input: TranslateInput = { seriesNotes: [], priorPages: [], items: [{ id: 'b1', kind: 'balloon', 原文: 'おはよう', orientation: 'vertical' }] };
-const ok = reply({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false }] });
+const ok = reply({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false, sfx: false }] });
 
 /** Paddle 的取消訂閱回應：排定在扣款週期結束時取消。 */
 const canceled = () => Response.json({ data: { id: 'sub_test', status: 'active', scheduled_change: { action: 'cancel' } } });

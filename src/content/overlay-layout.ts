@@ -2,6 +2,7 @@
  * 原地覆蓋的排版規則（spec #27 第 7.3、7.4 節）。純邏輯，不碰 DOM；量測由呼叫端注入。
  * 座標與字級的單位都是 Page 原始像素（Page 層再整層 scale 到畫面上）。
  */
+import type { RatioRect } from '../shared/page-text.ts';
 
 /** 一段譯文；upright＝縱中橫（text-combine-upright）。 */
 export interface TextRun {
@@ -36,6 +37,28 @@ export interface Box {
   h: number;
 }
 
+/** 四邊各外擴 m。 */
+export const expandBox = (b: Box, m: number): Box => ({ x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m });
+
+/** 相對 Page 的比例座標換成 Page 像素；size 是 Page 的像素尺寸。 */
+export const ratioToBox = (r: RatioRect, size: { width: number; height: number }): Box => ({
+  x: r.x * size.width,
+  y: r.y * size.height,
+  w: r.w * size.width,
+  h: r.h * size.height,
+});
+
+/** Page 像素換成相對 Page 的比例座標。 */
+export const boxToRatio = (b: Box, size: { width: number; height: number }): RatioRect => ({
+  x: b.x / size.width,
+  y: b.y / size.height,
+  w: b.w / size.width,
+  h: b.h / size.height,
+});
+
+/** [x, y, w, h] 陣列（偵測器的 PixelBox、合成頁的 ground truth）換成 Box。 */
+export const tupleBox = ([x, y, w, h]: readonly [number, number, number, number]): Box => ({ x, y, w, h });
+
 /** 預設直書；只有上游標成橫書而且 Balloon 是寬的才橫書。 */
 export function isVertical(orientation: 'vertical' | 'horizontal', balloon: Box): boolean {
   return !(orientation === 'horizontal' && balloon.w >= balloon.h);
@@ -44,14 +67,25 @@ export function isVertical(orientation: 'vertical' | 'horizontal', balloon: Box)
 /** 只擦文字框，外擴這麼多（不猜 Balloon 形狀，框線與尾巴保留）。 */
 export const ERASE_PADDING = 3;
 
+/**
+ * 擦除底色怎麼畫：有擦除小圖（#149）就原樣貼上；舊快取、備份還原的頁，或擦除退回矩形時沒有小圖，
+ * 用文字框外擴 ERASE_PADDING 的矩形塗 eraseLuminance（沒有時當白底）。
+ */
+export function eraseFill(balloon: {
+  erase?: { box: { x: number; y: number; w: number; h: number }; image: string };
+  eraseLuminance?: number;
+}): { kind: 'image'; box: { x: number; y: number; w: number; h: number }; image: string } | { kind: 'rect'; luminance: number } {
+  return balloon.erase ? { kind: 'image', ...balloon.erase } : { kind: 'rect', luminance: balloon.eraseLuminance ?? 255 };
+}
+
 const fromEdges = (left: number, top: number, right: number, bottom: number): Box => ({ x: left, y: top, w: right - left, h: bottom - top });
 
 /**
  * erase：擦除範圍；fit1：第 1 階的譯文範圍（文字框外擴 Balloon 寬高的 12%，不超出 Balloon 往內 8%）；
  * fit2：第 2 階（Balloon 往內 10%，跟 fit1 取聯集，才不會比第 1 階小）。
+ * 有排版矩形（#150，擦除範圍內最大的矩形）時，fit1、fit2 都跟它取交集，譯文才不出擦除範圍。
  */
-export function textRegions(balloon: Box, text: Box): { erase: Box; fit1: Box; fit2: Box } {
-  const p = ERASE_PADDING;
+export function textRegions(balloon: Box, text: Box, fit?: Box): { erase: Box; fit1: Box; fit2: Box } {
   const gx = balloon.w * 0.12;
   const gy = balloon.h * 0.12;
   const fit1 = fromEdges(
@@ -66,7 +100,20 @@ export function textRegions(balloon: Box, text: Box): { erase: Box; fit1: Box; f
     Math.max(fit1.x + fit1.w, balloon.x + balloon.w * 0.9),
     Math.max(fit1.y + fit1.h, balloon.y + balloon.h * 0.9),
   );
-  return { erase: { x: text.x - p, y: text.y - p, w: text.w + 2 * p, h: text.h + 2 * p }, fit1, fit2 };
+  const within = (r: Box) =>
+    fit
+      ? fromEdges(Math.max(r.x, fit.x), Math.max(r.y, fit.y), Math.min(r.x + r.w, fit.x + fit.w), Math.min(r.y + r.h, fit.y + fit.h))
+      : r;
+  return { erase: expandBox(text, ERASE_PADDING), fit1: within(fit1), fit2: within(fit2) };
+}
+
+/**
+ * Loose Text（#151）：沒有泡泡外框，排版區就是文字框本身，第 2 階也不往外長（排不下就縮字）。不跟擦除範圍取交集：
+ * 擦除範圍可能被保留下來的畫面線條切得很碎。erase 是沒有擦除小圖時的矩形退路。
+ */
+export function looseTextRegions(text: Box): { erase: Box; fit1: Box; fit2: Box } {
+  // fit1、fit2 各自一份：separateRegions 會就地修改
+  return { erase: expandBox(text, ERASE_PADDING), fit1: { ...text }, fit2: { ...text } };
 }
 
 const boxesOverlap = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -215,20 +262,24 @@ function bestLines(units: string[], n: number): { cost: number; lines: string[] 
 }
 
 /**
- * 譯文斷成幾行（#81）：只在詞與詞之間斷、守避頭尾，行數在原文行數 ±1 裡挑；每偏離一行加 LINE_COUNT_COST，
+ * 譯文斷成幾行的候選（#81）：只在詞與詞之間斷、守避頭尾，行數取原文行數 ±1；cost 含每偏離一行的 LINE_COUNT_COST，
  * 所以能斷在標點後、或各行比較平均時，寧可多一行或少一行。單位比這些行數都少，就一個單位一行。
  */
-export function breakLines(譯文: string, targetLines: number): string[] {
+function lineCandidates(譯文: string, targetLines: number): { cost: number; lines: string[] }[] {
   const units = lineUnits(譯文);
-  if (units.length <= 1) return [units.join('')];
+  if (units.length <= 1) return [{ cost: 0, lines: [units.join('')] }];
   const counts = [targetLines - 1, targetLines, targetLines + 1].filter((n) => n >= 1 && n <= units.length);
-  let chosen: { cost: number; lines: string[] } = { cost: Infinity, lines: units };
-  for (const n of counts.length > 0 ? counts : [units.length]) {
+  return (counts.length > 0 ? counts : [units.length]).map((n) => {
     const { cost, lines } = bestLines(units, n);
-    const total = cost + Math.abs(n - targetLines) * LINE_COUNT_COST;
-    if (total < chosen.cost) chosen = { cost: total, lines };
-  }
-  return chosen.lines;
+    return { cost: cost + Math.abs(n - targetLines) * LINE_COUNT_COST, lines };
+  });
+}
+
+const cheapest = <T extends { cost: number }>(candidates: T[]): T => candidates.reduce((a, b) => (b.cost < a.cost ? b : a));
+
+/** 只看扣分的斷法（不量字級）。 */
+export function breakLines(譯文: string, targetLines: number): string[] {
+  return cheapest(lineCandidates(譯文, targetLines)).lines;
 }
 
 /** 最小畫面字級（畫面 px）。canvas 網站顯示倍率約 0.49×，只看 Page 像素的話 14px 在畫面上只剩約 7px。 */
@@ -282,6 +333,40 @@ export function fitText(target: FitTarget, regions: { fit1: Box; fit2: Box }, mi
   const size = Math.max(STAGE_FLOORS[2], minLayerPx);
   target.apply(regions.fit2, size);
   return { stage: 3, size, region: regions.fit2, truncated: true };
+}
+
+/** 字級差在這個比例內視為一樣大，改用扣分決定（#129）。 */
+const SIZE_TIE = 0.05;
+
+/** layoutText 要量的對象：fitText 的量測，再加上換一種斷法。 */
+export interface LayoutTarget extends FitTarget {
+  setLines(lines: string[]): void;
+}
+
+/**
+ * 行數和字級一起挑（#129）：lineCandidates 的每個候選行數各自跑 fitText，取字級最大的；字級差在 SIZE_TIE 內就看扣分。
+ * 截斷的候選排在沒截斷的後面（刻意的）：截斷的字只在 tooltip 看得到，寧可字小一點也要整句排得下；
+ * 每個候選都截斷時才取字級最大的。量完把選中的斷法與字級套回 target。
+ */
+export function layoutText(
+  target: LayoutTarget,
+  譯文: string,
+  targetLines: number,
+  regions: { fit1: Box; fit2: Box },
+  minLayerPx: number,
+  startPx = START_PX,
+): FitResult & { lines: string[] } {
+  const fitted = lineCandidates(譯文, targetLines).map(({ cost, lines }) => {
+    target.setLines(lines);
+    return { cost, lines, ...fitText(target, regions, minLayerPx, startPx) };
+  });
+  const whole = fitted.filter((candidate) => !candidate.truncated);
+  const pool = whole.length > 0 ? whole : fitted;
+  const largest = Math.max(...pool.map((candidate) => candidate.size));
+  const { cost: _, ...chosen } = cheapest(pool.filter((candidate) => candidate.size >= largest * (1 - SIZE_TIE)));
+  target.setLines(chosen.lines);
+  target.apply(chosen.region, chosen.size);
+  return chosen;
 }
 
 /** anchor 的 offset*（不含 transform；捲動、祖先 transform、overflow 裁切交給瀏覽器自然套用）。 */

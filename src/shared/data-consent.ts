@@ -10,7 +10,7 @@
  */
 import type { TranslationMode } from './translation-mode.ts';
 
-export const DATA_CONSENT_VERSION = 2;
+export const DATA_CONSENT_VERSION = 3;
 
 const KEY = 'dataConsent';
 

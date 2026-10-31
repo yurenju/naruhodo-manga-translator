@@ -2,6 +2,7 @@
  * 翻譯佇列的排程（#34、spec #27 第 3.4 節）：兩段，本機段（偵測／OCR）併發 1、LLM 段併發 2，跨 tab 共用
  * （offscreen 只有一份模型）。先做 priority 高的、再來比較新的一批、同一批裡依閱讀順序。
  * 本機段還沒開始的工作，每次排程前問 isWanted，已經不要的（翻走的 Page）丟掉；已開始的一律做完。
+ * 工作帶 after 時，本機段做完先等它，才排進 LLM 段（同一批裡在後的頁等前頁的 ①，ADR 0005）。
  * 工作本身做什麼（跑流水線、翻譯、更新畫面）由呼叫端的 runLocal／runLlm 決定。
  */
 
@@ -15,6 +16,8 @@ export interface QueuedJob {
   batch: number;
   /** 同一批裡的閱讀順序（越小先做）。 */
   index: number;
+  /** 進 LLM 段之前要等的事；等的時候不佔 LLM 段的名額。 */
+  after?: Promise<unknown>;
 }
 
 export interface TranslationQueueDeps<J extends QueuedJob> {
@@ -48,6 +51,18 @@ export function createTranslationQueue<J extends QueuedJob>(deps: TranslationQue
     }
   }
 
+  /** 排進 LLM 段；有 after 的等它結束才排。 */
+  function enqueueLlm(job: J): void {
+    if (!job.after) {
+      llmQueue.push(job);
+      return;
+    }
+    void job.after.then(() => {
+      llmQueue.push(job);
+      pump();
+    });
+  }
+
   function pump(): void {
     dropUnwanted();
     while (localRunning < LOCAL_CONCURRENCY) {
@@ -57,7 +72,7 @@ export function createTranslationQueue<J extends QueuedJob>(deps: TranslationQue
       void deps
         .runLocal(job)
         .then((toLlm) => {
-          if (toLlm) llmQueue.push(job);
+          if (toLlm) enqueueLlm(job);
         })
         .finally(() => {
           localRunning--;
@@ -82,7 +97,7 @@ export function createTranslationQueue<J extends QueuedJob>(deps: TranslationQue
     },
     /** 已經有本機段的結果，直接排進 LLM 段（「翻譯此頁／重試」）。 */
     enqueueLlm(job: J): void {
-      llmQueue.push(job);
+      enqueueLlm(job);
       pump();
     },
     dropUnwanted,

@@ -16,10 +16,12 @@ export interface CaptureFinished {
   overlayHiddenMs: number | undefined;
 }
 
-export function createCapturePrep({ overlay, anchors, isOwn }: {
+export function createCapturePrep({ overlay, anchors, longAnchors, isOwn }: {
   overlay: Overlay;
   /** 最近一次量到的 Page 候選元素。 */
   anchors: () => Element[];
+  /** 其中的長 Page（spec #142）：它們的覆蓋層一律不藏。 */
+  longAnchors: ReadonlySet<Element>;
   isOwn: (element: Element) => boolean;
 }) {
   let occluders: HiddenOccluders | undefined;
@@ -33,7 +35,7 @@ export function createCapturePrep({ overlay, anchors, isOwn }: {
     occluders = hideOccluders(found);
     if (__DEBUG__) trace('capture:prepare', { hideOverlay, ms: performance.now() - startedAt, occluders: found.slice(0, 10).map(describeElement) });
     try {
-      await Promise.all([hideOverlay ? overlay.hideForCapture() : undefined, occluders.count > 0 ? untilRepainted() : undefined]);
+      await Promise.all([hideOverlay ? overlay.hideForCapture(longAnchors) : undefined, occluders.count > 0 ? untilRepainted() : undefined]);
     } catch (e) {
       // SW 收到失敗就不會叫 finish：自己先還原，網站的元素才不會一直藏著
       finish();

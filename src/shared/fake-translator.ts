@@ -18,6 +18,8 @@ export interface GroundTruthText {
   ja: string;
   reading: string;
   zh: string;
+  /** 合成頁 ground truth 的種類；'sfx' 的回 sfx: true（模擬 LLM 判斷 Sound Effect）。 */
+  kind?: string;
 }
 
 function levenshtein(a: string[], b: string[]): number {
@@ -86,10 +88,10 @@ export function createFakeTranslator(
               bestScore = score;
             }
           }
-          if (best && unreadable.has(best.ja)) return { id: item.id, 讀音: '', 譯文: '', unreadable: true };
+          if (best && unreadable.has(best.ja)) return { id: item.id, 讀音: '', 譯文: '', unreadable: true, sfx: false };
           return best
-            ? { id: item.id, 讀音: best.reading, 譯文: best.zh, unreadable: false }
-            : { id: item.id, 讀音: '', 譯文: NO_MATCH, unreadable: false };
+            ? { id: item.id, 讀音: best.reading, 譯文: best.zh, unreadable: false, sfx: best.kind === 'sfx' }
+            : { id: item.id, 讀音: '', 譯文: NO_MATCH, unreadable: false, sfx: false };
         }),
         ...NO_COST,
       };

@@ -54,20 +54,33 @@ export function createSeriesCatalog(deps: SeriesCatalogDeps) {
     trace('series:remember', { pattern, seriesId });
   }
 
+  /** 網址模式記住的 Series（更新最近使用時間）；沒記住或那部 Series 已經不在是 undefined。 */
+  async function rememberedSeries(url: string): Promise<string | undefined> {
+    const pattern = await repo.getPattern(urlPattern(url));
+    if (!pattern || !(await repo.getSeries(pattern.seriesId))) return undefined;
+    await repo.putPattern({ ...pattern, lastUsedAt: deps.now().getTime() });
+    return pattern.seriesId;
+  }
+
   return {
     /** 新的啟動：網址模式預選到的 Series（更新最近使用時間），沒有就建一個 Provisional Series。 */
     async seriesForUrl(url: string): Promise<string> {
-      const pattern = await repo.getPattern(urlPattern(url));
-      if (pattern && (await repo.getSeries(pattern.seriesId))) {
-        await repo.putPattern({ ...pattern, lastUsedAt: deps.now().getTime() });
-        trace('series:forUrl', { pattern: pattern.pattern, seriesId: pattern.seriesId, preselected: true });
-        return pattern.seriesId;
+      const remembered = await rememberedSeries(url);
+      if (remembered !== undefined) {
+        trace('series:forUrl', { pattern: urlPattern(url), seriesId: remembered, preselected: true });
+        return remembered;
       }
       const series = provisionalSeries(url, deps.now(), deps.newId());
       await repo.putSeries(series);
       trace('series:forUrl', { pattern: urlPattern(url), seriesId: series.id, preselected: false });
       return series.id;
     },
+
+    /**
+     * 同分頁導航到另一個網址（#145）：只用網址模式找，對不上不建 Provisional Series。
+     * 網址模式是完整網址比對，同作品的下一話對不上，由呼叫端沿用目前的 Series。
+     */
+    rememberedSeries,
 
     async menu(): Promise<SeriesOption[]> {
       const [series, patterns] = await Promise.all([repo.listSeries(), repo.listPatterns()]);

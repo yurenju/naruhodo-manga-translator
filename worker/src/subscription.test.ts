@@ -33,7 +33,7 @@ async function subscriber(): Promise<{ email: string; token: string; accountId: 
 }
 
 const input: TranslateInput = { seriesNotes: [], priorPages: [], items: [{ id: 'b1', kind: 'balloon', 原文: 'おはよう', orientation: 'vertical' }] };
-const ok = reply({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false }] });
+const ok = reply({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false, sfx: false }] });
 
 /** 依序翻譯 n 頁（Anthropic 都成功），回傳每次的 status。 */
 async function translate(token: string, n = 1): Promise<number[]> {

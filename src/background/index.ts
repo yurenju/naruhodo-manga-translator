@@ -198,6 +198,7 @@ async function translatorVersion(): Promise<TranslatorVersion | undefined> {
 }
 
 const notesStore = indexedDbNotesStore();
+const seriesRepo = indexedDbSeriesRepo();
 
 const transcriber = createTranscriber({
   async analyze(request) {
@@ -213,6 +214,7 @@ const transcriber = createTranscriber({
   getTranslator,
   translatorVersion,
   getSeriesId: (tabId) => activation.getSeriesId(tabId),
+  getSeries: (seriesId) => seriesRepo.getSeries(seriesId),
   cache: indexedDbPageCache(),
   notes: {
     ...notesStore,
@@ -302,7 +304,7 @@ async function changeNotes(tabId: number, action: string, detail: Record<string,
   trace(action, { tabId, seriesId, ...detail });
 }
 
-const seriesCatalog = createSeriesCatalog({ repo: indexedDbSeriesRepo(), now: () => new Date(), newId: () => crypto.randomUUID() });
+const seriesCatalog = createSeriesCatalog({ repo: seriesRepo, now: () => new Date(), newId: () => crypto.randomUUID() });
 
 async function seriesResponse(tabId: number): Promise<SeriesResponse> {
   const [current, options] = await Promise.all([activation.getSeriesId(tabId), seriesCatalog.menu()]);
@@ -344,6 +346,13 @@ async function updateSeries(tabId: number, action: string, change: (url: string,
 const activation = createActivation({
   store,
   seriesForUrl: (url) => seriesCatalog.seriesForUrl(url),
+  rememberedSeries: (url) => seriesCatalog.rememberedSeries(url),
+  onSeriesChanged(tabId) {
+    // 跟 side panel 切換 Series 一樣：忘掉畫面上的 Page 重新擷取；Prior Pages 在 Series 換了時自己清空
+    notifyPanel({ type: 'series:changed', tabId });
+    transcriber.resetPages(tabId);
+    scan(tabId);
+  },
   getTabUrl: async (tabId) => (await chrome.tabs.get(tabId)).url,
   openSidePanel(tabId) {
     // 不 await setOptions：await 會讓 open() 離開 user gesture。兩個呼叫會依序送到瀏覽器。

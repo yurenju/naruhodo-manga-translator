@@ -26,11 +26,18 @@ export interface PageImage {
   crop224(box: PixelBox): Uint8Array;
 }
 
+/** OCR 讀到的一段。 */
+export interface Recognized {
+  text: string;
+  /** text 每個字（code point）的信心：解碼那一步 softmax 的最高機率。 */
+  confidences: number[];
+}
+
 export interface Engine {
   /** detector 的原始輸出（還沒套門檻與 NMS），座標已是原圖像素。 */
   detect(image: PageImage): Promise<Detection[]>;
-  /** 每個框各 OCR 一次，回傳同樣順序的文字。 */
-  recognize(image: PageImage, boxes: PixelBox[]): Promise<string[]>;
+  /** 每個框各 OCR 一次，回傳同樣順序的結果。 */
+  recognize(image: PageImage, boxes: PixelBox[]): Promise<Recognized[]>;
 }
 
 /** 偵測分數門檻（#7）。 */
@@ -93,24 +100,51 @@ function ocrBox([x, y, w, h]: PixelBox, width: number, height: number): PixelBox
 /** 只有標點（例如臉被當成 Balloon 而 OCR 出「…」）的不算文字。 */
 const hasText = (s: string) => /[\p{L}\p{N}]/u.test(s);
 
-export async function analyzePage(engine: Engine, image: PageImage, reading: (ja: string) => string): Promise<PageText> {
+/** 非標點字的最低信心低於這個值，整段當成 unreadable、不覆蓋（ADR 0009，數字來自 #140）。 */
+const OCR_CONFIDENCE_THRESHOLD = 0.25;
+
+/** 算最低信心時不看的字：標點、符號、空白、長音（ー 在 Unicode 算字母）。 */
+const NOT_COUNTED = /[\p{P}\p{S}\p{Z}ーｰ]/u;
+
+/** 非標點字的最低信心；沒有非標點字時 undefined。 */
+function minConfidence({ text, confidences }: Recognized): number | undefined {
+  const counted = [...text].flatMap((char, i) => (NOT_COUNTED.test(char) ? [] : [confidences[i] ?? 1]));
+  return counted.length ? Math.min(...counted) : undefined;
+}
+
+/**
+ * accept：收不收一個框（外框，0～1 比例）；不收的不做 OCR、不出現在結果。長 Page 用它擋掉被可見範圍切到的框
+ * 與已收過的框（spec #142）；閱讀順序仍然看整頁的框排。
+ */
+export async function analyzePage(engine: Engine, image: PageImage, reading: (ja: string) => string, accept?: (box: RatioRect) => boolean): Promise<PageText> {
   const { width, height } = image;
+  const ratio = ([x, y, w, h]: PixelBox): RatioRect => ({ x: x / width, y: y / height, w: w / width, h: h / height });
   const detections = nms((await engine.detect(image)).filter((d) => d.score >= SCORE_THRESHOLD));
-  const units = readingOrder(group(detections), image.gray());
-  const texts = await engine.recognize(
+  const units = readingOrder(group(detections), image.gray()).filter((u) => accept?.(ratio(u.bbox)) ?? true);
+  const recognized = await engine.recognize(
     image,
     units.map((u) => ocrBox(u.textBbox, width, height)),
   );
-  const ratio = ([x, y, w, h]: PixelBox): RatioRect => ({ x: x / width, y: y / height, w: w / width, h: h / height });
   const orientation = (b: PixelBox): Orientation => (b[3] >= b[2] ? 'vertical' : 'horizontal');
 
   const result: PageText = { balloons: [], looseText: [] };
   let order = 0;
   units.forEach((unit, i) => {
-    const 原文 = texts[i] ?? '';
+    const ocr = recognized[i] ?? { text: '', confidences: [] };
+    const 原文 = ocr.text;
     if (!hasText(原文)) return;
     order++;
-    const common = { order, orientation: orientation(unit.textBbox), 原文, 讀音: reading(原文), 讀音來源: 'kuromoji', 譯文: '', unreadable: false } as const;
+    const ocrConfidence = minConfidence(ocr);
+    const common = {
+      order,
+      orientation: orientation(unit.textBbox),
+      原文,
+      讀音: reading(原文),
+      讀音來源: 'kuromoji',
+      譯文: '',
+      unreadable: ocrConfidence !== undefined && ocrConfidence < OCR_CONFIDENCE_THRESHOLD,
+      ...(ocrConfidence === undefined ? {} : { ocrConfidence }),
+    } as const;
     if (unit.kind === 'balloon') {
       result.balloons.push({
         id: `b${result.balloons.length + 1}`,

@@ -3,9 +3,12 @@
  * PNG 只需要支援合成頁用的格式：8-bit RGB／RGBA、非交錯。
  */
 import { readFileSync } from 'node:fs';
-import { inflateSync } from 'node:zlib';
+import { deflateSync, inflateSync } from 'node:zlib';
+import { ERASE_PADDING, expandBox, tupleBox } from '../content/overlay-layout.ts';
 import { eraseLuminance } from '../offscreen/erase-color.ts';
+import type { GrayImage } from '../shared/page-hash.ts';
 import type { PageText, RatioRect } from '../shared/page-text.ts';
+import { grayOfRgba, type RgbaImage } from '../shared/pixels.ts';
 
 const OUT_DIR = new URL('../../testdata/synthetic/out/', import.meta.url);
 
@@ -15,6 +18,7 @@ export type GtBox = [number, number, number, number];
 export interface GtText {
   id: string;
   kind: 'balloon' | 'thought' | 'narration' | 'sfx' | 'sign' | 'outside';
+  shape: string;
   page: number | null;
   order: number;
   orientation: 'vertical' | 'horizontal';
@@ -44,21 +48,22 @@ export const SYNTHETIC_IDS = [
   'p06-horizontal',
   'p07-spread',
   'p08-action',
+  'p09-erase',
 ] as const;
 
 export function readGroundTruth(id: string): GtPage {
   return JSON.parse(readFileSync(new URL(`${id}.json`, OUT_DIR), 'utf8')) as GtPage;
 }
 
-/** 解出灰階（0.299/0.587/0.114，跟 offscreen 的 canvas 版一致）。 */
-export function readGray(id: string): { gray: Uint8Array; width: number; height: number } {
-  const png = readFileSync(new URL(`${id}.png`, OUT_DIR));
+/** 解出 RGBA；name 是 out/ 裡的檔名（不含 .png），例如 p09-erase-blank。 */
+export function readRgba(name: string): RgbaImage {
+  const png = readFileSync(new URL(`${name}.png`, OUT_DIR));
   const width = png.readUInt32BE(16);
   const height = png.readUInt32BE(20);
   const bitDepth = png[24];
   const colorType = png[25];
   if (bitDepth !== 8 || (colorType !== 2 && colorType !== 6) || png[28] !== 0) {
-    throw new Error(`unsupported PNG ${id}: depth ${bitDepth} color ${colorType}`);
+    throw new Error(`unsupported PNG ${name}: depth ${bitDepth} color ${colorType}`);
   }
   const channels = colorType === 2 ? 3 : 4;
   const idat: Buffer[] = [];
@@ -92,12 +97,52 @@ export function readGray(id: string): { gray: Uint8Array; width: number; height:
       pixels[y * stride + i] = (line[i]! + predictor) & 0xff;
     }
   }
-  const gray = new Uint8Array(width * height);
+  const data = new Uint8ClampedArray(width * height * 4);
   for (let i = 0; i < width * height; i++) {
-    const p = i * channels;
-    gray[i] = Math.round(0.299 * pixels[p]! + 0.587 * pixels[p + 1]! + 0.114 * pixels[p + 2]!);
+    for (let c = 0; c < 3; c++) data[i * 4 + c] = pixels[i * channels + c]!;
+    data[i * 4 + 3] = channels === 4 ? pixels[i * channels + 3]! : 255;
   }
-  return { gray, width, height };
+  return { data, width, height };
+}
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+
+/** RGBA 編成 PNG data URL（offscreen 用 canvas.toDataURL 做同一件事）。 */
+export function pngDataUrl({ data, width, height }: RgbaImage): string {
+  const chunk = (type: string, body: Buffer) => {
+    const typed = Buffer.concat([Buffer.from(type, 'latin1'), body]);
+    let crc = 0xffffffff;
+    for (const byte of typed) crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+    const out = Buffer.alloc(typed.length + 8);
+    out.writeUInt32BE(body.length, 0);
+    typed.copy(out, 4);
+    out.writeUInt32BE((crc ^ 0xffffffff) >>> 0, typed.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 6;
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) raw.set(data.subarray(y * width * 4, (y + 1) * width * 4), y * (width * 4 + 1) + 1);
+  const png = Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+  return `data:image/png;base64,${png.toString('base64')}`;
+}
+
+/** 解出灰階（跟 offscreen 的 canvas 版同一個公式）。 */
+export function readGray(id: string): GrayImage {
+  const { data, width, height } = readRgba(id);
+  return grayOfRgba(data, width, height);
 }
 
 /** 從灰階裁出一塊（Spread 切成單頁用）。 */
@@ -147,7 +192,7 @@ export function letterbox(
   return { image: { gray, width: viewport.width, height: viewport.height }, content: { x: ox, y: oy, width: cw, height: ch } };
 }
 
-/** 要原地覆蓋的種類（其他是 Loose Text）。 */
+/** 當成 Balloon 的種類（其他是 Loose Text，不是 sfx 的也會覆蓋）。 */
 const OVERLAY_KINDS = new Set<GtText['kind']>(['balloon', 'thought', 'narration']);
 
 /**
@@ -176,11 +221,11 @@ export function groundTruthPageTexts(id: string): { sub: RatioRect; text: PageTe
       text: {
         balloons: texts
           .filter((t) => OVERLAY_KINDS.has(t.kind))
-          .map((t) => {
-            const [x, y, w, h] = t.textBbox;
-            return { ...common(t), balloonBbox: ratio(t.bbox), textBbox: ratio(t.textBbox), eraseLuminance: eraseLuminance(image, { x: x - 3, y: y - 3, w: w + 6, h: h + 6 }) };
-          }),
-        looseText: texts.filter((t) => !OVERLAY_KINDS.has(t.kind)).map((t) => ({ ...common(t), bbox: ratio(t.bbox) })),
+          .map((t) => ({ ...common(t), balloonBbox: ratio(t.bbox), textBbox: ratio(t.textBbox), eraseLuminance: eraseLuminance(image, expandBox(tupleBox(t.textBbox), ERASE_PADDING)) })),
+        // sfx 跟 FakeTranslator 一樣看 ground truth 的種類；沒有擦除小圖，底色用最常出現的亮度
+        looseText: texts
+          .filter((t) => !OVERLAY_KINDS.has(t.kind))
+          .map((t) => ({ ...common(t), bbox: ratio(t.bbox), sfx: t.kind === 'sfx', eraseLuminance: eraseLuminance(image, expandBox(tupleBox(t.bbox), ERASE_PADDING)) })),
       },
     };
   });

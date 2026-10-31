@@ -4,7 +4,7 @@ import { createTrace } from '../shared/trace.ts';
 import { createCapturePrep } from './capture.ts';
 import { createOverlay, HOST_ATTRIBUTE, isShown, untilRepainted } from './overlay.ts';
 import { createOverlayFontLoader } from './overlay-font.ts';
-import { pageCandidateRejection } from './page-candidates.ts';
+import { longPageVisible, pageCandidateRejection } from './page-candidates.ts';
 import { watchPageTurns } from './page-turn.ts';
 import { stopRepaint } from './repaint.ts';
 
@@ -30,6 +30,8 @@ if (!globalThis.__naruhodo) {
   const anchors = new Map<string, Element>();
   const anchorIds = new WeakMap<Element, string>();
   let nextAnchorId = 1;
+  /** 最近一次量到的長 Page（spec #142）：截圖時不藏它們的覆蓋層，不然每次捲動停下中文都會閃回日文。 */
+  const longAnchors = new Set<Element>();
 
   function anchorIdOf(element: Element): string {
     let id = anchorIds.get(element);
@@ -50,16 +52,28 @@ if (!globalThis.__naruhodo) {
     const rejected: { tag: string; rect: Rect; reason: string; clips: Rect[] }[] = [];
     let small = 0;
     anchors.clear();
+    longAnchors.clear();
     for (const element of document.querySelectorAll('img, canvas')) {
       const { x, y, width, height } = element.getBoundingClientRect();
       const rect = { x, y, width, height };
       const clips = clipRects(element);
+      const shown = isShown(element);
+      // 比可見範圍高的長 Page 只處理看得到的那一截（spec #142）；其他照「完整可見」的規則
+      const slice = shown ? longPageVisible(rect, visible, clips) : undefined;
       // 被工具列之類蓋住的照樣算：截圖前會把蓋在上面的元素藏起來（#59、ADR 0004）。
       // 藏起來的不算：疊在看得到的那張底下，截到的是上面那張，譯文會被貼到兩張上
-      const reason = isShown(element) ? pageCandidateRejection(rect, visible, clips) : 'hidden';
+      const reason = !shown ? 'hidden' : slice ? undefined : pageCandidateRejection(rect, visible, clips);
       if (reason === undefined) {
         const overlaid = overlay.shownPages(element);
-        candidates.push({ anchorId: anchorIdOf(element), rect, ...(overlaid.length > 0 ? { overlaid } : {}) });
+        if (slice) longAnchors.add(element);
+        const covered = slice ? overlay.coveredRects(element) : [];
+        candidates.push({
+          anchorId: anchorIdOf(element),
+          rect,
+          ...(slice ? { visible: slice } : {}),
+          ...(covered.length > 0 ? { covered } : {}),
+          ...(overlaid.length > 0 ? { overlaid } : {}),
+        });
       }
       else if (__DEBUG__ && reason === 'small') small++;
       else if (__DEBUG__) rejected.push({ tag: element.tagName.toLowerCase(), rect, reason, clips });
@@ -112,7 +126,7 @@ if (!globalThis.__naruhodo) {
 
   /** 在自己的覆蓋層（shadow host）裡。 */
   const inOverlayHost = (el: Element) => el.closest(`[${HOST_ATTRIBUTE}]`) !== null;
-  const capturePrep = createCapturePrep({ overlay, anchors: () => [...anchors.values()], isOwn: inOverlayHost });
+  const capturePrep = createCapturePrep({ overlay, anchors: () => [...anchors.values()], longAnchors, isOwn: inOverlayHost });
 
   // 翻頁訊號 → SW 截圖比對 hash（#34）。
   // 覆蓋層改過 position 的父元素，之後它的 style 變動一律當成自己的（頁面改它的 style 會漏掉，接受）
@@ -181,6 +195,7 @@ if (!globalThis.__naruhodo) {
     stopRepaint();
     overlay.clear();
     anchors.clear();
+    longAnchors.clear();
     globalThis.__naruhodo = undefined;
     trace('content:stop', { overlaysLeft: document.querySelectorAll(`[${HOST_ATTRIBUTE}]`).length });
   }

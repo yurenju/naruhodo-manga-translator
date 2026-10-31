@@ -67,6 +67,8 @@ describe('FakeEngine 重播', () => {
       const text = await analyzePage(engineFrom(match), pageImage(cropGray(readGray(r.id), r.rect)), () => '');
       expect(text.balloons.map((b) => b.原文)).toEqual(r.balloons.map((b) => b.原文));
       expect(text.looseText.map((l) => l.原文)).toEqual(r.looseText.map((l) => l.原文));
+      expect(text.balloons.map((b) => b.ocrConfidence)).toEqual(r.balloons.map((b) => b.ocrConfidence));
+      expect(text.looseText.map((l) => l.ocrConfidence)).toEqual(r.looseText.map((l) => l.ocrConfidence));
       text.balloons.forEach((b, i) => {
         expectNearRect(b.balloonBbox, r.balloons[i]!.balloonBbox, `${b.原文} balloonBbox`);
         expectNearRect(b.textBbox, r.balloons[i]!.textBbox, `${b.原文} textBbox`);

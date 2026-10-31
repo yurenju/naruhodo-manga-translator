@@ -5,9 +5,12 @@
  */
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
+import type { Rect } from '../src/shared/messages.ts';
 import type { PageMode } from '../src/shared/page-mode.ts';
-import type { PageText, RatioRect } from '../src/shared/page-text.ts';
-import { groundTruthPageTexts, readGroundTruth, SYNTHETIC_IDS } from '../src/testing/synthetic.ts';
+import { boxToRatio, tupleBox } from '../src/content/overlay-layout.ts';
+import type { EraseData, PageText, RatioRect } from '../src/shared/page-text.ts';
+import { eraseImage, type EraseImage } from '../src/offscreen/erase-image.ts';
+import { groundTruthPageTexts, pngDataUrl, readGroundTruth, readRgba, SYNTHETIC_IDS } from '../src/testing/synthetic.ts';
 import { expect, test } from './fixtures.ts';
 import { overlayTexts, type ScreenRect } from './overlay-helpers.ts';
 
@@ -18,6 +21,8 @@ const PAGE_WIDTH = 430;
 
 declare global {
   var __renderOverlay: (input: { image: string; width: number; pages: { sub: RatioRect; text: PageText }[]; pageMode?: PageMode }) => Promise<void>;
+  var __overlayCapture: (phase: 'hide' | 'restore', long: boolean) => Promise<void>;
+  var __overlayCovered: () => Rect[];
 }
 
 async function render(page: Page, id: string, width: number, pages = groundTruthPageTexts(id), pageMode?: PageMode): Promise<void> {
@@ -25,8 +30,14 @@ async function render(page: Page, id: string, width: number, pages = groundTruth
   await page.evaluate((input) => globalThis.__renderOverlay(input), { image, width, pages, pageMode });
 }
 
+/** offscreen 的 encodeErase 在 Node 裡的版本：小圖編成 PNG data URL、位置換成比例。 */
+function eraseData({ box, rgba }: EraseImage, page: { width: number; height: number }): EraseData {
+  return { box: boxToRatio(tupleBox(box), page), image: pngDataUrl({ data: rgba, width: box[2], height: box[3] }) };
+}
+
 const anchorRect = (page: Page): Promise<ScreenRect> =>
-  page.locator('img').evaluate((img) => {
+  // 擦除小圖也是 img（在覆蓋層的 shadow root 裡，locator 會穿進去）
+  page.locator('img:not(.er)').evaluate((img) => {
     const r = img.getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: r.height };
   });
@@ -112,6 +123,140 @@ test.describe('覆蓋渲染（ground truth）', () => {
     expect(ink.height).toBeGreaterThan(ink.width * 1.5);
   });
 
+  // unit test 驗不到：content script 真的把 PNG data URL 貼在 Page 層的正確位置、縮放跟著 Page 層走
+  test('有擦除小圖的 Balloon 原樣貼上（橢圓外的角保留原本的底色）；舊快取沒有小圖的維持矩形', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    const id = 'p09-erase';
+    const gt = readGroundTruth(id);
+    const image = readRgba(id);
+    const { sub, text } = groundTruthPageTexts(id)[0]!;
+    // t1 帶擦除小圖；t7 當成舊快取，沒有小圖
+    const t1 = gt.texts.find((t) => t.id === 't1')!;
+    const erase = eraseImage(image, tupleBox(t1.bbox), tupleBox(t1.textBbox))!;
+    const balloons = text.balloons.map((b) => (b.id === 't1' ? { ...b, erase: eraseData(erase, gt) } : b));
+    // 原尺寸顯示，Page 像素＝畫面 px
+    await render(page, id, gt.width, [{ sub, text: { ...text, balloons } }]);
+
+    const tags = await page.evaluate(() => {
+      const root = document.querySelector('[data-naruhodo-overlay]')!.shadowRoot!;
+      // 量底色時藏起譯文
+      for (const tx of root.querySelectorAll<HTMLElement>('.tx')) tx.style.visibility = 'hidden';
+      return Object.fromEntries([...root.querySelectorAll<HTMLElement>('[data-erase-id]')].map((el) => [el.dataset.eraseId, el.tagName]));
+    });
+    expect(tags.t1).toBe('IMG');
+    expect(tags.t7).toBe('DIV');
+    // 文字框的左上角在泡泡外（灰底 180）：矩形擦除會蓋成白色，小圖保留原本的灰
+    const anchor = await anchorRect(page);
+    const [tx, ty] = t1.textBbox;
+    const png = await page.screenshot({ clip: { x: anchor.x + tx, y: anchor.y + ty, width: 2, height: 2 } });
+    const gray = await page.evaluate(async (url) => {
+      const bitmap = await createImageBitmap(await (await fetch(url)).blob());
+      const ctx = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d')!;
+      ctx.drawImage(bitmap, 0, 0);
+      return ctx.getImageData(0, 0, 1, 1).data[0];
+    }, `data:image/png;base64,${png.toString('base64')}`);
+    expect(gray).toBeGreaterThan(170);
+    expect(gray).toBeLessThan(190);
+  });
+
+  // unit test 驗不到：content script 真的把 Loose Text 畫上去、套上描邊，量到的譯文外框（真實排版）落在文字框內
+  test('不是 Sound Effect 的 Loose Text 原地覆蓋（譯文在文字框內、反色描邊），Sound Effect 不覆蓋', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    const id = 'p09-erase';
+    const gt = readGroundTruth(id);
+    // 原尺寸顯示，Page 像素＝畫面 px
+    await render(page, id, gt.width);
+
+    const loose = await page.evaluate(() => {
+      const root = document.querySelector('[data-naruhodo-overlay]')!.shadowRoot!;
+      return [...root.querySelectorAll<HTMLElement>('[data-loose-id]')].map((el) => {
+        const inner = el.firstElementChild!.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return {
+          id: el.dataset.looseId!,
+          inner: { x: inner.x, y: inner.y, width: inner.width, height: inner.height },
+          color: style.color,
+          stroke: parseFloat(style.webkitTextStrokeWidth),
+          strokeColor: style.webkitTextStrokeColor,
+          fontPx: parseFloat(style.fontSize),
+        };
+      });
+    });
+    const erased = await page.evaluate(() =>
+      [...document.querySelector('[data-naruhodo-overlay]')!.shadowRoot!.querySelectorAll<HTMLElement>('[data-erase-id]')].map((el) => el.dataset.eraseId),
+    );
+
+    // t10 是 Sound Effect（ぱちっ）：沒有譯文、也沒有擦除底色
+    expect(loose.map((l) => l.id).sort()).toEqual(['t11', 't12', 't8', 't9']);
+    expect(erased).not.toContain('t10');
+    expect(erased).toEqual(expect.arrayContaining(['t8', 't9', 't11', 't12']));
+    const anchor = await anchorRect(page);
+    for (const l of loose) {
+      const [x, y, w, h] = gt.texts.find((t) => t.id === l.id)!.textBbox;
+      expect.soft(l.inner.x, `${l.id} 左`).toBeGreaterThanOrEqual(anchor.x + x - 0.5);
+      expect.soft(l.inner.y, `${l.id} 上`).toBeGreaterThanOrEqual(anchor.y + y - 0.5);
+      expect.soft(l.inner.x + l.inner.width, `${l.id} 右`).toBeLessThanOrEqual(anchor.x + x + w + 0.5);
+      expect.soft(l.inner.y + l.inner.height, `${l.id} 下`).toBeLessThanOrEqual(anchor.y + y + h + 0.5);
+      // 描邊約字級的 1/8（paint-order: stroke 讓一半蓋在字下，外側露出 1/8）
+      expect.soft(l.stroke, `${l.id} 描邊`).toBeCloseTo(l.fontPx / 4, 1);
+    }
+    // 黑底白字（t12）：白字黑邊；其他是淺色底：黑字白邊
+    const t12 = loose.find((l) => l.id === 't12')!;
+    expect(t12.color).toBe('rgb(255, 255, 255)');
+    expect(t12.strokeColor).toBe('rgb(17, 17, 17)');
+    const t8 = loose.find((l) => l.id === 't8')!;
+    expect(t8.color).toBe('rgb(17, 17, 17)');
+    expect(t8.strokeColor).toBe('rgb(255, 255, 255)');
+    // Balloon 不加描邊
+    expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-naruhodo-overlay]')!.shadowRoot!.querySelector('[data-balloon-id]')!).webkitTextStrokeWidth)).toBe('0px');
+  });
+
+  // unit test 驗不到：瀏覽器真的排出來的譯文（字型、斷行、縮字之後）是不是落在擦除範圍內
+  test('有排版矩形時，譯文的實際外框落在擦除範圍內（#150）', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    const id = 'p09-erase';
+    const gt = readGroundTruth(id);
+    const image = readRgba(id);
+    const { sub, text } = groundTruthPageTexts(id)[0]!;
+    const erases = new Map(
+      gt.texts.flatMap((t) => {
+        const erase = eraseImage(image, tupleBox(t.bbox), tupleBox(t.textBbox));
+        return erase ? [[t.id, erase] as const] : [];
+      }),
+    );
+    const balloons = text.balloons.map((b) => {
+      const erase = erases.get(b.id);
+      return erase ? { ...b, erase: { ...eraseData(erase, gt), fit: boxToRatio(tupleBox(erase.fit), gt) } } : b;
+    });
+    // 原尺寸顯示，Page 像素＝畫面 px
+    await render(page, id, gt.width, [{ sub, text: { ...text, balloons } }]);
+
+    const anchor = await anchorRect(page);
+    const spans = await page.evaluate(() =>
+      [...document.querySelector('[data-naruhodo-overlay]')!.shadowRoot!.querySelectorAll<HTMLElement>('[data-balloon-id]')].map((el) => {
+        const r = el.firstElementChild!.getBoundingClientRect();
+        return { id: el.dataset.balloonId!, x: r.x, y: r.y, w: r.width, h: r.height };
+      }),
+    );
+    expect(spans.filter((s) => erases.has(s.id)).length).toBeGreaterThan(0);
+    for (const span of spans) {
+      const erase = erases.get(span.id);
+      if (!erase) continue;
+      const [ex, ey, ew] = erase.box;
+      // 譯文外框（往內 1px 容許次像素誤差）蓋到的每個像素，都要在擦除小圖的 alpha 裡
+      let outside = 0;
+      for (let y = Math.ceil(span.y - anchor.y + 1); y < Math.floor(span.y - anchor.y + span.h - 1); y++)
+        for (let x = Math.ceil(span.x - anchor.x + 1); x < Math.floor(span.x - anchor.x + span.w - 1); x++) {
+          const [lx, ly] = [x - ex, y - ey];
+          if (lx < 0 || ly < 0 || lx >= ew || ly >= erase.box[3] || erase.rgba[(ly * ew + lx) * 4 + 3] === 0) outside++;
+        }
+      expect.soft(outside, `${span.id} 的譯文有 ${outside} 個像素在擦除範圍外`).toBe(0);
+    }
+  });
+
   test('譯文太長時截斷，字級仍不小於畫面 9px，滑過時 tooltip 顯示原文＋ルビ＋譯文全文', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
@@ -142,6 +287,34 @@ test.describe('覆蓋渲染（ground truth）', () => {
     await expect(tooltip).toContainText('讀音為推測');
     await page.mouse.move(1, 1);
     await expect(tooltip).toBeHidden();
+  });
+
+  // unit 測不到的：真的 DOM 上截圖時哪些元素看得到，以及 coveredRects 量到的是畫面上的擦除與譯文
+  test('長 Page 截圖時擦除與譯文留著、tooltip 與高亮框藏起來；covered 是畫面上的擦除與譯文', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    await render(page, 'p01-basic', PAGE_WIDTH);
+    const [text] = await overlayTexts(page);
+    const tooltip = page.locator('[data-naruhodo-overlay] .tip');
+    const highlight = page.locator('[data-naruhodo-overlay] .hl');
+    await page.mouse.move(text!.rect.x + text!.rect.width / 2, text!.rect.y + text!.rect.height / 2);
+    await expect(tooltip).toBeVisible();
+    await expect(highlight).toBeVisible();
+
+    await page.evaluate(() => globalThis.__overlayCapture('hide', true));
+    await expect(tooltip).toBeHidden();
+    await expect(highlight).toBeHidden();
+    await expect(page.locator('[data-naruhodo-overlay] .tx').first()).toBeVisible();
+    const covered = await page.evaluate(() => globalThis.__overlayCovered());
+    expect(covered).toHaveLength(await page.locator('[data-naruhodo-overlay] .er, [data-naruhodo-overlay] .tx').count());
+    const anchor = await anchorRect(page);
+    for (const r of covered) {
+      expect(r.y).toBeGreaterThanOrEqual(anchor.y - 1);
+      expect(r.y + r.height).toBeLessThanOrEqual(anchor.y + anchor.height + 1);
+    }
+
+    await page.evaluate(() => globalThis.__overlayCapture('restore', true));
+    await expect(tooltip).toBeVisible();
   });
 
   test('學習時 Loose Text 的 tooltip 也有「譯」區塊、滑進才揭露；unreadable 的句子沒有「譯」區塊', async ({ context, extensionId }) => {

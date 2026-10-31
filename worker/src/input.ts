@@ -51,12 +51,26 @@ function note(v: unknown): NotesEntry | undefined {
   return entry;
 }
 
+/** 作品名是讀者打的 Series 名稱，會原樣放進 user message；比這長的不是作品名。 */
+const MAX_SERIES_NAME = 200;
+
 export function parseTranslateInput(body: unknown): TranslateInput | undefined {
   if (!isObject(body)) return undefined;
+  const { seriesName } = body;
+  if (seriesName !== undefined && !(isString(seriesName) && seriesName.length <= MAX_SERIES_NAME)) return undefined;
   const seriesNotes = all(body.seriesNotes, note);
   const priorPages = all(body.priorPages, priorPage);
   const items = all(body.items, item);
-  return seriesNotes && priorPages && items && { seriesNotes, priorPages, items };
+  if (!seriesNotes || !priorPages || !items) return undefined;
+  // 接續哪一頁只影響扣不扣頁，不對就當作沒帶（照常扣）
+  const page = body.pageUsageRecordId;
+  return {
+    ...(seriesName === undefined ? {} : { seriesName }),
+    seriesNotes,
+    priorPages,
+    items,
+    ...(Number.isSafeInteger(page) ? { pageUsageRecordId: page as number } : {}),
+  };
 }
 
 export function parseNotesInput(body: unknown): NotesInput | undefined {

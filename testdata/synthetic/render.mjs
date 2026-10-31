@@ -41,6 +41,11 @@ try {
 
     const gt = await page.evaluate((s) => window.groundTruth(s), spec);
     await page.screenshot({ path: path.join(outDir, `${spec.id}.png`) });
+    if (spec.blank) {
+      // Same Page without the text: what a perfect erase would leave behind.
+      await page.evaluate(() => document.querySelectorAll("[data-text-id]").forEach((el) => (el.style.visibility = "hidden")));
+      await page.screenshot({ path: path.join(outDir, `${spec.id}-blank.png`) });
+    }
     await writeFile(path.join(outDir, `${spec.id}.json`), JSON.stringify(gt, null, 2) + "\n");
     console.log(`${spec.id}: ${gt.texts.length} texts, ${gt.panels.length} panels`);
     await page.close();

@@ -10,6 +10,7 @@ import p05 from '../../testdata/synthetic/out/p05-dense.json' with { type: 'json
 import p06 from '../../testdata/synthetic/out/p06-horizontal.json' with { type: 'json' };
 import p07 from '../../testdata/synthetic/out/p07-spread.json' with { type: 'json' };
 import p08 from '../../testdata/synthetic/out/p08-action.json' with { type: 'json' };
+import p09 from '../../testdata/synthetic/out/p09-erase.json' with { type: 'json' };
 import type { GroundTruthText } from '../shared/fake-translator.ts';
 
-export const SYNTHETIC_GROUND_TRUTH: { texts: GroundTruthText[] }[] = [p01, p02, p03, p04, p05, p06, p07, p08];
+export const SYNTHETIC_GROUND_TRUTH: { texts: GroundTruthText[] }[] = [p01, p02, p03, p04, p05, p06, p07, p08, p09];

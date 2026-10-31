@@ -35,3 +35,35 @@ export function pageCandidateRejection(rect: Rect, viewport: Size, clips: readon
   if (!clips.every((clip) => contains(clip, rect))) return 'clipped';
   return undefined;
 }
+
+/** 可見範圍：viewport 與每個裁切祖先的交集。 */
+function visibleRange(viewport: Size, clips: readonly Rect[]): Rect {
+  let left = 0;
+  let top = 0;
+  let right = viewport.width;
+  let bottom = viewport.height;
+  for (const clip of clips) {
+    left = Math.max(left, clip.x);
+    top = Math.max(top, clip.y);
+    right = Math.min(right, clip.x + clip.width);
+    bottom = Math.min(bottom, clip.y + clip.height);
+  }
+  return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+}
+
+/**
+ * 直式捲動的長 Page（ADR 0004、spec #142）：比可見範圍高、寬度完整放得下的 img／canvas，回傳看得到的那一截
+ * （anchor rect ∩ viewport ∩ 裁切祖先）；不是長 Page 時 undefined，照「完整可見」的規則判斷。
+ * 看得到的那一截比 MIN_PAGE_SIDE 矮（剛捲進來或快捲走）也不算：放不下一個完整的 Balloon，也沒有完整的橫條認身分。
+ * 刻意整個不當候選（一般 Page 的規則要完整可見，也不會收它）：捲到露出夠高、下次捲動停下就會處理。
+ */
+export function longPageVisible(rect: Rect, viewport: Size, clips: readonly Rect[] = []): Rect | undefined {
+  if (rect.width < MIN_PAGE_SIDE) return undefined;
+  const range = visibleRange(viewport, clips);
+  if (rect.height <= range.height + VIEWPORT_TOLERANCE) return undefined;
+  if (rect.x < range.x - VIEWPORT_TOLERANCE || rect.x + rect.width > range.x + range.width + VIEWPORT_TOLERANCE) return undefined;
+  const top = Math.max(rect.y, range.y);
+  const bottom = Math.min(rect.y + rect.height, range.y + range.height);
+  if (bottom - top < MIN_PAGE_SIDE) return undefined;
+  return { x: rect.x, y: top, width: rect.width, height: bottom - top };
+}

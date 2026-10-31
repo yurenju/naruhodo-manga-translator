@@ -59,7 +59,8 @@ export function createScanner(deps: ScannerDeps) {
 
   /** 覆蓋層顯示中的 anchor 上面是哪個 Page。 */
   const shownPage = (c: PageCandidate) => (c.overlaid?.length === 1 ? c.overlaid[0] : undefined);
-  const withOverlay = (candidates: PageCandidate[]) => candidates.filter((c) => (c.overlaid?.length ?? 0) > 0);
+  /** 長 Page（c.visible）不算：它的覆蓋層截圖時本來就不藏，身分也不靠 hash（spec #142）。 */
+  const withOverlay = (candidates: PageCandidate[]) => candidates.filter((c) => !c.visible && (c.overlaid?.length ?? 0) > 0);
 
   /** 覆蓋層顯示中的 anchor 都記過帶覆蓋層的樣子，這次就不必藏覆蓋層。 */
   function canKeepOverlay(tabId: number, candidates: PageCandidate[]): boolean {

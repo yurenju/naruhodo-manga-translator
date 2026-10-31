@@ -27,8 +27,8 @@ test('錄下真模型在合成頁上的結果', async ({ context, extensionId, m
       recorded.push({
         id,
         rect: [x, y, width, height],
-        balloons: text.balloons.map(({ balloonBbox, textBbox, 原文 }) => ({ balloonBbox, textBbox, 原文 })),
-        looseText: text.looseText.map(({ bbox, 原文 }) => ({ bbox, 原文 })),
+        balloons: text.balloons.map(({ balloonBbox, textBbox, 原文, ocrConfidence }) => ({ balloonBbox, textBbox, 原文, ocrConfidence })),
+        looseText: text.looseText.map(({ bbox, 原文, ocrConfidence }) => ({ bbox, 原文, ocrConfidence })),
       });
       console.log(`${id} [${x}, ${y}, ${width}, ${height}]：${text.balloons.length} 個 Balloon、${text.looseText.length} 段 Loose Text`);
     }

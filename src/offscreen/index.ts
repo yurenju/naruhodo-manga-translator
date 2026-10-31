@@ -1,7 +1,7 @@
 // offscreen document：裁切截圖、Page hash、偵測＋OCR＋閱讀順序、呼叫 LLM（spec #27 第 2 節）。
 // 由 SW 在需要時用 chrome.offscreen.createDocument 建立，manifest 不必宣告。
 import { SYNTHETIC_GROUND_TRUTH } from '../background/synthetic-ground-truth.ts';
-import { ERASE_PADDING } from '../content/overlay-layout.ts';
+import { boxToRatio, ERASE_PADDING, expandBox, ratioToBox, tupleBox } from '../content/overlay-layout.ts';
 import { indexedDbApiKeyStore } from '../shared/api-key-store.ts';
 import { createFakeTranslator } from '../shared/fake-translator.ts';
 import type {
@@ -12,21 +12,26 @@ import type {
   FakeTranslatorConfig,
   Message,
   ModelStatus,
+  PageCandidate,
   PageThumb,
   Rect,
+  Size,
   TestConnectionResponse,
   TranslateResponse,
   ProposeNotesResponse,
 } from '../shared/messages.ts';
+import { rejectInSlice, sliceOf, stripeFingerprint, toPageText } from '../shared/long-page.ts';
 import { pageHash, type GrayImage } from '../shared/page-hash.ts';
-import type { PageText } from '../shared/page-text.ts';
+import type { BalloonText, EraseData, LooseText, PageText, RatioRect } from '../shared/page-text.ts';
+import { grayOfRgba, type RgbaImage } from '../shared/pixels.ts';
 import { createTrace } from '../shared/trace.ts';
 import type { NotesInput, NotesOutput, TranslateInput, TranslateOutput } from '../shared/translator.ts';
 import { createClaudeTranslator } from './claude-translator.ts';
 import { subImageRect, thumbnailSize, toImageRect, toSubRect } from './crop.ts';
 import { eraseLuminance } from './erase-color.ts';
+import { eraseImage, eraseLooseText, meanLuminance, type EraseImage } from './erase-image.ts';
 import { createLocalPipeline } from './local-pipeline.ts';
-import { createPageImage } from './page-image.ts';
+import { pageRgba } from './page-image.ts';
 import { cropImage, splitSpread } from './spread.ts';
 
 const trace = createTrace('offscreen');
@@ -42,6 +47,7 @@ async function crop({ screenshot, viewport, candidates }: CropRequest): Promise<
   const bitmap = await createImageBitmap(await (await fetch(screenshot)).blob());
   try {
     return candidates.flatMap((candidate) => {
+      if (candidate.visible) return [longPageThumb(bitmap, viewport, candidate, candidate.visible)];
       const src = toImageRect(candidate.rect, viewport, bitmap);
       const gray = grayOf(bitmap, src);
       const pages = splitSpread(gray);
@@ -66,15 +72,32 @@ async function crop({ screenshot, viewport, candidates }: CropRequest): Promise<
   }
 }
 
-/** 全解析度的裁切轉灰階（0.299/0.587/0.114，跟本機流水線一致）。縮小交給 pageHash 自己做，Node 的單元測試才算得一樣。 */
+/**
+ * 長 Page（spec #142）：只裁看得到的那一截，不切 Spread、不去黑邊。身分是這一截裡完整看得到的橫條指紋；
+ * pageHash 先放第一條的 hash，transcriber 認出是哪個 Page 後換掉。
+ */
+function longPageThumb(bitmap: ImageBitmap, viewport: Size, candidate: PageCandidate, visible: Rect): PageThumb {
+  const src = toImageRect(visible, viewport, bitmap);
+  const scale = bitmap.height / viewport.height;
+  // Page 的上緣在截圖裡的位置（可能在截圖外面，不夾）
+  const pageTop = candidate.rect.y * scale;
+  // 自己的覆蓋層蓋住的列，換成 Page 裡的像素
+  const covered = (candidate.covered ?? []).map((r) => ({ top: r.y * scale - pageTop, bottom: (r.y + r.height) * scale - pageTop }));
+  const stripes = stripeFingerprint(grayOf(bitmap, src), src.y - pageTop, covered);
+  const size = thumbnailSize(src, THUMBNAIL_WIDTH);
+  const thumbnail = pngDataUrl(size, (ctx) => {
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, src.x, src.y, src.width, src.height, 0, 0, size.width, size.height);
+  });
+  return { ...candidate, thumbnail, pageHash: stripes[0]?.hash ?? '', stripes };
+}
+
+/** 全解析度的裁切轉灰階。縮小交給 pageHash 自己做，Node 的單元測試才算得一樣。 */
 function grayOf(bitmap: ImageBitmap, rect: Rect): GrayImage {
   const canvas = new OffscreenCanvas(rect.width, rect.height);
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
-  const { data } = ctx.getImageData(0, 0, rect.width, rect.height);
-  const gray = new Uint8Array(rect.width * rect.height);
-  for (let i = 0; i < gray.length; i++) gray[i] = Math.round(0.299 * data[i * 4]! + 0.587 * data[i * 4 + 1]! + 0.114 * data[i * 4 + 2]!);
-  return { gray, width: rect.width, height: rect.height };
+  return grayOfRgba(ctx.getImageData(0, 0, rect.width, rect.height).data, rect.width, rect.height);
 }
 
 /**
@@ -106,36 +129,86 @@ const pipeline = createLocalPipeline({
  * 從截圖裁出全解析度的 Page（Spread 的一頁用 subRect）跑本機流水線（座標換算與縮圖相同）；順便從同一張截圖算每個 Balloon 的擦除底色
  * （原地覆蓋用，canvas 網站的 canvas 是 tainted，content script 讀不到像素）。
  */
-async function analyze({ screenshot, viewport, candidate, subRect, pipeline: config }: AnalyzeRequest): Promise<PageText> {
+async function analyze({ screenshot, viewport, candidate, subRect, collected = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
   if (__E2E__ && config) pipeline.configure(config);
   const bitmap = await createImageBitmap(await (await fetch(screenshot)).blob());
   try {
-    const candidateRect = toImageRect(candidate.rect, viewport, bitmap);
+    const candidateRect = toImageRect(candidate.visible ?? candidate.rect, viewport, bitmap);
     const rect = subRect ? subImageRect(candidateRect, subRect) : candidateRect;
+    // 長 Page（spec #142）：只跑看得到的那一截，被切到的與已收過的框不做 OCR
+    const slice = candidate.visible && sliceOf(candidate.rect, candidate.visible);
+    const rejected: { box: RatioRect; reason: string }[] = [];
+    const accept = slice
+      ? (box: RatioRect) => {
+          const reason = rejectInSlice(box, slice, rect.height, collected);
+          if (reason) rejected.push({ box, reason });
+          return reason === undefined;
+        }
+      : undefined;
     const startedAt = performance.now();
-    const text = await pipeline.analyze(bitmap, rect);
+    const analyzed = await pipeline.analyze(bitmap, rect, accept);
+    // 被切到、重疊而不收的框；tooTall＝比可見範圍還高，永遠收不到（已知限制）
+    if (__DEBUG__ && slice && rejected.length > 0) trace('longPage:rejected', { anchorId: candidate.anchorId, slice, rejected });
+    const eraseStartedAt = performance.now();
+    const rgba = pageRgba(bitmap, rect);
+    const text = { balloons: eraseBalloons(analyzed.balloons, rgba), looseText: eraseLoose(analyzed.looseText, rgba) };
     if (__DEBUG__) {
       trace('analyze', {
         anchorId: candidate.anchorId,
         subRect,
         imageRect: rect,
         ms: Math.round(performance.now() - startedAt),
-        balloons: text.balloons.map(({ id, order, orientation, 原文, balloonBbox, textBbox }) => ({ id, order, orientation, 原文, balloonBbox, textBbox })),
-        looseText: text.looseText.map(({ id, order, orientation, 原文, bbox }) => ({ id, order, orientation, 原文, bbox })),
+        // 擦除小圖（Balloon #149、Loose Text #151）佔的時間，已含在 ms 裡
+        eraseMs: Math.round(performance.now() - eraseStartedAt),
+        eraseFallbacks: text.balloons.filter((b) => !b.erase).map((b) => b.id),
+        balloons: text.balloons.map(({ id, order, orientation, 原文, ocrConfidence, balloonBbox, textBbox }) => ({ id, order, orientation, 原文, ocrConfidence, balloonBbox, textBbox })),
+        looseText: text.looseText.map(({ id, order, orientation, 原文, ocrConfidence, bbox }) => ({ id, order, orientation, 原文, ocrConfidence, bbox })),
+        // 這時還沒翻譯，unreadable 只會來自 OCR 信心門檻（ADR 0009）
+        lowConfidence: [...text.balloons, ...text.looseText].filter((t) => t.unreadable).length,
         detections: detectionImage(bitmap, rect, text),
       });
     }
-    const image = createPageImage(bitmap, rect).gray();
-    const balloons = text.balloons.map((b) => {
-      const box = { x: b.textBbox.x * image.width, y: b.textBbox.y * image.height, w: b.textBbox.w * image.width, h: b.textBbox.h * image.height };
-      const pad = ERASE_PADDING;
-      return { ...b, eraseLuminance: eraseLuminance(image, { x: box.x - pad, y: box.y - pad, w: box.w + 2 * pad, h: box.h + 2 * pad }) };
-    });
-    return { ...text, balloons };
+    // 長 Page：這一截的座標換成 Page 座標，transcriber 併進整個 Page
+    return slice ? toPageText(text, slice) : text;
   } finally {
     bitmap.close();
   }
 }
+
+/**
+ * 每個 Balloon 的擦除底色（文字色與矩形退路用）與擦除小圖（#149）。小圖編成 PNG data URL 才能隨 PageText
+ * 走 messaging、存進快取；中央找不到底色時沒有小圖，覆蓋層退回矩形。
+ */
+function eraseBalloons(balloons: BalloonText[], page: RgbaImage): BalloonText[] {
+  const gray = grayOfRgba(page.data, page.width, page.height);
+  return balloons.map((b) => {
+    const text = ratioToBox(b.textBbox, page);
+    const luminance = eraseLuminance(gray, expandBox(text, ERASE_PADDING));
+    const erase = eraseImage(page, ratioToBox(b.balloonBbox, page), text);
+    // 排版矩形（#150）只有 Balloon 有；Loose Text 的排版區是文字框本身
+    return erase ? { ...b, eraseLuminance: luminance, erase: { ...encodeErase(erase, page), fit: boxToRatio(tupleBox(erase.fit), page) } } : { ...b, eraseLuminance: luminance };
+  });
+}
+
+/**
+ * Loose Text 的擦除小圖與字色用的平均亮度（#151）。翻譯前還不知道哪段是 Sound Effect，所以 unreadable 以外的都算；
+ * 要不要覆蓋由 content script 決定（overlaidTexts）。
+ */
+function eraseLoose(looseText: LooseText[], page: RgbaImage): LooseText[] {
+  return looseText.map((l) => {
+    if (l.unreadable) return l;
+    const erase = eraseLooseText(page, ratioToBox(l.bbox, page));
+    return { ...l, eraseLuminance: Math.round(meanLuminance(erase)), erase: encodeErase(erase, page) };
+  });
+}
+
+/** 小圖編成 PNG data URL 才能隨 PageText 走 messaging、存進快取；位置換成相對 Page 的比例。 */
+function encodeErase({ box, rgba }: EraseImage, page: RgbaImage): EraseData {
+  const [, , w, h] = box;
+  const image = pngDataUrl({ width: w, height: h }, (ctx) => ctx.putImageData(new ImageData(rgba, w, h), 0, 0));
+  return { box: boxToRatio(tupleBox(box), page), image };
+}
+
 
 /**
  * debug build 才用：裁好的 Page 疊上偵測結果（藍＝Balloon 外框、紅＝文字框、綠＝Loose Text，數字是閱讀順序），

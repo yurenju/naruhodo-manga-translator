@@ -34,6 +34,8 @@ export interface TranslatedLine {
 export type PriorPage = TranslatedLine[];
 
 export interface TranslateInput {
+  /** 讀者為 Series 取的名稱；Provisional Series 的名稱是自動產生的，不送。 */
+  seriesName?: string;
   /** v1 整份送。 */
   seriesNotes: NotesEntry[];
   /** 只用來理解前後文，不翻譯（ADR 0005）。 */
@@ -45,6 +47,11 @@ export interface TranslateInput {
     原文: string;
     orientation: Orientation;
   }[];
+  /**
+   * 只有 Hosted Translation 的長 Page 接續請求有（spec #142「計費」）：同一個 Page 前一次 ① 的 TranslateOutput.usageRecordId，
+   * Worker 在條件內只記用量、不扣頁（不進 prompt）。
+   */
+  pageUsageRecordId?: number;
 }
 
 /** ② 的輸入：這一頁的原文與 ① 的譯文（unreadable 的不送）。 */
@@ -80,8 +87,12 @@ export interface CallInfo {
 }
 
 export interface TranslateOutput extends CallInfo {
-  items: { id: string; 讀音: string; 譯文: string; unreadable: boolean }[];
-  /** 只有 Hosted Translation 有：Worker 這次翻譯的用量紀錄 id，同一頁的 Notes 請求帶回去（NotesInput.pageUsageRecordId）。 */
+  /** sfx：LLM 判斷是 Sound Effect（#151）。部署中的舊版 Worker 不回，當成不知道（Loose Text 不覆蓋）。 */
+  items: { id: string; 讀音: string; 譯文: string; unreadable: boolean; sfx?: boolean }[];
+  /**
+   * 只有 Hosted Translation 有：這一頁扣頁的那次翻譯的用量紀錄 id（接續請求回的是被接續的那筆）。同一頁的 Notes 請求、
+   * 長 Page 的接續請求帶回去（NotesInput／TranslateInput 的 pageUsageRecordId）。
+   */
   usageRecordId?: number;
 }
 

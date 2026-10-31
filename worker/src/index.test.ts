@@ -25,7 +25,7 @@ beforeEach(async () => {
 /** 帶這個測試登入拿到的 token；token: null＝不帶。 */
 const post = (path: string, body: unknown, as: string | null = token) => postAs(path, body, as === null ? {} : { token: as });
 
-const answer = { items: [{ id: 'b1', reading: 'おはよう！きょうははやいね', zh: '早安！今天好早喔', unreadable: false }] };
+const answer = { items: [{ id: 'b1', reading: 'おはよう！きょうははやいね', zh: '早安！今天好早喔', unreadable: false, sfx: false }] };
 
 const ok = reply(answer);
 
@@ -102,6 +102,26 @@ describe('翻譯', () => {
 
     expect(missing.status).toBe(400);
     expect(wrongType.status).toBe(400);
+    expect(anthropic).not.toHaveBeenCalled();
+  });
+
+  it('作品名轉給 Anthropic，跟外掛直接送的 request 一樣', async () => {
+    const anthropic = fakeAnthropic([ok]);
+
+    const response = await post(TRANSLATE_PATH, { ...input, seriesName: '星屑バンド' });
+
+    expect(response.status).toBe(200);
+    expect(anthropic.calls[0]!.body).toEqual(translateRequest({ ...input, seriesName: '星屑バンド' }));
+  });
+
+  it('作品名不是字串或超過 200 字回 400，不呼叫 Anthropic', async () => {
+    const anthropic = vi.spyOn(globalThis, 'fetch');
+
+    const wrongType = await post(TRANSLATE_PATH, { ...input, seriesName: ['星屑バンド'] });
+    const tooLong = await post(TRANSLATE_PATH, { ...input, seriesName: 'あ'.repeat(201) });
+
+    expect(wrongType.status).toBe(400);
+    expect(tooLong.status).toBe(400);
     expect(anthropic).not.toHaveBeenCalled();
   });
 

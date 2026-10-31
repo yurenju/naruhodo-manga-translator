@@ -20,8 +20,9 @@ export interface RecordedOcr {
   id: string;
   /** 合成圖裡的範圍 [x, y, w, h]（像素）。 */
   rect: PixelBox;
-  balloons: { balloonBbox: RatioRect; textBbox: RatioRect; 原文: string }[];
-  looseText: { bbox: RatioRect; 原文: string }[];
+  /** ocrConfidence：真模型讀到的非標點字最低信心（ADR 0009）。 */
+  balloons: { balloonBbox: RatioRect; textBbox: RatioRect; 原文: string; ocrConfidence?: number }[];
+  looseText: { bbox: RatioRect; 原文: string; ocrConfidence?: number }[];
 }
 
 const THUMB = 32;
@@ -105,7 +106,7 @@ export async function createFakeEngine(recorded: readonly RecordedOcr[], imageUr
 /** 認頁之後的部分：錄製的框換回 Page 像素當成偵測結果，recognize 用框對回錄到的字（unit test 直接用 Node 版的 matcher）。 */
 export function engineFrom(match: ReturnType<typeof createPageMatcher>, delayMs = 0): OrtEngine {
   /** detect 認出的頁上每段文字（Page 像素），給接下來的 recognize 對回原文。 */
-  const recognized = new WeakMap<PageImage, { textBbox: PixelBox; 原文: string }[]>();
+  const recognized = new WeakMap<PageImage, { textBbox: PixelBox; 原文: string; ocrConfidence?: number }[]>();
 
   return {
     executionProvider: 'wasm',
@@ -120,8 +121,8 @@ export function engineFrom(match: ReturnType<typeof createPageMatcher>, delayMs 
       const toPage = ({ x, y, w, h }: RatioRect): PixelBox => [ax + x * aw, ay + y * ah, w * aw, h * ah];
       const same = (a: RatioRect, b: RatioRect) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
       recognized.set(image, [
-        ...balloons.map((b) => ({ textBbox: toPage(b.textBbox), 原文: b.原文 })),
-        ...looseText.map((l) => ({ textBbox: toPage(l.bbox), 原文: l.原文 })),
+        ...balloons.map((b) => ({ textBbox: toPage(b.textBbox), 原文: b.原文, ocrConfidence: b.ocrConfidence })),
+        ...looseText.map((l) => ({ textBbox: toPage(l.bbox), 原文: l.原文, ocrConfidence: l.ocrConfidence })),
       ]);
       return [
         // 沒有外框的 Balloon（偵測到 text_bubble、沒有 bubble）錄下來時 balloonBbox 等於 textBbox
@@ -134,13 +135,14 @@ export function engineFrom(match: ReturnType<typeof createPageMatcher>, delayMs 
     },
     async recognize(image, boxes) {
       const texts = recognized.get(image) ?? [];
+      // 只錄了每段的最低信心，所以每個字都給這個值：analyzePage 算出來的最低信心就等於錄下來的
       return boxes.map((box) => {
-        let best = { 原文: '', cover: 0 };
+        let best: { 原文: string; ocrConfidence?: number; cover: number } = { 原文: '', cover: 0 };
         for (const t of texts) {
           const cover = intersection(box, t.textBbox) / area(t.textBbox);
-          if (cover > best.cover) best = { 原文: t.原文, cover };
+          if (cover > best.cover) best = { ...t, cover };
         }
-        return best.原文;
+        return { text: best.原文, confidences: [...best.原文].map(() => best.ocrConfidence ?? 1) };
       });
     },
   };

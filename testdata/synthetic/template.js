@@ -63,13 +63,36 @@ function drawBalloon(svg, b) {
   const stroke = "#111";
   const common = { fill, stroke, "stroke-width": 3 };
   const tail = tailPath(b);
-  if (tail && b.shape !== "thought") svgEl("path", { d: tail, ...common }, g);
+  if (tail && b.shape !== "thought" && b.shape !== "flash") svgEl("path", { d: tail, ...common }, g);
 
   switch (b.shape) {
     case "ellipse":
     case "inverted":
       svgEl("ellipse", { cx: b.cx, cy: b.cy, rx: b.w / 2, ry: b.h / 2, ...common }, g);
       break;
+    case "gradient": { // vertical gradient fill, b.gradient = [top color, bottom color]
+      const id = `grad-${b.id}`;
+      const lg = svgEl("linearGradient", { id, x1: 0, y1: 0, x2: 0, y2: 1 }, svg.querySelector("defs"));
+      svgEl("stop", { offset: 0, "stop-color": b.gradient[0] }, lg);
+      svgEl("stop", { offset: 1, "stop-color": b.gradient[1] }, lg);
+      svgEl("ellipse", { cx: b.cx, cy: b.cy, rx: b.w / 2, ry: b.h / 2, ...common, fill: `url(#${id})` }, g);
+      break;
+    }
+    case "flash": { // no outline: a white area bounded by radiating lines
+      const rand = rng(b.seed ?? 9);
+      const n = 90;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + rand() * 0.03;
+        const k0 = 1.0 + rand() * 0.08;
+        const k1 = 1.35 + rand() * 0.25;
+        svgEl("path", {
+          d: `M${b.cx + Math.cos(a) * (b.w / 2) * k0},${b.cy + Math.sin(a) * (b.h / 2) * k0} L${b.cx + Math.cos(a) * (b.w / 2) * k1},${b.cy + Math.sin(a) * (b.h / 2) * k1}`,
+          stroke: "#111", "stroke-width": 1.5,
+        }, g);
+      }
+      svgEl("ellipse", { cx: b.cx, cy: b.cy, rx: b.w / 2, ry: b.h / 2, fill: "#fff", stroke: "none" }, g);
+      break;
+    }
     case "whisper":
       svgEl("ellipse", {
         cx: b.cx, cy: b.cy, rx: b.w / 2, ry: b.h / 2, ...common,
@@ -245,6 +268,8 @@ window.build = function build(spec) {
       css += `-webkit-text-stroke:${Math.max(2, size / 14)}px #111;color:#fff;paint-order:stroke fill;letter-spacing:-0.05em;`;
       if (t.color === "black") css += "color:#111;-webkit-text-stroke:0;";
     }
+    // Black text with a white outline, as monologue over line art often is.
+    if (t.outline === "white") css += `-webkit-text-stroke:${Math.max(3, size / 6)}px #fff;paint-order:stroke fill;`;
     if (t.skew) css += `font-style:italic;`;
     if (t.rough) css += `filter:url(#rough);`;
     div.style.cssText = css;

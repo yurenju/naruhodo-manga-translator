@@ -15,8 +15,11 @@ function whitePage(): PageImage {
   };
 }
 
+/** OCR 讀到的一段：每個字的信心依序列出；只給字串時每個字都是 0.99。 */
+type FakeOcr = string | { text: string; confidences: number[] };
+
 /** 假的模型：偵測回傳固定的框；OCR 依裁切框的左緣查表。 */
-function fakeEngine(detections: Detection[], textsByLeft: Record<number, string>): Engine & { crops: PixelBox[] } {
+function fakeEngine(detections: Detection[], textsByLeft: Record<number, FakeOcr>): Engine & { crops: PixelBox[] } {
   const crops: PixelBox[] = [];
   return {
     crops,
@@ -24,8 +27,8 @@ function fakeEngine(detections: Detection[], textsByLeft: Record<number, string>
     recognize: async (_image, boxes) => {
       crops.push(...boxes);
       return boxes.map((b) => {
-        const entry = Object.entries(textsByLeft).find(([left]) => Math.abs(Number(left) - b[0]) < 30);
-        return entry?.[1] ?? '';
+        const ocr = Object.entries(textsByLeft).find(([left]) => Math.abs(Number(left) - b[0]) < 30)?.[1] ?? '';
+        return typeof ocr === 'string' ? { text: ocr, confidences: [...ocr].map(() => 0.99) } : ocr;
       });
     },
   };
@@ -58,6 +61,7 @@ describe('analyzePage：偵測結果 → Balloon／Loose Text', () => {
         讀音來源: 'kuromoji',
         譯文: '',
         unreadable: false,
+        ocrConfidence: 0.99,
       },
     ]);
     expect(page.looseText).toEqual([
@@ -71,6 +75,7 @@ describe('analyzePage：偵測結果 → Balloon／Loose Text', () => {
         讀音來源: 'kuromoji',
         譯文: '',
         unreadable: false,
+        ocrConfidence: 0.99,
       },
     ]);
   });
@@ -113,5 +118,54 @@ describe('analyzePage：偵測結果 → Balloon／Loose Text', () => {
 
     // pad = round(100 × 0.08) + 2 = 10；左邊夾到 0，寬度維持 100＋2×10（跟 #7 的 prototype 一樣）
     expect(engine.crops).toEqual([[0, 90, 120, 320]]);
+  });
+
+  it('accept 不收的框（長 Page 被切到或已收過的）不做 OCR、不出現在結果，順序照收下的編', async () => {
+    const engine = fakeEngine(
+      [
+        det('bubble', [600, 0, 300, 400]),
+        det('text_bubble', [700, 50, 100, 300]),
+        det('text_bubble', [300, 1000, 50, 200]),
+      ],
+      { 700: 'きれた', 300: 'のこる' },
+    );
+
+    // 只收沒碰到上緣的框；Balloon 看的是外框
+    const page = await analyzePage(engine, whitePage(), (ja) => ja, (box) => box.y > 0);
+
+    expect(page.balloons.map((b) => [b.id, b.order, b.原文])).toEqual([['b1', 1, 'のこる']]);
+    expect(engine.crops).toHaveLength(1);
+  });
+});
+
+describe('analyzePage：OCR 信心門檻（ADR 0009）', () => {
+  /** 四個 Balloon 由右到左排開，每個 OCR 讀出 text、各字信心 confidences。 */
+  async function analyzeWith(...ocrs: { text: string; confidences: number[] }[]) {
+    const lefts = [800, 600, 400, 200];
+    const engine = fakeEngine(
+      ocrs.map((_, i) => det('text_bubble', [lefts[i]!, 100, 50, 200])),
+      Object.fromEntries(ocrs.map((ocr, i) => [lefts[i]!, ocr])),
+    );
+    return (await analyzePage(engine, whitePage(), (ja) => ja)).balloons;
+  }
+
+  it('每段記下非標點字的最低信心：標點、長音、―…〜 不算', async () => {
+    const [b1] = await analyzeWith({ text: 'えー…ほら!?―〜', confidences: [0.9, 0.01, 0.02, 0.6, 0.7, 0.03, 0.04, 0.05, 0.06] });
+
+    expect(b1!.ocrConfidence).toBe(0.6);
+  });
+
+  it('最低信心低於 0.25 的段當成 unreadable；剛好 0.25 的照常', async () => {
+    const balloons = await analyzeWith(
+      { text: 'あいう', confidences: [0.9, 0.2499, 0.9] },
+      { text: 'かきく', confidences: [0.9, 0.25, 0.9] },
+      { text: 'さ。', confidences: [0.9, 0.1] },
+    );
+
+    expect(balloons.map((b) => [b.原文, b.unreadable])).toEqual([
+      ['あいう', true],
+      ['かきく', false],
+      ['さ。', false],
+    ]);
   });
 });

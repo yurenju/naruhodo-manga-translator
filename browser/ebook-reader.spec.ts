@@ -110,6 +110,18 @@ test('Spread 切成兩頁：譯文各自落在自己的 Balloon 內；祖先 tra
   await expectAligned(page, 'p07-spread', '縮放後');
 });
 
+// 真模型在 p07 樹林上讀出的「それは、」最低信心約 0.06（錄製資料），低於門檻（ADR 0009）。只有這裡串得起
+// 錄製資料 → FakeEngine → analyze → 合併 LLM 結果 → side panel 與覆蓋；門檻本身的規則在 analyze 的 unit。
+test('OCR 信心低於門檻的段：LLM 有翻也標成無法辨識、不覆蓋；同頁其他 Balloon 照常覆蓋', async ({ context, sw, extensionId, mockSite }) => {
+  const { page, panel } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.ebookReaderUrl });
+  await waitForOverlay(page, 'p07-spread');
+
+  const lowConfidence = panel.getByRole('list', { name: '逐字稿' }).getByRole('listitem').filter({ hasText: 'それは、' });
+  await expect(lowConfidence).toContainText('無法辨識 · 未覆蓋');
+  await expect(lowConfidence.locator('[lang="zh-Hant"]')).toHaveCount(0);
+  expect(await sentOriginals(sw)).toContain('それは、');
+});
+
 test('換 src 翻頁後舊覆蓋消失、新 Spread 被翻譯；翻回來命中快取；重繪後 host 自動掛回', async ({ context, sw, extensionId, mockSite }) => {
   const { page } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.ebookReaderUrl });
   await waitForOverlay(page, 'p07-spread');

@@ -5,7 +5,7 @@ import { createFakeTranslator, NO_MATCH } from './fake-translator.ts';
 const translator = createFakeTranslator([readGroundTruth('p01-basic'), readGroundTruth('p04-outside')]);
 
 describe('FakeTranslator', () => {
-  it('依原文找到合成頁 ground truth，回傳它的讀音與譯文；OCR 錯一兩個字也找得到', async () => {
+  it('依原文找到合成頁 ground truth，回傳它的讀音與譯文，ground truth 的狀聲詞回 sfx；OCR 錯一兩個字也找得到', async () => {
     const output = await translator.translatePage({
       seriesNotes: [],
       priorPages: [],
@@ -14,13 +14,15 @@ describe('FakeTranslator', () => {
         // OCR 把「行」讀錯、少了「？」
         { id: 'b2', kind: 'balloon', 原文: '一緒に行ってもいい', orientation: 'vertical' },
         { id: 'l1', kind: 'loose', 原文: 'ハァ…ハァ…', orientation: 'vertical' },
+        { id: 'l2', kind: 'loose', 原文: 'ドドドド', orientation: 'vertical' },
       ],
     });
 
     expect(output.items).toEqual([
-      { id: 'b1', 讀音: 'おはよう！きょうははやいね', 譯文: '早安！今天好早喔', unreadable: false },
-      { id: 'b2', 讀音: 'いっしょにいってもいい？', 譯文: '我可以一起去嗎？', unreadable: false },
-      { id: 'l1', 讀音: 'ハァ…ハァ…', 譯文: '（喘氣）哈…哈…', unreadable: false },
+      { id: 'b1', 讀音: 'おはよう！きょうははやいね', 譯文: '早安！今天好早喔', unreadable: false, sfx: false },
+      { id: 'b2', 讀音: 'いっしょにいってもいい？', 譯文: '我可以一起去嗎？', unreadable: false, sfx: false },
+      { id: 'l1', 讀音: 'ハァ…ハァ…', 譯文: '（喘氣）哈…哈…', unreadable: false, sfx: false },
+      { id: 'l2', 讀音: 'ドドドド', 譯文: '（跑步聲）咚咚咚咚', unreadable: false, sfx: true },
     ]);
   });
 
@@ -31,7 +33,7 @@ describe('FakeTranslator', () => {
       items: [{ id: 'x', kind: 'balloon', 原文: '全然関係ない文章です', orientation: 'vertical' }],
     });
 
-    expect(output.items).toEqual([{ id: 'x', 讀音: '', 譯文: NO_MATCH, unreadable: false }]);
+    expect(output.items).toEqual([{ id: 'x', 讀音: '', 譯文: NO_MATCH, unreadable: false, sfx: false }]);
   });
 
   it('設定了 notes：proposeNotes 把 Balloon 原文裡出現、送來的 Notes 還沒有的條目回傳成 notes_changes.added', async () => {
@@ -88,8 +90,8 @@ describe('FakeTranslator：模擬無法辨識', () => {
     });
 
     expect(output.items).toEqual([
-      { id: 'b1', 讀音: '', 譯文: '', unreadable: true },
-      { id: 'b2', 讀音: 'いいにおい！', 譯文: '好香！', unreadable: false },
+      { id: 'b1', 讀音: '', 譯文: '', unreadable: true, sfx: false },
+      { id: 'b2', 讀音: 'いいにおい！', 譯文: '好香！', unreadable: false, sfx: false },
     ]);
   });
 });

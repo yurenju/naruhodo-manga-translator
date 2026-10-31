@@ -30,7 +30,7 @@ import {
 } from '../../src/shared/hosted-api.ts';
 import type { CallInfo, Translator } from '../../src/shared/translator.ts';
 import { accountEmail, authenticate, deleteAccount, revokeSession, sendCode, verifyCode } from './auth.ts';
-import { deductPage, monthlyLimit, quota, recordUsage, setFreePages, type QuotaContext, type UsageKind } from './quota.ts';
+import { continuable, deductPage, monthlyLimit, quota, recordUsage, setFreePages, type QuotaContext, type UsageKind } from './quota.ts';
 import { parseNotesInput, parseTranslateInput } from './input.ts';
 import { lastSentCode, mailer } from './mailer.ts';
 import { paddle, PaddleError, verifyWebhook } from './paddle.ts';
@@ -109,9 +109,12 @@ const llm =
     const input = parse(await jsonBody(request));
     if (input === undefined) return invalid();
     const charged = kind === 'translate';
+    const page = pageRecord(input);
     if (charged) {
       const before = await quota(env.DB, accountId, quotaContext(env, now));
-      if (before.remaining === 0) return exhausted(before.plan);
+      // 額度用完時，條件內的長 Page 接續照樣翻（刻意的）：一張長圖只扣一個 Translated Page，這一頁已經扣過，
+      // 擋下來會讓讀者付過的頁翻到一半。濫用的空間由接續條件限住（同一個 Account、1 小時內、最多 10 次，quota.ts）
+      if (before.remaining === 0 && !(page !== undefined && (await continuable(env.DB, accountId, page, now)))) return exhausted(before.plan);
     }
     let output: CallInfo;
     try {
@@ -120,10 +123,14 @@ const llm =
       // Anthropic 重試後仍失敗，或回答不符合 schema
       return error(502, e instanceof Error ? e.message : String(e));
     }
-    const usageRecordId = await recordUsage(env.DB, accountId, kind, output.usage, now, pageRecord(input));
-    if (charged && !(await deductPage(env.DB, accountId, quotaContext(env, now)))) return exhausted((await quota(env.DB, accountId, quotaContext(env, now))).plan);
-    // 翻譯回應帶回用量紀錄 id：同一頁的 Notes 請求帶回來，Notes 的成本才歸得到這一頁
-    return Response.json(charged ? { ...output, usageRecordId } : output);
+    const record = await recordUsage(env.DB, accountId, kind, output.usage, now, page);
+    // 翻譯記到了被接續的那一頁＝長 Page 的接續，不扣頁；其他翻譯（含超過接續上限的）扣一頁
+    const continued = record.pageRecordId !== undefined;
+    if (charged && !continued && !(await deductPage(env.DB, accountId, quotaContext(env, now)))) {
+      return exhausted((await quota(env.DB, accountId, quotaContext(env, now))).plan);
+    }
+    // 翻譯回應帶回這一頁扣頁那次的用量紀錄 id：同一頁的 Notes 請求與長 Page 的接續請求帶回來
+    return Response.json(charged ? { ...output, usageRecordId: record.pageRecordId ?? record.id } : output);
   };
 
 const CHECKOUT_LOCALES: readonly CheckoutLocale[] = ['zh-tw', 'en'];
@@ -153,7 +160,7 @@ const VERIFY_ERRORS = {
 } as const;
 
 const ROUTES: Record<string, Handler> = {
-  [`POST ${TRANSLATE_PATH}`]: authed(llm('translate', parseTranslateInput, (t, input) => t.translatePage(input))),
+  [`POST ${TRANSLATE_PATH}`]: authed(llm('translate', parseTranslateInput, (t, input) => t.translatePage(input), (input) => input.pageUsageRecordId)),
   [`POST ${NOTES_PATH}`]: authed(llm('notes', parseNotesInput, (t, input) => t.proposeNotes(input), (input) => input.pageUsageRecordId)),
   [`POST ${SEND_CODE_PATH}`]: async ({ request, env, now }) => {
     const email = parseEmail(field(await jsonBody(request), 'email'));

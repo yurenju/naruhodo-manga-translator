@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { breakLines, estimateFontPx, estimateOriginalLines, fitText, isVertical, layerTransform, minLayerFontPx, pageSize, separateRegions, textRegions, verticalize, type Box } from './overlay-layout.ts';
+import { breakLines, estimateFontPx, estimateOriginalLines, fitText, isVertical, layerTransform, layoutText, minLayerFontPx, looseTextRegions, pageSize, separateRegions, textRegions, verticalize, type Box } from './overlay-layout.ts';
 
 describe('verticalize（直書前的文字處理）', () => {
   it('半形 !?~, 換成全形', () => {
@@ -59,6 +59,17 @@ describe('textRegions', () => {
     expect(textRegions(balloon, text).fit2).toEqual({ x: 120, y: 140, w: 160, h: 320 });
     expect(textRegions(balloon, { x: 105, y: 105, w: 190, h: 390 }).fit2).toEqual({ x: 116, y: 132, w: 168, h: 336 });
   });
+
+  it('有排版矩形（#150）：第 1、2 階都跟它取交集，擦除範圍不變', () => {
+    const fit = { x: 160, y: 190, w: 80, h: 400 };
+
+    const regions = textRegions(balloon, text, fit);
+
+    // fit1 146～254 × 152～448、fit2 120～280 × 140～460，各自跟 160～240 × 190～590 取交集
+    expect(regions.fit1).toEqual({ x: 160, y: 190, w: 80, h: 258 });
+    expect(regions.fit2).toEqual({ x: 160, y: 190, w: 80, h: 270 });
+    expect(regions.erase).toEqual({ x: 167, y: 197, w: 66, h: 206 });
+  });
 });
 
 describe('separateRegions（相鄰 Balloon 的譯文範圍不重疊）', () => {
@@ -99,6 +110,32 @@ describe('separateRegions（相鄰 Balloon 的譯文範圍不重疊）', () => {
     const before = structuredClone(items);
     separateRegions(items);
     expect(items).toEqual(before);
+  });
+});
+
+describe('looseTextRegions（Loose Text 的排版區是文字框本身，#151）', () => {
+  const text = { x: 200, y: 100, w: 60, h: 180 };
+
+  it('擦除範圍是文字框外擴 3px；第 1、2 階都是文字框（沒有泡泡可以往外長）', () => {
+    const regions = looseTextRegions(text);
+
+    expect(regions.erase).toEqual({ x: 197, y: 97, w: 66, h: 186 });
+    expect(regions.fit1).toEqual(text);
+    expect(regions.fit2).toEqual(text);
+  });
+
+  it('跟旁邊的 Balloon 一起 separateRegions：兩邊的譯文範圍不重疊，Loose Text 的範圍仍在自己的文字框內', () => {
+    const balloonText = { x: 150, y: 120, w: 40, h: 150 };
+    const items = [{ text, ...looseTextRegions(text) }, { text: balloonText, ...textRegions({ x: 120, y: 80, w: 100, h: 230 }, balloonText) }];
+
+    separateRegions(items);
+
+    const [loose, balloon] = items;
+    for (const key of ['fit1', 'fit2'] as const) {
+      expect(loose![key].x + loose![key].w <= balloon![key].x || balloon![key].x + balloon![key].w <= loose![key].x, key).toBe(true);
+      expect(loose![key].x).toBeGreaterThanOrEqual(text.x);
+      expect(loose![key].x + loose![key].w).toBeLessThanOrEqual(text.x + text.w);
+    }
   });
 });
 
@@ -247,6 +284,78 @@ describe('fitText（譯文太長的三階段，spec 第 7.4 節）', () => {
   it('不是整數的最小字級也會試到', () => {
     const min = minLayerFontPx(0.48); // 18.75
     expect(fitText(target(new Map([[fit1, 18.75], [fit2, 0]])), { fit1, fit2 }, min)).toEqual({ stage: 1, size: 18.75, region: fit1, truncated: false });
+  });
+});
+
+describe('layoutText（行數和字級一起挑，#129）', () => {
+  /** 假的直書量測：一行佔 字級 × 1.15 寬、一行的高是字數 × 字級；範圍放不下就溢出。 */
+  function verticalTarget() {
+    let lines: string[] = [];
+    let region: Box = { x: 0, y: 0, w: 0, h: 0 };
+    let size = 0;
+    return {
+      setLines(next: string[]) {
+        lines = next;
+      },
+      apply(next: Box, px: number) {
+        region = next;
+        size = px;
+      },
+      overflows: () => lines.length * size * 1.15 > region.w || Math.max(...lines.map((line) => [...line].length)) * size > region.h,
+    };
+  }
+
+  it('少一行就得縮字時改用原文行數：第一輪作品 B 的旁白框 b2', () => {
+    const text: Box = { x: 0, y: 0, w: 122, h: 233 };
+    const 譯文 = '日本也新設了「航空宇宙自衛隊」！';
+    const [startPx] = estimateFontPx([{ text, 譯文 }]);
+    // 扣分只看斷法會選 1 行（16 字擠一行，字級縮到約 14.6）
+    expect(breakLines(譯文, 2)).toHaveLength(1);
+    const result = layoutText(verticalTarget(), 譯文, 2, { fit1: text, fit2: text }, 0, startPx);
+    expect(result.lines).toHaveLength(2);
+    expect(result.size).toBe(startPx);
+  });
+
+  /** 假的量測：排成幾行時放得下的最大字級（不看範圍）。 */
+  function byLineCount(capacity: Record<number, number>) {
+    let lines: string[] = [];
+    let size = 0;
+    return {
+      setLines(next: string[]) {
+        lines = next;
+      },
+      apply(_region: Box, px: number) {
+        size = px;
+      },
+      overflows: () => size > (capacity[lines.length] ?? 0),
+    };
+  }
+  const regions = { fit1: { x: 0, y: 0, w: 100, h: 100 }, fit2: { x: 0, y: 0, w: 150, h: 150 } };
+
+  it('幾個候選都能用起始字級排下時，跟只看扣分一樣', () => {
+    const result = layoutText(byLineCount({ 2: 40, 3: 40, 4: 40 }), '七天後，你們四個人', 3, regions, 0, 26);
+    expect(result).toMatchObject({ lines: ['七天後，', '你們四個人'], size: 26, stage: 1 });
+  });
+
+  it('字級差 5% 以內視為一樣大，看扣分；差更多就取字級大的', () => {
+    // 扣分最低的是 2 行（斷在「，」後）
+    expect(layoutText(byLineCount({ 2: 25, 3: 26 }), '七天後，你們四個人', 3, regions, 0, 26).lines).toEqual(['七天後，', '你們四個人']);
+    expect(layoutText(byLineCount({ 2: 24, 3: 26 }), '七天後，你們四個人', 3, regions, 0, 26)).toMatchObject({ lines: ['七天後，', '你們', '四個人'], size: 26 });
+  });
+
+  it('截斷的候選排在沒截斷的後面，量完把選中的斷法套回去', () => {
+    const target = byLineCount({ 3: 18 });
+    const applied: number[][] = [];
+    const setLines = target.setLines;
+    target.setLines = (lines) => {
+      applied.push([lines.length]);
+      setLines(lines);
+    };
+    // 最小字級 18：3 行與截斷的 2 行都是 18px，2 行扣分比較低
+    const result = layoutText(target, '七天後，你們四個人', 3, regions, 18, 26);
+    expect(result).toMatchObject({ lines: ['七天後，', '你們', '四個人'], size: 18, stage: 1, truncated: false });
+    expect(applied.at(-1)).toEqual([3]);
+    expect(target.overflows()).toBe(false);
   });
 });
 

@@ -12,6 +12,7 @@ function fakeChrome(urls: Record<number, string>) {
   const createdSeries: string[] = [];
   /** 網址模式：網址 → Series ID。 */
   const patterns = new Map<string, string>();
+  const seriesChanges: [number, string][] = [];
   const deps: ActivationDeps = {
     store: {
       get: async (tabId) => states.get(tabId),
@@ -33,8 +34,10 @@ function fakeChrome(urls: Record<number, string>) {
       createdSeries.push(url);
       return id;
     },
+    rememberedSeries: async (url) => patterns.get(url),
+    onSeriesChanged: (tabId, seriesId) => void seriesChanges.push([tabId, seriesId]),
   };
-  return { deps, calls, statusEvents, failInjectionFor, urls, createdSeries, patterns };
+  return { deps, calls, statusEvents, failInjectionFor, urls, createdSeries, patterns, seriesChanges };
 }
 
 describe('activate', () => {
@@ -263,5 +266,71 @@ describe('Series', () => {
     const activation = createActivation(fakeChrome({ 1: EPISODE }).deps);
 
     expect(await activation.getSeriesId(1)).toBeUndefined();
+  });
+});
+
+describe('同分頁換作品（#145）', () => {
+  const OTHER_WORK = 'https://manga.example/title/999/episode/1';
+  const NEXT_EPISODE = 'https://manga.example/episode/124';
+
+  it('導航到記住了另一部 Series 的網址：換成那部 Series，並通知', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.patterns.set(EPISODE, 'series-a');
+    chrome.patterns.set(OTHER_WORK, 'series-b');
+    const activation = createActivation(chrome.deps);
+    await activation.activate(1);
+
+    await activation.handleTabUpdated(1, { status: 'loading', url: OTHER_WORK });
+
+    expect(await activation.getSeriesId(1)).toBe('series-b');
+    expect(chrome.seriesChanges).toEqual([[1, 'series-b']]);
+  });
+
+  it('導航到沒記住的網址（例如同作品的下一話）：沿用目前的 Series，不建 Provisional Series', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.patterns.set(EPISODE, 'series-a');
+    const activation = createActivation(chrome.deps);
+    await activation.activate(1);
+
+    await activation.handleTabUpdated(1, { status: 'loading', url: NEXT_EPISODE });
+
+    expect(await activation.getSeriesId(1)).toBe('series-a');
+    expect(chrome.createdSeries).toEqual([]);
+    expect(chrome.seriesChanges).toEqual([]);
+  });
+
+  it('導航到記住了同一部 Series 的網址：不算換作品，不通知', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.patterns.set(EPISODE, 'series-a');
+    chrome.patterns.set(NEXT_EPISODE, 'series-a');
+    const activation = createActivation(chrome.deps);
+    await activation.activate(1);
+
+    await activation.handleTabUpdated(1, { status: 'loading', url: NEXT_EPISODE });
+
+    expect(await activation.getSeriesId(1)).toBe('series-a');
+    expect(chrome.seriesChanges).toEqual([]);
+  });
+
+  it('沒啟動的 tab 導航不查網址模式', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.patterns.set(OTHER_WORK, 'series-b');
+    const activation = createActivation(chrome.deps);
+
+    await activation.handleTabUpdated(1, { status: 'loading', url: OTHER_WORK });
+
+    expect(await activation.getSeriesId(1)).toBeUndefined();
+    expect(chrome.seriesChanges).toEqual([]);
+  });
+
+  it('換 origin 就停止，不換 Series', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.patterns.set('https://example.com/', 'series-b');
+    const activation = createActivation(chrome.deps);
+    await activation.activate(1);
+
+    await activation.handleTabUpdated(1, { status: 'loading', url: 'https://example.com/' });
+
+    expect(chrome.seriesChanges).toEqual([]);
   });
 });

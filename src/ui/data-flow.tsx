@@ -11,7 +11,7 @@ export function HostedDataFlow() {
   return (
     <ul>
       <li>{LOCAL}</li>
-      <li>辨識出的日文文字、同一部作品前幾頁的原文與譯文、作品的譯名表，會傳到 Naruhodo 的服務，再交給 Anthropic 翻譯。Naruhodo 的服務不保存這些文字。</li>
+      <li>辨識出的日文文字、同一部作品前幾頁的原文與譯文、作品的譯名表、你為作品取的名稱，會傳到 Naruhodo 的服務，再交給 Anthropic 翻譯。Naruhodo 的服務不保存這些文字與作品名。</li>
       <li>Naruhodo 的服務會保存你的 email、登入紀錄、剩餘頁數、訂閱狀態與每次翻譯的用量（不含內容）；驗證碼信由 Resend 寄出。</li>
     </ul>
   );
@@ -21,7 +21,7 @@ export function OwnKeyDataFlow() {
   return (
     <ul>
       <li>{LOCAL}</li>
-      <li>辨識出的日文文字、前幾頁的原文與譯文、作品的譯名表，會用你的 API key 直接傳到 Anthropic 翻譯，不經過 Naruhodo 的服務。</li>
+      <li>辨識出的日文文字、前幾頁的原文與譯文、作品的譯名表、你為作品取的名稱，會用你的 API key 直接傳到 Anthropic 翻譯，不經過 Naruhodo 的服務。</li>
       <li>API key 只存在這台電腦的外掛裡。</li>
     </ul>
   );

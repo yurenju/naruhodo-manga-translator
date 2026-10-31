@@ -1,6 +1,6 @@
 # Naruhodo Privacy Policy
 
-Effective date: 2026-10-30
+Effective date: 2026-10-31
 Publisher: Sad Coder, Inc.
 
 Naruhodo is a Chrome extension that translates Japanese manga on screen into Traditional Chinese, in place. This policy explains what data the extension and the Naruhodo service handle, where the data goes, and how long it is kept.
@@ -34,9 +34,9 @@ All connections use HTTPS.
 
 ### Text sent for translation
 
-In both modes, the extension sends, for each page: the Japanese text recognized on that page, the original text and translations of the previous few pages of the same series (to keep translations consistent), and the series' Series Notes. To propose new Series Notes entries, it also sends recognized text with its translation and the current Series Notes. **No images, page addresses or series names are sent.** Before sending anything, the extension explains this and asks for your consent, separately for each mode; nothing is sent before you agree.
+In both modes, the extension sends, for each page: the Japanese text recognized on that page, the original text and translations of the previous few pages of the same series (to keep translations consistent), the series' Series Notes, and the name you gave the series, so translations can recognize the title and use its official translation. A series you have not named yet (shown as "unsorted", with a name the extension made up from the site and date) is sent without a name. To propose new Series Notes entries, it also sends recognized text with its translation and the current Series Notes. **No images or page addresses are sent.** Before sending anything, the extension explains this and asks for your consent, separately for each mode; nothing is sent before you agree.
 
-- **With Hosted Translation**, this text goes to the Naruhodo service, which passes it to Anthropic with our API key and returns the translation. The request also carries your sign-in token and a random identifier the extension generated for the series. **The Naruhodo service does not store this text**, and does not pass the series identifier to Anthropic.
+- **With Hosted Translation**, this text goes to the Naruhodo service, which passes it to Anthropic with our API key and returns the translation. The request also carries your sign-in token and a random identifier the extension generated for the series. **The Naruhodo service does not store this text or the series name**, and does not pass the series identifier to Anthropic.
 - **With Own API Key**, your browser sends this text directly to Anthropic with your API key.
 
 ### Third parties

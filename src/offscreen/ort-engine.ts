@@ -9,7 +9,7 @@
  */
 import type * as Ort from 'onnxruntime-web';
 import type { ExecutionProvider } from './models/model-files.ts';
-import { DETECTION_LABELS, type Detection, type Engine, type PageImage } from './pipeline/analyze.ts';
+import { DETECTION_LABELS, type Detection, type Engine, type PageImage, type Recognized } from './pipeline/analyze.ts';
 import type { PixelBox } from './pipeline/boxes.ts';
 
 type OrtModule = typeof Ort;
@@ -91,7 +91,7 @@ export async function createOrtEngine(
     return detections;
   }
 
-  async function recognize(image: PageImage, boxes: PixelBox[]): Promise<string[]> {
+  async function recognize(image: PageImage, boxes: PixelBox[]): Promise<Recognized[]> {
     if (boxes.length === 0) return [];
     const n = boxes.length;
     const plane = 224 * 224;
@@ -108,6 +108,8 @@ export async function createOrtEngine(
     // 整頁所有框一個 batch
     const { last_hidden_state: hidden } = await encoder.run({ pixel_values: new ort.Tensor('float32', pixels, [n, 3, 224, 224]) });
     const sequences: bigint[][] = Array.from({ length: n }, () => [CLS]);
+    /** 每一步選中的 token 的 softmax 機率（OCR 信心，ADR 0009），跟 sequences 去掉 CLS 後一一對應。 */
+    const probabilities: number[][] = Array.from({ length: n }, () => []);
     const done = new Array<boolean>(n).fill(false);
     for (let step = 0; step < MAX_TOKENS && done.includes(false); step++) {
       const length = sequences[0]!.length;
@@ -122,6 +124,7 @@ export async function createOrtEngine(
       for (let k = 0; k < n; k++) {
         if (done[k]) {
           sequences[k]!.push(0n);
+          probabilities[k]!.push(1);
           continue;
         }
         const offset = (k * length + length - 1) * vocabSize;
@@ -133,18 +136,26 @@ export async function createOrtEngine(
             best = v;
           }
         }
+        // 最高的 softmax 機率＝1 / Σ exp(logit − 最大 logit)
+        let sum = 0;
+        for (let v = 0; v < vocabSize; v++) sum += Math.exp(data[offset + v]! - bestValue);
         sequences[k]!.push(BigInt(best));
+        probabilities[k]!.push(1 / sum);
         if (best === SEP) done[k] = true;
       }
     }
-    return sequences.map((seq) =>
-      seq
+    return sequences.map((seq, k) => {
+      const tokens = seq
         .slice(1)
-        .map(Number)
-        .filter((t) => t > LAST_SPECIAL)
-        .map((t) => (vocab[t] ?? '').replace(/^##/, ''))
-        .join(''),
-    );
+        .map((t, step) => ({ id: Number(t), probability: probabilities[k]![step]! }))
+        .filter(({ id }) => id > LAST_SPECIAL)
+        .map(({ id, probability }) => ({ text: (vocab[id] ?? '').replace(/^##/, ''), probability }));
+      // 一個 token 可能不只一個字：每個字都用那個 token 的機率
+      return {
+        text: tokens.map((t) => t.text).join(''),
+        confidences: tokens.flatMap((t) => [...t.text].map(() => t.probability)),
+      };
+    });
   }
 
   return {

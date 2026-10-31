@@ -21,7 +21,7 @@ import type {
 
 export const CLAUDE_MODEL = 'claude-haiku-5-5';
 /** 寫進快取判斷過時用（#33）；改 ① 的 prompt 或 schema 就要改這個。② 的 prompt 不影響已快取的譯文，不用改。 */
-export const PROMPT_VERSION = 'claude-text-v3';
+export const PROMPT_VERSION = 'claude-text-v5';
 
 const MAX_TOKENS = 16_000;
 
@@ -71,10 +71,17 @@ const TRANSLATE_TEXT = `你是日文漫畫翻譯助手，幫助讀者一邊看�
 - reading：整句的假名讀音，漢字一律寫成平假名；原文的片假名維持片假名，標點照原文。
 - zh：自然、口語的台灣繁體中文譯文，符合角色的語氣；狀聲詞翻成中文讀者習慣的狀聲詞。
 - unreadable：如果 ja 明顯是 OCR 亂碼（例如設計字體被讀成一串不成句的字），沒辦法判斷原本寫什麼，就設為 true，reading 與 zh 留空字串。不要硬翻亂碼。
+- sfx：這段是狀聲詞（Sound Effect）就設為 true：擬音（聲音，例如ドン、ぱち）與擬態（動作或狀態，例如ニコリ、ドキドキ）都算。角色自己發出的感嘆（あ…、あっ、うっ）是台詞，不算，設為 false。狀聲詞的 zh 照樣要翻。
 
 閱讀順序已經由程式決定，請照輸入的順序回答，不要重排。
 
 翻譯時請遵守 Series Notes 的譯名。
+
+使用者可能會告訴你作品名（讀者為這部作品取的名稱）。原文裡出現作品名時，那是作品名，不是狀聲詞；作品有官方中文譯名就用官方譯名。
+
+真實世界的樂團、品牌、作品名（例如歌手、商品、電影），用官方的中文寫法；沒有官方中文寫法就保留原文，不要自己音譯或意譯。
+
+敬稱（さん、君、ちゃん等）依場景翻：同學之間的さん可以翻成「同學」，熟人之間只叫名字，不影響語意時可以省略；不要一律死板地翻成「先生／小姐」。
 
 使用者可能先給你前面幾頁的原文與譯文（context），讓你知道前後劇情、誰在說話、語氣與已經用過的譯名。context 只用來理解，不要翻譯、也不要回傳；譯名與語氣請跟 context 保持一致。
 
@@ -127,6 +134,7 @@ const TRANSLATE_SCHEMA = obj({
       reading: str('整句假名讀音'),
       zh: str('繁體中文（台灣）譯文'),
       unreadable: { type: 'boolean', description: '原文是無法判斷的 OCR 亂碼' },
+      sfx: { type: 'boolean', description: '狀聲詞（擬音、擬態）；角色自己的感嘆不算' },
     }),
   },
 });
@@ -173,14 +181,15 @@ const toWire = (lines: TranslatedLine[]) => lines.map(({ kind, 原文, 譯文 })
 /** ① 翻譯這一頁的 request body。 */
 export function translateRequest(input: TranslateInput): MessagesRequest {
   const current = JSON.stringify(input.items.map(({ id, kind, 原文 }) => ({ id, kind, ja: 原文 })));
-  // Prior Pages 每頁都不同，放在 user message，不動 system 的 prompt cache
+  // 作品名與 Prior Pages 每部、每頁都不同，放在 user message，不動 system 的 prompt cache
+  const before: TextBlock[] = [
+    ...(input.seriesName ? [{ type: 'text' as const, text: `作品名：${input.seriesName}` }] : []),
+    ...(input.priorPages.length > 0
+      ? [{ type: 'text' as const, text: `context（前面的頁，依閱讀順序）：\n${JSON.stringify(input.priorPages.map(toWire))}` }]
+      : []),
+  ];
   const content: TextBlock[] =
-    input.priorPages.length > 0
-      ? [
-          { type: 'text', text: `context（前面的頁，依閱讀順序）：\n${JSON.stringify(input.priorPages.map(toWire))}` },
-          { type: 'text', text: `這一頁要翻譯的文字：\n${current}` },
-        ]
-      : [{ type: 'text', text: current }];
+    before.length > 0 ? [...before, { type: 'text', text: `這一頁要翻譯的文字：\n${current}` }] : [{ type: 'text', text: current }];
   return {
     model: CLAUDE_MODEL,
     max_tokens: MAX_TOKENS,
@@ -207,7 +216,7 @@ export function notesRequest(input: NotesInput): MessagesRequest {
 type NotesFields = Record<keyof typeof NOTES_FIELDS, string>;
 
 interface TranslateAnswer {
-  items: { id: string; reading: string; zh: string; unreadable: boolean }[];
+  items: { id: string; reading: string; zh: string; unreadable: boolean; sfx: boolean }[];
 }
 
 interface NotesAnswer {
@@ -226,7 +235,7 @@ const isNotesFields = (v: unknown): v is NotesFields =>
 function isTranslateAnswer(v: unknown): v is TranslateAnswer {
   if (typeof v !== 'object' || v === null) return false;
   const a = v as Partial<TranslateAnswer>;
-  return Array.isArray(a.items) && a.items.every((i) => isStr(i?.id) && isStr(i.reading) && isStr(i.zh) && typeof i.unreadable === 'boolean');
+  return Array.isArray(a.items) && a.items.every((i) => isStr(i?.id) && isStr(i.reading) && isStr(i.zh) && typeof i.unreadable === 'boolean' && typeof i.sfx === 'boolean');
 }
 
 function isNotesAnswer(v: unknown): v is NotesAnswer {
@@ -294,7 +303,7 @@ function parse<A>(json: ApiResponse, isValid: (v: unknown) => v is A): { answer:
 /** ① 的回應 → 依 id 對回的讀音與譯文；回答不完整或不符合 schema 時丟錯。 */
 export function parseTranslateResponse(json: ApiResponse): Omit<TranslateOutput, 'latencyMs'> {
   const { answer, ...info } = parse(json, isTranslateAnswer);
-  return { items: answer.items.map((i) => ({ id: i.id, 讀音: i.reading, 譯文: i.zh, unreadable: i.unreadable })), ...info };
+  return { items: answer.items.map((i) => ({ id: i.id, 讀音: i.reading, 譯文: i.zh, unreadable: i.unreadable, sfx: i.sfx })), ...info };
 }
 
 /** ② 的回應 → Series Notes 的變更；回答不完整或不符合 schema 時丟錯。 */

@@ -1,0 +1,498 @@
+{
+  "id": "p09-erase",
+  "description": "擦除範圍與顏色：字撐滿的橢圓泡泡（文字框的角在泡泡外）、連體泡泡、漸層泡泡、閃光泡泡（沒有外框）、黑底白字泡泡；Loose Text：白描邊獨白壓在線條上、黑底白字、網點上的標題、彩色背景、小狀聲詞",
+  "image": "p09-erase.png",
+  "width": 880,
+  "height": 1280,
+  "readingDirection": "rtl",
+  "pages": [
+    {
+      "index": 0,
+      "bbox": [
+        0,
+        0,
+        880,
+        1280
+      ]
+    }
+  ],
+  "panels": [
+    {
+      "id": "A",
+      "page": 0,
+      "order": 1,
+      "bbox": [
+        460,
+        40,
+        380,
+        400
+      ],
+      "polygon": [
+        [
+          460,
+          40
+        ],
+        [
+          840,
+          40
+        ],
+        [
+          840,
+          440
+        ],
+        [
+          460,
+          440
+        ]
+      ]
+    },
+    {
+      "id": "B",
+      "page": 0,
+      "order": 2,
+      "bbox": [
+        40,
+        40,
+        404,
+        400
+      ],
+      "polygon": [
+        [
+          40,
+          40
+        ],
+        [
+          444,
+          40
+        ],
+        [
+          444,
+          440
+        ],
+        [
+          40,
+          440
+        ]
+      ]
+    },
+    {
+      "id": "C",
+      "page": 0,
+      "order": 3,
+      "bbox": [
+        40,
+        456,
+        800,
+        400
+      ],
+      "polygon": [
+        [
+          40,
+          456
+        ],
+        [
+          840,
+          456
+        ],
+        [
+          840,
+          856
+        ],
+        [
+          40,
+          856
+        ]
+      ]
+    },
+    {
+      "id": "D",
+      "page": 0,
+      "order": 4,
+      "bbox": [
+        40,
+        872,
+        800,
+        368
+      ],
+      "polygon": [
+        [
+          40,
+          872
+        ],
+        [
+          840,
+          872
+        ],
+        [
+          840,
+          1240
+        ],
+        [
+          40,
+          1240
+        ]
+      ]
+    }
+  ],
+  "texts": [
+    {
+      "id": "t1",
+      "kind": "balloon",
+      "shape": "ellipse",
+      "panel": "A",
+      "page": 0,
+      "order": 1,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        605,
+        78,
+        190,
+        275
+      ],
+      "textBbox": [
+        624,
+        120,
+        152,
+        190
+      ],
+      "ja": "そんなこと言われても困るんだ",
+      "jaLines": [
+        "そんなこと",
+        "言われても",
+        "困るんだ"
+      ],
+      "ruby": [],
+      "reading": "そんなこといわれてもこまるんだ",
+      "zh": "就算你這麼說我也很困擾"
+    },
+    {
+      "id": "t8",
+      "kind": "outside",
+      "shape": "none",
+      "panel": "A",
+      "page": 0,
+      "order": 2,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        514,
+        72,
+        34,
+        156
+      ],
+      "textBbox": [
+        514,
+        72,
+        34,
+        156
+      ],
+      "ja": "どうしよう…",
+      "jaLines": [
+        "どうしよう…"
+      ],
+      "ruby": [],
+      "reading": "どうしよう…",
+      "zh": "怎麼辦…"
+    },
+    {
+      "id": "t2",
+      "kind": "balloon",
+      "shape": "ellipse",
+      "panel": "B",
+      "page": 0,
+      "order": 3,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        275,
+        60,
+        130,
+        200
+      ],
+      "textBbox": [
+        311,
+        105,
+        59,
+        110
+      ],
+      "ja": "ねえ、聞いてる？",
+      "jaLines": [
+        "ねえ、",
+        "聞いてる？"
+      ],
+      "ruby": [],
+      "reading": "ねえ、きいてる？",
+      "zh": "喂，你有在聽嗎？"
+    },
+    {
+      "id": "t3",
+      "kind": "balloon",
+      "shape": "ellipse",
+      "panel": "B",
+      "page": 0,
+      "order": 4,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        185,
+        155,
+        130,
+        200
+      ],
+      "textBbox": [
+        221,
+        211,
+        59,
+        88
+      ],
+      "ja": "明日は雨だって",
+      "jaLines": [
+        "明日は",
+        "雨だって"
+      ],
+      "ruby": [],
+      "reading": "あしたはあめだって",
+      "zh": "聽說明天會下雨"
+    },
+    {
+      "id": "t9",
+      "kind": "outside",
+      "shape": "none",
+      "panel": "B",
+      "page": 0,
+      "order": 5,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        79,
+        119,
+        74,
+        112
+      ],
+      "textBbox": [
+        79,
+        119,
+        74,
+        112
+      ],
+      "ja": "まさか…あいつが",
+      "jaLines": [
+        "まさか…",
+        "あいつが"
+      ],
+      "ruby": [],
+      "reading": "まさか…あいつが",
+      "zh": "難道…是那傢伙"
+    },
+    {
+      "id": "t11",
+      "kind": "sign",
+      "shape": "none",
+      "panel": "C",
+      "page": 0,
+      "order": 6,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        776,
+        540,
+        39,
+        120
+      ],
+      "textBbox": [
+        776,
+        540,
+        39,
+        120
+      ],
+      "ja": "雨の約束",
+      "jaLines": [
+        "雨の約束"
+      ],
+      "ruby": [],
+      "reading": "あめのやくそく",
+      "zh": "雨之約"
+    },
+    {
+      "id": "t4",
+      "kind": "balloon",
+      "shape": "gradient",
+      "panel": "C",
+      "page": 0,
+      "order": 7,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        575,
+        500,
+        170,
+        260
+      ],
+      "textBbox": [
+        626,
+        565,
+        69,
+        130
+      ],
+      "ja": "空がきれいだね",
+      "jaLines": [
+        "空が",
+        "きれいだね"
+      ],
+      "ruby": [],
+      "reading": "そらがきれいだね",
+      "zh": "天空好美啊"
+    },
+    {
+      "id": "t5",
+      "kind": "balloon",
+      "shape": "flash",
+      "panel": "C",
+      "page": 0,
+      "order": 8,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        165,
+        550,
+        150,
+        200
+      ],
+      "textBbox": [
+        204,
+        580,
+        74,
+        140
+      ],
+      "ja": "まさか本当に！？",
+      "jaLines": [
+        "まさか",
+        "本当に！？"
+      ],
+      "ruby": [],
+      "reading": "まさかほんとうに！？",
+      "zh": "難道是真的！？"
+    },
+    {
+      "id": "t10",
+      "kind": "sfx",
+      "shape": "none",
+      "panel": "C",
+      "page": 0,
+      "order": 9,
+      "orientation": "horizontal",
+      "rotate": 0,
+      "bbox": [
+        53,
+        800,
+        84,
+        39
+      ],
+      "textBbox": [
+        53,
+        800,
+        84,
+        39
+      ],
+      "ja": "ぱちっ",
+      "jaLines": [
+        "ぱちっ"
+      ],
+      "ruby": [],
+      "reading": "ぱちっ",
+      "zh": "（眨眼）眨"
+    },
+    {
+      "id": "t6",
+      "kind": "balloon",
+      "shape": "inverted",
+      "panel": "D",
+      "page": 0,
+      "order": 10,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        605,
+        915,
+        150,
+        270
+      ],
+      "textBbox": [
+        616,
+        1002,
+        128,
+        96
+      ],
+      "ja": "逃げろここは危ない",
+      "jaLines": [
+        "逃げろ",
+        "ここは",
+        "危ない"
+      ],
+      "ruby": [],
+      "reading": "にげろここはあぶない",
+      "zh": "快逃，這裡很危險"
+    },
+    {
+      "id": "t12",
+      "kind": "outside",
+      "shape": "none",
+      "panel": "D",
+      "page": 0,
+      "order": 11,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        477,
+        912,
+        67,
+        120
+      ],
+      "textBbox": [
+        477,
+        912,
+        67,
+        120
+      ],
+      "ja": "その夜、雨が降った",
+      "jaLines": [
+        "その夜、",
+        "雨が降った"
+      ],
+      "ruby": [],
+      "reading": "そのよる、あめがふった",
+      "zh": "那天晚上，下起了雨"
+    },
+    {
+      "id": "t7",
+      "kind": "balloon",
+      "shape": "ellipse",
+      "panel": "D",
+      "page": 0,
+      "order": 12,
+      "orientation": "vertical",
+      "rotate": 0,
+      "bbox": [
+        150,
+        915,
+        140,
+        210
+      ],
+      "textBbox": [
+        189,
+        972,
+        63,
+        96
+      ],
+      "ja": "わかったすぐ行く",
+      "jaLines": [
+        "わかった",
+        "すぐ行く"
+      ],
+      "ruby": [],
+      "reading": "わかったすぐいく",
+      "zh": "知道了，馬上去"
+    }
+  ]
+}

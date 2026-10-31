@@ -96,11 +96,27 @@ export function findPanels({ gray, width: w, height: h }: GrayImage): { panels: 
   const panels = large
     .filter((c) => !large.some((o) => o !== c && contains(o.bbox, c.bbox) && area(c.bbox) < NESTED_MAX_RATIO * area(o.bbox)))
     .map(({ id, bbox }) => ({ id, bbox }));
-  return { panels: xyCut(panels), label };
+  return { panels: xyCut(panels, topThenRight), label };
 }
 
-/** 先找水平空隙（上→下），再找垂直空隙（右→左）；切不開就依上緣、右緣排序。 */
-function xyCut<T extends { bbox: PixelBox }>(items: T[]): T[] {
+type Boxed = { bbox: PixelBox };
+
+const right = (b: PixelBox) => b[0] + b[2];
+
+/** 上面先讀，上緣一樣時右邊先讀。 */
+const topThenRight = (a: Boxed, b: Boxed): number => a.bbox[1] - b.bbox[1] || right(b.bbox) - right(a.bbox);
+
+/** 右邊先讀，右緣差不多（< 較窄寬度的 1/3）時上面先讀；最後用座標決勝，讓結果與輸入順序無關。 */
+const rightThenTop = (a: Boxed, b: Boxed): number => {
+  const ra = right(a.bbox);
+  const rb = right(b.bbox);
+  const tolerance = Math.min(a.bbox[2], b.bbox[2]) / 3;
+  if (Math.abs(ra - rb) > tolerance) return rb - ra;
+  return a.bbox[1] - b.bbox[1] || rb - ra || a.bbox[0] - b.bbox[0];
+};
+
+/** 先找水平空隙（上→下），再找垂直空隙（右→左）；切不開就用 fallback 排序。 */
+function xyCut<T extends Boxed>(items: T[], fallback: (a: T, b: T) => number): T[] {
   if (items.length <= 1) return items;
   const split = (lo: (b: PixelBox) => number, hi: (b: PixelBox) => number): T[][] => {
     const intervals = items.map((it) => [lo(it.bbox), hi(it.bbox), it] as const).sort((a, b) => a[0] - b[0]);
@@ -119,19 +135,18 @@ function xyCut<T extends { bbox: PixelBox }>(items: T[]): T[] {
     return groups;
   };
   const rows = split((b) => b[1], (b) => b[1] + b[3]);
-  if (rows.length > 1) return rows.flatMap(xyCut);
+  if (rows.length > 1) return rows.flatMap((row) => xyCut(row, fallback));
   const columns = split((b) => b[0], (b) => b[0] + b[2]);
-  if (columns.length > 1) return columns.reverse().flatMap(xyCut);
-  return items.slice().sort((a, b) => a.bbox[1] - b.bbox[1] || right(b.bbox) - right(a.bbox));
+  if (columns.length > 1) return columns.reverse().flatMap((column) => xyCut(column, fallback));
+  return items.slice().sort(fallback);
 }
 
-const right = (b: PixelBox) => b[0] + b[2];
-
 /**
- * 依日漫閱讀順序排列：Panel 依 XY-cut 順序；同一個 Panel 內右邊先讀，右緣差不多（< 較窄寬度的 1/3）時上面先讀。
+ * 依日漫閱讀順序排列：Panel 依 XY-cut 順序；同一個 Panel 內的框也跑 XY-cut（跨格線的框會把好幾格連成一個 Panel），
+ * 切不開才右邊先讀、右緣差不多時上面先讀。
  * 每個框以中心點所在的 Panel 歸屬；中心落在格間空白（橫跨格線的 Balloon）就歸到重疊最多的 Panel。
  */
-export function readingOrder<T extends { bbox: PixelBox }>(units: readonly T[], image: GrayImage): T[] {
+export function readingOrder<T extends Boxed>(units: readonly T[], image: GrayImage): T[] {
   const { panels, label } = findPanels(image);
   const rank = new Map(panels.map((p, i) => [p.id, i]));
   const panelOf = (bbox: PixelBox): number => {
@@ -150,16 +165,10 @@ export function readingOrder<T extends { bbox: PixelBox }>(units: readonly T[], 
     });
     return index;
   };
-  return units
-    .map((unit) => ({ unit, panel: panelOf(unit.bbox) }))
-    .sort((a, b) => {
-      if (a.panel !== b.panel) return a.panel - b.panel;
-      const ra = right(a.unit.bbox);
-      const rb = right(b.unit.bbox);
-      const tolerance = Math.min(a.unit.bbox[2], b.unit.bbox[2]) / 3;
-      if (Math.abs(ra - rb) > tolerance) return rb - ra;
-      // 最後用座標決勝，讓結果與輸入順序無關
-      return a.unit.bbox[1] - b.unit.bbox[1] || rb - ra || a.unit.bbox[0] - b.unit.bbox[0];
-    })
-    .map(({ unit }) => unit);
+  const byPanel = new Map<number, T[]>();
+  for (const unit of units) {
+    const panel = panelOf(unit.bbox);
+    byPanel.set(panel, [...(byPanel.get(panel) ?? []), unit]);
+  }
+  return [...byPanel.entries()].sort(([a], [b]) => a - b).flatMap(([, inPanel]) => xyCut(inPanel, rightThenTop));
 }

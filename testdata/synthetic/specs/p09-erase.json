@@ -1,0 +1,68 @@
+{
+  "id": "p09-erase",
+  "description": "擦除範圍與顏色：字撐滿的橢圓泡泡（文字框的角在泡泡外）、連體泡泡、漸層泡泡、閃光泡泡（沒有外框）、黑底白字泡泡；Loose Text：白描邊獨白壓在線條上、黑底白字、網點上的標題、彩色背景、小狀聲詞",
+  "width": 880,
+  "height": 1280,
+  "blank": true,
+  "panels": [
+    { "id": "A", "order": 1, "points": [[460, 40], [840, 40], [840, 440], [460, 440]], "fill": "#b4b4b4",
+      "art": [
+        { "type": "rect", "x": 460, "y": 40, "w": 135, "h": 220, "fill": "#f2b8c6", "sw": 0 },
+        { "type": "face", "x": 540, "y": 330, "r": 55, "hair": true }
+      ] },
+    { "id": "B", "order": 2, "points": [[40, 40], [444, 40], [444, 440], [40, 440]],
+      "art": [
+        { "type": "line", "x1": 50, "y1": 70, "x2": 180, "y2": 290 },
+        { "type": "line", "x1": 55, "y1": 260, "x2": 175, "y2": 90 },
+        { "type": "face", "x": 110, "y": 380, "r": 45 }
+      ] },
+    { "id": "C", "order": 3, "points": [[40, 456], [840, 456], [840, 856], [40, 856]],
+      "art": [
+        { "type": "tone", "x": 440, "y": 456, "w": 400, "h": 400 },
+        { "type": "face", "x": 500, "y": 790, "r": 45, "mouth": "open" }
+      ] },
+    { "id": "D", "order": 4, "points": [[40, 872], [840, 872], [840, 1240], [40, 1240]], "fill": "#d8d8d8",
+      "art": [
+        { "type": "rect", "x": 430, "y": 872, "w": 160, "h": 195, "fill": "#111", "sw": 0 },
+        { "type": "face", "x": 440, "y": 1150, "r": 55, "eyes": "closed", "mouth": "flat" }
+      ] }
+  ],
+  "texts": [
+    { "id": "t1", "order": 1, "kind": "balloon", "shape": "ellipse", "panel": "A",
+      "cx": 700, "cy": 215, "w": 190, "h": 275, "tail": [600, 340], "fontSize": 38,
+      "ja": "そんなこと\n言われても\n困るんだ", "reading": "そんなこといわれてもこまるんだ", "zh": "就算你這麼說我也很困擾" },
+    { "id": "t2", "order": 3, "kind": "balloon", "shape": "ellipse", "panel": "B",
+      "cx": 340, "cy": 160, "w": 130, "h": 200, "fontSize": 22,
+      "ja": "ねえ、\n聞いてる？", "reading": "ねえ、きいてる？", "zh": "喂，你有在聽嗎？" },
+    { "id": "t3", "order": 4, "kind": "balloon", "shape": "ellipse", "panel": "B",
+      "cx": 250, "cy": 255, "w": 130, "h": 200, "tail": [150, 350], "fontSize": 22,
+      "ja": "明日は\n雨だって", "reading": "あしたはあめだって", "zh": "聽說明天會下雨" },
+    { "id": "t4", "order": 7, "kind": "balloon", "shape": "gradient", "panel": "C", "gradient": ["#ffffff", "#8fb8ea"],
+      "cx": 660, "cy": 630, "w": 170, "h": 260, "tail": [540, 760], "fontSize": 26,
+      "ja": "空が\nきれいだね", "reading": "そらがきれいだね", "zh": "天空好美啊" },
+    { "id": "t5", "order": 8, "kind": "balloon", "shape": "flash", "panel": "C", "seed": 4,
+      "cx": 240, "cy": 650, "w": 150, "h": 200, "fontSize": 28,
+      "ja": "まさか\n本当に！？", "reading": "まさかほんとうに！？", "zh": "難道是真的！？" },
+    { "id": "t6", "order": 10, "kind": "balloon", "shape": "inverted", "panel": "D",
+      "cx": 680, "cy": 1050, "w": 150, "h": 270, "tail": [520, 1120], "fontSize": 32,
+      "ja": "逃げろ\nここは\n危ない", "reading": "にげろここはあぶない", "zh": "快逃，這裡很危險" },
+    { "id": "t7", "order": 12, "kind": "balloon", "shape": "ellipse", "panel": "D",
+      "cx": 220, "cy": 1020, "w": 140, "h": 210, "tail": [380, 1120], "fontSize": 24,
+      "ja": "わかった\nすぐ行く", "reading": "わかったすぐいく", "zh": "知道了，馬上去" },
+    { "id": "t8", "order": 2, "kind": "outside", "panel": "A",
+      "cx": 530, "cy": 150, "fontSize": 26, "weight": 700,
+      "ja": "どうしよう…", "reading": "どうしよう…", "zh": "怎麼辦…" },
+    { "id": "t9", "order": 5, "kind": "outside", "panel": "B", "outline": "white",
+      "cx": 115, "cy": 175, "fontSize": 28, "weight": 700,
+      "ja": "まさか…\nあいつが", "reading": "まさか…あいつが", "zh": "難道…是那傢伙" },
+    { "id": "t10", "order": 9, "kind": "sfx", "panel": "C", "orientation": "horizontal",
+      "cx": 95, "cy": 820, "fontSize": 30, "weight": 900, "color": "black",
+      "ja": "ぱちっ", "reading": "ぱちっ", "zh": "（眨眼）眨" },
+    { "id": "t11", "order": 6, "kind": "sign", "panel": "C",
+      "cx": 795, "cy": 600, "fontSize": 30, "weight": 900,
+      "ja": "雨の約束", "reading": "あめのやくそく", "zh": "雨之約" },
+    { "id": "t12", "order": 11, "kind": "outside", "panel": "D", "color": "white",
+      "cx": 510, "cy": 972, "fontSize": 24, "weight": 400, "font": "mincho",
+      "ja": "その夜、\n雨が降った", "reading": "そのよる、あめがふった", "zh": "那天晚上，下起了雨" }
+  ]
+}

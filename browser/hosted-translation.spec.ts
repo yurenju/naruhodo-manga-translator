@@ -18,6 +18,7 @@ import { createHmac } from 'node:crypto';
 import type { BrowserContext, Page } from '@playwright/test';
 import { DEV_FREE_PAGES_PATH, PADDLE_WEBHOOK_PATH } from '../src/shared/hosted-api.ts';
 import { activateOnMockSite, chooseFromPanelMenu, expect, openPanelMenu, test } from './fixtures.ts';
+import { VERTICAL_VIEW_HEIGHT } from './mock-site/vertical-scroll.ts';
 import { finishOnboarding, onboardingPage, signInFromPanel, signInWithEmail } from './sign-in.ts';
 import { WORKER_URL } from './worker.ts';
 
@@ -146,6 +147,38 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   await expect(settings.getByRole('button', { name: '管理訂閱' })).toBeVisible();
 });
 
+/** 本機 Worker 的開發端點：把這個 email 的 Account 的免費額度設成 remaining。 */
+async function setFreePages(email: string, remaining: number): Promise<void> {
+  const response = await fetch(`${WORKER_URL}${DEV_FREE_PAGES_PATH}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, remaining }),
+  });
+  expect(response.status).toBe(204);
+}
+
+// unit 測不到的：外掛真的把 Worker 回的 usageRecordId 帶回下一截的請求、Worker 照它不扣頁（transcribe 的 unit 用假的
+// Translator，Worker 的 unit 直接送 HTTP；兩邊接起來只有這裡看得到）
+test('直式捲動的長 Page 捲動兩次只扣一頁：扣掉最後一頁之後，接續的那一截照樣翻譯', async ({ context, sw, extensionId, mockSite }, testInfo) => {
+  const { page, panel } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.verticalScrollUrl });
+  const email = freshEmail(testInfo.workerIndex);
+  await signInOnPanel(panel, context, email);
+  await setFreePages(email, 1);
+
+  // 第一截：扣掉最後一頁
+  await panel.getByRole('button', { name: '翻譯此頁' }).click();
+  await expect(panel.getByText('早安！今天好早喔')).toBeVisible();
+  const remaining = panel.getByRole('status', { name: '剩餘額度' });
+  await expect(remaining).toHaveText('免費額度已用完');
+
+  // 第二截是同一個 Page 的接續：帶第一次的 usageRecordId，Worker 不扣頁，額度用完也翻得出來（扣頁的話會是 402、未翻譯）
+  await (await openPanelMenu(panel)).getByRole('switch', { name: '自動翻譯' }).check();
+  await page.locator('#scroller').evaluate((el, top) => (el.scrollTop = top), VERTICAL_VIEW_HEIGHT);
+  await expect(panel.getByText('我是轉學生霧島湊，請多指教')).toBeVisible();
+  await expect(panel.getByText('未翻譯')).toHaveCount(0);
+  expect(await sw.evaluate(() => globalThis.__translateCalls ?? 0)).toBe(0);
+});
+
 /** 訂閱後按「訂閱」拿到 Account id、送 webhook，回到 side panel 時已經是訂閱中。 */
 async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId?: string): Promise<void> {
   await context.route('http://localhost:4321/**', (route) => route.fulfill({ contentType: 'text/html', body: '' }));
@@ -188,12 +221,7 @@ test('免費額度用完：Worker 回額度不足後，side panel 顯示用完�
   await expect(remaining).toHaveText(/免費額度剩 50 頁/);
 
   // 登入後才把額度用完：side panel 還不知道，要等翻譯被 Worker 拒絕才換畫面
-  const response = await fetch(`${WORKER_URL}${DEV_FREE_PAGES_PATH}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, remaining: 0 }),
-  });
-  expect(response.status).toBe(204);
+  await setFreePages(email, 0);
   await panel.getByRole('button', { name: '翻譯此頁' }).click();
 
   const exhausted = panel.getByRole('group', { name: '額度已用完' });

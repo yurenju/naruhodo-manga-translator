@@ -30,6 +30,10 @@ export interface ActivationDeps {
    * 新的啟動要用的 Series ID：網址模式預選到的 Series，沒有就建一個 Provisional Series（spec #27 第 4.1 節）。
    */
   seriesForUrl(url: string): Promise<string>;
+  /** 同分頁導航到的網址，網址模式記住的 Series；對不上是 undefined（#145）。 */
+  rememberedSeries(url: string): Promise<string | undefined>;
+  /** 導航換了這個 tab 的 Series：快取查詢、Series Notes、Prior Pages 都要改用它。 */
+  onSeriesChanged(tabId: number, seriesId: string): void;
 }
 
 export function createActivation(deps: ActivationDeps) {
@@ -107,8 +111,21 @@ export function createActivation(deps: ActivationDeps) {
       await markInactive(tabId);
       return;
     }
+    if (change.url !== undefined) await followSeries(tabId, state, change.url);
     // 重新注入失敗通常是 activeTab 授權已失效，只能等使用者再點一次圖示。
     if (change.status === 'complete' && !(await tryInject(tabId))) await markInactive(tabId);
+  }
+
+  /**
+   * 同分頁換作品（#145）：只有網址模式記住了另一部 Series 才換。對不上就沿用目前的 Series，
+   * 因為網址模式是完整網址比對，同作品的下一話也對不上；換話不能換 Series。
+   */
+  async function followSeries(tabId: number, state: TabState, url: string): Promise<void> {
+    const remembered = await deps.rememberedSeries(url);
+    if (remembered === undefined || remembered === state.seriesId) return;
+    trace('series:navigate', { tabId, from: state.seriesId, seriesId: remembered });
+    await deps.store.set(tabId, { ...state, seriesId: remembered });
+    deps.onSeriesChanged(tabId, remembered);
   }
 
   async function handleTabRemoved(tabId: number): Promise<void> {

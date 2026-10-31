@@ -17,17 +17,25 @@
  * 接著在背景整理 Notes（②），依 ② 送出順序套用。同一次排程裡同一個 anchor 的 Page（Spread 的兩頁）是一個
  * SnapshotGroup，共用 ② 的快照。沒有 Series 時不帶 Notes 也不整理。
  *
- * Prior Pages（ADR 0005）：每個 tab 記住讀者依序看過的頁（命中快取的也算），① 帶這一批之前最近看過的 2 頁中
- * 已經翻好的。不等還沒翻完的頁。Series 換了就清空；同 origin 重新整理（換話）保留，停止或關 tab 才忘掉。
+ * Prior Pages（ADR 0005）：每個 tab 記住讀者依序看過的頁（命中快取的也算），① 帶這頁之前最近看過的 2 頁中
+ * 已經翻好的，同一批裡閱讀順序在前的頁也算（Spread 的左頁帶同一個 Spread 的右頁）。同一批裡在後的頁等前頁的 ①
+ * 結束（翻好、失敗或被丟掉）才送；前一批的頁不等。Series 換了就清空；同 origin 重新整理（換話）保留，停止或關 tab 才忘掉。
+ *
+ * 直式捲動的長 Page（spec #142，PageThumb.visible）：每次擷取處理看得到的那一截，新收的 Line 併進同一個 Page、馬上翻譯
+ * （同一個 Page 已翻好的 Line 算一頁 Prior Pages；Hosted Translation 的接續請求帶這個 Page 的 usageRecordId，Worker 不重複扣頁），
+ * 顯示與快取的是整個 Page。身分先看 anchor，認不出才比橫條指紋（記憶體裡的，再來是快取）。
+ * 同一個 Page 一次只有一截在本機段排隊：還沒開始時換成最新的那一截。
  */
+import { addLines, collectedBoxes, matchingStripe, pickLines, replaceLines, sliceOf, type Slice, type Stripe } from '../shared/long-page.ts';
 import type { AnalyzeRequest, CropRequest, PageThumb, PageView } from '../shared/messages.ts';
 import { findSamePage } from '../shared/page-hash.ts';
-import { pageLines, type PageText } from '../shared/page-text.ts';
+import { pageLines, type PageCharge, type PageText } from '../shared/page-text.ts';
 import type { SeriesNotes, TranslatorVersion } from '../shared/series-notes.ts';
+import type { Series } from '../shared/series.ts';
 import { createTrace } from '../shared/trace.ts';
 import type { TranslatedLine, PriorPage, Translator } from '../shared/translator.ts';
 import { createNotesLedger, newSnapshotGroup, type NotesStore, type SnapshotGroup } from './notes-ledger.ts';
-import { createPageTranslation, type PageCache, type Transcript } from './page-translation.ts';
+import { createPageTranslation, type LongPageRequest, type PageCache, type Transcript } from './page-translation.ts';
 import { createTranslationQueue, type QueuedJob } from './translation-queue.ts';
 
 export type { NotesStore, PageCache };
@@ -49,6 +57,8 @@ export interface TranscriberDeps {
   translatorVersion?(): TranslatorVersion | undefined | Promise<TranslatorVersion | undefined>;
   /** 這個 tab 啟動時選定的 Series（或 Provisional Series）；沒有就不查也不寫快取。 */
   getSeriesId(tabId: number): Promise<string | undefined>;
+  /** 送出翻譯時讀 Series 的名稱（讀者在這之間可能改名）。 */
+  getSeries(seriesId: string): Promise<Series | undefined>;
   cache: PageCache;
   notes: NotesStore;
   publish(tabId: number, pages: PageView[]): void;
@@ -91,7 +101,25 @@ interface PageRecord {
   job?: Job;
   /** 目前的工作做完（或被丟掉）時 resolve。 */
   settled: Promise<void>;
+  /** 長 Page 才有；text 是到目前收到的整個 Page 的 Line（Page 座標）。 */
+  long?: LongPage;
 }
+
+interface LongPage {
+  /** 最近一次看到它的 anchor：同一個 anchor 就是同一個 Page，不必比橫條。 */
+  anchorId: string;
+  /** 看過的橫條（每一條只記第一次看到的 hash）。 */
+  stripes: Stripe[];
+  /** 最近一次排進本機段的那一截；同一截不重做。 */
+  slice: Slice;
+  /** Hosted Translation：這個 Page 扣頁的那次，接續的截帶上它。也存在快取裡，翻走、重新整理後再出現照樣接續。 */
+  charge?: PageCharge;
+}
+
+/** 扣頁之後多久內接續（跟 Worker 的條件一樣，worker/src/quota.ts）；超過就不帶，Worker 當成新的一頁扣。 */
+const CONTINUATION_WINDOW_MS = 60 * 60_000;
+
+const EMPTY_TEXT: PageText = { balloons: [], looseText: [] };
 
 interface TabState {
   tabId: number;
@@ -103,11 +131,17 @@ interface TabState {
 interface Job extends QueuedJob {
   tab: TabState;
   record: PageRecord;
+  /** 這個工作要辨識的截圖（長 Page 是其中一截；一般 Page 就是 record.request）。 */
+  request: AnalyzeRequest;
+  /** 本機段開始了。 */
+  started?: boolean;
+  /** 長 Page：這一截新收的 Line（LLM 段只翻它們）；重新翻譯整個 Page 時沒有。 */
+  added?: PageText;
   /** 進到 LLM 段才有。 */
   translator?: Translator;
   /** 共用 ② 的 Notes 快照的那一組（同一次排程裡同一個 anchor）。 */
   group: SnapshotGroup;
-  /** 排程時這一批之前最近看過的頁；送出 ① 時才看哪些已經翻好。 */
+  /** 排程時這頁之前最近看過的頁（含同一批裡閱讀順序在前的頁）；送出 ① 時才看哪些已經翻好。 */
   prior: SeenPage[];
   resolve(): void;
 }
@@ -130,12 +164,37 @@ interface JobSpec {
   batch: number;
   index: number;
   group: SnapshotGroup;
-  prior: SeenPage[];
+  /** 省略＝record.request。 */
+  request?: AnalyzeRequest;
 }
+
+/** 同一截：上下緣差不到這麼多（Page 高度的比例）。 */
+const SAME_SLICE = 1e-3;
+const sameSlice = (a: Slice, b: Slice) => Math.abs(a.top - b.top) < SAME_SLICE && Math.abs(a.bottom - b.bottom) < SAME_SLICE;
+
+/** 擷取到的 Page 要送去辨識的內容（一般 Page 是整個 Page，長 Page 是看得到的那一截）。 */
+function analyzeRequestOf(page: PageThumb, capture: CropRequest): AnalyzeRequest {
+  return {
+    screenshot: capture.screenshot,
+    viewport: capture.viewport,
+    candidate: { anchorId: page.anchorId, rect: page.rect, ...(page.visible ? { visible: page.visible } : {}) },
+    subRect: page.subRect,
+  };
+}
+
+/** 長 Page 裡已經翻好的 Line（LLM 給過譯文的），這次要翻的（added）除外。 */
+function translatedLines(page: PageText, added: PageText): TranslatedLine[] {
+  const sending = new Set([...added.balloons, ...added.looseText].map((t) => t.id));
+  const done = new Set([...page.balloons, ...page.looseText].filter((t) => t.讀音來源 === 'llm' && !sending.has(t.id)).map((t) => t.id));
+  return pageLines(pickLines(page, done));
+}
+
+/** 兩份橫條併成一份，同一條留先看到的。 */
+const mergeStripes = (a: readonly Stripe[], b: readonly Stripe[]) => [...a, ...b.filter((t) => !a.some((u) => u.index === t.index))];
 
 export function createTranscriber(deps: TranscriberDeps) {
   const ledger = createNotesLedger({ store: deps.notes });
-  const pageTranslation = createPageTranslation({ cache: deps.cache, ledger, translatorVersion: deps.translatorVersion });
+  const pageTranslation = createPageTranslation({ cache: deps.cache, ledger, getSeries: deps.getSeries, translatorVersion: deps.translatorVersion });
   const tabs = new Map<number, TabState>();
   const views = new Map<number, PageView[]>();
   const autoTranslate = new Map<number, boolean>();
@@ -173,14 +232,44 @@ export function createTranscriber(deps: TranscriberDeps) {
     history.pages = history.pages.slice(-SEEN_LIMIT);
   }
 
-  /** 畫面上這一批之前最近看過的頁（還沒翻好的也算位置，送出時才略過）。 */
-  function priorOf(tab: TabState): SeenPage[] {
-    const pages = seen.get(tab.tabId)?.pages ?? [];
-    return pages.filter((p) => findSamePage(tab.pages, p.pageHash) === undefined).slice(-PRIOR_PAGES);
+  /** 畫面上這一批裡，閱讀順序在這頁之前的頁。 */
+  function earlierInBatch(tab: TabState, record: PageRecord): PageThumb[] {
+    const page = findSamePage(tab.pages, record.pageHash);
+    return page ? tab.pages.slice(0, tab.pages.indexOf(page)) : [];
   }
 
-  /** 送出 ① 的這一刻已經翻好的 Prior Pages。 */
-  const priorPages = (job: Job): PriorPage[] => job.prior.flatMap((p) => (p.lines ? [p.lines] : []));
+  /**
+   * 這頁的 Prior Pages 位置：這一批之前最近看過的頁，接著同一批裡閱讀順序在前的頁，取最後 2 頁
+   * （還沒翻好的也算位置，送出時才略過）。
+   */
+  function priorOf(tab: TabState, record: PageRecord): SeenPage[] {
+    const pages = seen.get(tab.tabId)?.pages ?? [];
+    const before = pages.filter((p) => findSamePage(tab.pages, p.pageHash) === undefined);
+    const earlier = earlierInBatch(tab, record).flatMap((p) => findSamePage(pages, p.pageHash) ?? []);
+    return [...before, ...earlier].slice(-PRIOR_PAGES);
+  }
+
+  /**
+   * 同一次排程（batch）裡閱讀順序在前的頁，它們這次的工作都結束（翻好、失敗或被丟掉）時 resolve。
+   * 前一次排程的工作不等（spec「前一批的頁維持現狀，還沒翻完就不等」）；前面沒有這次排的頁（單頁 viewer）就不等。
+   */
+  function earlierSettled(tab: TabState, record: PageRecord, batch: number): Promise<unknown> | undefined {
+    const earlier = earlierInBatch(tab, record).flatMap((p) => {
+      const r = findSamePage(tab.records, p.pageHash);
+      return r?.job?.batch === batch ? [r.settled] : [];
+    });
+    return earlier.length === 0 ? undefined : Promise.all(earlier);
+  }
+
+  /**
+   * 送出 ① 的這一刻已經翻好的 Prior Pages。長 Page 的接續（spec #142）：同一個 Page 已經翻好的 Line 也算一頁，
+   * 放在最後（離這次最近），一樣算在 PRIOR_PAGES 之內。
+   */
+  function priorPages(job: Job): PriorPage[] {
+    const pages = job.prior.flatMap((p) => (p.lines ? [p.lines] : []));
+    const same = job.added && job.record.text ? translatedLines(job.record.text, job.added) : [];
+    return (same.length > 0 ? [...pages, same] : pages).slice(-PRIOR_PAGES);
+  }
 
   /** 這頁翻好了（翻譯完成或命中快取）：記下它的原文與譯文，之後的頁拿來當 Prior Pages。 */
   function remember(tabId: number, pageHash: string, transcript: Transcript): void {
@@ -199,11 +288,14 @@ export function createTranscriber(deps: TranscriberDeps) {
     deps.publish(tab.tabId, current);
   }
 
+  /** 排程時決定 Prior Pages 的位置，並讓這頁的 ① 等同一批裡閱讀順序在前的頁（換掉 settled 之前先取）。 */
   function newJob(spec: JobSpec): Job {
-    const { record } = spec;
+    const { tab, record } = spec;
+    const prior = priorOf(tab, record);
+    const after = earlierSettled(tab, record, spec.batch);
     let resolve!: () => void;
     record.settled = new Promise<void>((r) => (resolve = r));
-    const job: Job = { ...spec, priority: PRIORITY_VISIBLE, resolve };
+    const job: Job = { ...spec, request: spec.request ?? record.request, priority: PRIORITY_VISIBLE, prior, after, resolve };
     record.job = job;
     return job;
   }
@@ -215,7 +307,8 @@ export function createTranscriber(deps: TranscriberDeps) {
       record.transcript = transcript;
       remember(tab.tabId, record.pageHash, transcript);
     }
-    record.job = undefined;
+    // 長 Page 可能已經有下一截的工作
+    if (record.job === job) record.job = undefined;
     job.resolve();
     prune(tab);
     publish(tab);
@@ -249,16 +342,20 @@ export function createTranscriber(deps: TranscriberDeps) {
   async function runLocal(job: Job): Promise<boolean> {
     const { record } = job;
     report(job, 'start');
+    job.started = true;
     let text: PageText;
     const startedAt = Date.now();
+    // 長 Page：已收 Line 的外框在這時才取，前一截剛收的也算進去
+    const request = record.long ? { ...job.request, collected: collectedBoxes(record.text ?? EMPTY_TEXT) } : job.request;
     try {
-      text = await deps.analyze(record.request);
+      text = await deps.analyze(request);
       trace('analyze:done', { pageHash: record.pageHash, anchorId: record.request.candidate.anchorId, ms: Date.now() - startedAt, balloons: text.balloons.length, looseText: text.looseText.length });
     } catch (e) {
       trace('analyze:error', { pageHash: record.pageHash, ms: Date.now() - startedAt, error: e });
       complete(job, { state: 'error', message: e instanceof Error ? e.message : String(e) });
       return false;
     }
+    if (record.long) return collect(job, text);
     record.text = text;
     const translator = await deps.getTranslator();
     if (!translator) {
@@ -269,20 +366,105 @@ export function createTranscriber(deps: TranscriberDeps) {
     return true;
   }
 
+  /** 長 Page 的一截辨識完：新收的 Line 併進整個 Page；有新的才翻譯。 */
+  async function collect(job: Job, text: PageText): Promise<boolean> {
+    const { record } = job;
+    const before = record.text ?? EMPTY_TEXT;
+    if (text.balloons.length + text.looseText.length === 0) {
+      complete(job, record.transcript.state === 'done' ? record.transcript : { state: 'done', text: before, translated: false });
+      return false;
+    }
+    const known = new Set([...before.balloons, ...before.looseText].map((t) => t.id));
+    record.text = addLines(before, text);
+    job.added = pickLines(record.text, new Set([...record.text.balloons, ...record.text.looseText].map((t) => t.id).filter((id) => !known.has(id))));
+    const translator = await deps.getTranslator();
+    if (!translator) {
+      complete(job, { state: 'done', text: record.text, translated: false });
+      return false;
+    }
+    job.translator = translator;
+    return true;
+  }
+
   async function runLlm(job: Job): Promise<void> {
     const { record } = job;
     report(job, 'llm');
-    complete(
-      job,
-      await pageTranslation.translate({
-        text: record.text!,
-        translator: job.translator,
-        seriesId: record.seriesId,
-        pageHash: record.pageHash,
-        group: job.group,
-        priorPages: priorPages(job),
-      }),
-    );
+    const { long } = record;
+    const transcript = await pageTranslation.translate({
+      text: job.added ?? record.text!,
+      translator: job.translator,
+      seriesId: record.seriesId,
+      pageHash: record.pageHash,
+      group: job.group,
+      priorPages: priorPages(job),
+      ...(long ? { long: longRequest(job, long) } : {}),
+    });
+    complete(job, transcript);
+  }
+
+  /**
+   * 長 Page 的一次 ①：只翻新收的 Line、扣頁還不到 1 小時時是接續，帶這個 Page 的 usageRecordId（spec #142「計費」）；
+   * 重新翻譯整個 Page（job.added 沒有）不帶，是扣一頁的新請求。回來的扣頁紀錄給之後的截接續。
+   */
+  function longRequest(job: Job, long: LongPage): LongPageRequest {
+    const { record } = job;
+    const { charge } = long;
+    const continues = job.added && charge && Date.now() - charge.chargedAt < CONTINUATION_WINDOW_MS;
+    return {
+      stripes: long.stripes,
+      // 翻譯期間下一截可能又收了新的 Line：回來時才併回當下的整個 Page
+      whole: (part) => (record.text = replaceLines(record.text!, part)),
+      ...(continues ? { charge } : {}),
+      charged: (next) => (long.charge = next),
+    };
+  }
+
+  /**
+   * 長 Page 的這一截是哪個 Page：anchor 認得就是它，認不出才比橫條（記憶體裡的；快取的在 lookupLong）。
+   * 認出來時記一筆 trace：靠什麼認的、對上第幾條橫條（#154 真實網站驗收核對用）。
+   */
+  function identifyLongPage(tab: TabState, page: PageThumb): PageRecord | undefined {
+    const longs = tab.records.filter((r) => r.long);
+    const byAnchor = longs.find((r) => r.long!.anchorId === page.anchorId);
+    if (byAnchor) {
+      trace('longPage:identified', { tabId: tab.tabId, anchorId: page.anchorId, pageHash: byAnchor.pageHash, by: 'anchor' });
+      return byAnchor;
+    }
+    for (const record of longs) {
+      const stripe = matchingStripe(record.long!.stripes, page.stripes ?? []);
+      if (stripe === undefined) continue;
+      trace('longPage:identified', { tabId: tab.tabId, anchorId: page.anchorId, pageHash: record.pageHash, by: 'memoryStripes', stripe });
+      return record;
+    }
+    return undefined;
+  }
+
+  /** 已認出的長 Page 又擷取到一截：沒處理過的那一截排進本機段；還沒開始的工作換成這一截。 */
+  function requestSlice(record: PageRecord, page: PageThumb, capture: CropRequest, spec: Omit<JobSpec, 'record' | 'request'>): void {
+    const long = record.long!;
+    const slice = sliceOf(page.rect, page.visible!);
+    if (sameSlice(long.slice, slice) || record.transcript.state === 'pending') return;
+    long.slice = slice;
+    const request = analyzeRequestOf(page, capture);
+    if (record.job && !record.job.started) record.job.request = request;
+    else enqueueLocal(newJob({ ...spec, record, request }));
+  }
+
+  /** 長 Page 查快取：命中就換成快取裡的身分，已收的 Line 從快取接著收，看過的橫條併起來。 */
+  async function lookupLong(tab: TabState, seriesId: string | undefined, record: PageRecord): Promise<Transcript | undefined> {
+    const long = record.long!;
+    const found = await pageTranslation.lookupLong(seriesId, long.stripes);
+    if (!found) return undefined;
+    const { cached, transcript } = found;
+    const provisional = record.pageHash;
+    // 對上第幾條記在 cache:hit
+    trace('longPage:identified', { tabId: tab.tabId, anchorId: long.anchorId, pageHash: cached.pageHash, by: 'cacheStripes' });
+    record.pageHash = cached.pageHash;
+    long.stripes = mergeStripes(cached.stripes ?? [], long.stripes);
+    if (cached.charge) long.charge = cached.charge;
+    if (transcript.state === 'done') record.text = transcript.text;
+    tab.pages = tab.pages.map((p) => (p.anchorId === long.anchorId && p.pageHash === provisional ? { ...p, pageHash: cached.pageHash } : p));
+    return transcript;
   }
 
   /**
@@ -297,6 +479,23 @@ export function createTranscriber(deps: TranscriberDeps) {
       tab = { tabId, pages: [], records: [] };
       tabs.set(tabId, tab);
     }
+    // 長 Page 換成認出的 Page 的身分；認不出、又沒有橫條可以認的先不處理（例如這一截全是留白）
+    const longOf = new Map<PageThumb, PageRecord>();
+    const current = tab;
+    pages = pages.flatMap((page) => {
+      if (!page.visible) return [page];
+      const known = identifyLongPage(current, page);
+      if (known) {
+        known.long!.anchorId = page.anchorId;
+        known.long!.stripes = mergeStripes(known.long!.stripes, page.stripes ?? []);
+        const same = { ...page, pageHash: known.pageHash };
+        longOf.set(same, known);
+        return [same];
+      }
+      if (page.stripes?.length) return [page];
+      trace('longPage:unidentified', { tabId, anchorId: page.anchorId, visible: page.visible });
+      return [];
+    });
     tab.pages = pages;
     prune(tab);
     forgetErrors(tab);
@@ -305,23 +504,22 @@ export function createTranscriber(deps: TranscriberDeps) {
     const visibleRecords = new Set<PageRecord>();
     /** 第一次出現的 Page，要查快取或排進佇列。 */
     const newPages: { record: PageRecord; index: number }[] = [];
+    /** 已認得的長 Page 這次擷取到的一截。 */
+    const slices: { record: PageRecord; page: PageThumb; index: number }[] = [];
     for (const [index, page] of pages.entries()) {
-      const existing = findSamePage(tab.records, page.pageHash);
+      const existing = page.visible ? longOf.get(page) : findSamePage(tab.records, page.pageHash);
       if (existing) {
         visibleRecords.add(existing);
+        if (page.visible) slices.push({ record: existing, page, index });
         continue;
       }
       const record: PageRecord = {
         pageHash: page.pageHash,
         seriesId: undefined,
-        request: {
-          screenshot: capture!.screenshot,
-          viewport: capture!.viewport,
-          candidate: { anchorId: page.anchorId, rect: page.rect },
-          subRect: page.subRect,
-        },
+        request: analyzeRequestOf(page, capture!),
         transcript: { state: 'analyzing' },
         settled: Promise.resolve(),
+        ...(page.visible ? { long: { anchorId: page.anchorId, stripes: page.stripes ?? [], slice: sliceOf(page.rect, page.visible) } } : {}),
       };
       tab.records.push(record);
       visibleRecords.add(record);
@@ -331,28 +529,35 @@ export function createTranscriber(deps: TranscriberDeps) {
     publish(tab);
 
     const seriesId = await deps.getSeriesId(tabId);
-    // 先記下這一批（Series 換了就清空），Prior Pages 本來就不含畫面上的頁
+    // 先記下這一批（Series 換了就清空），排程時才看得到同一批裡在前的頁
     if (isCurrent(tab)) see(tab, seriesId, pages);
-    const prior = priorOf(tab);
     // 查快取期間佔住這頁，同一頁又出現時不會重複排
     const groupOf = snapshotGroups();
     const jobs = newPages.map(({ record, index }) => {
       record.seriesId = seriesId;
-      return newJob({ tab, record, batch, index, group: groupOf(record), prior });
+      return newJob({ tab, record, batch, index, group: groupOf(record) });
     });
-    const lookups = await Promise.all(jobs.map((job) => pageTranslation.lookup(seriesId, job.record.pageHash)));
+    const lookups = await Promise.all(
+      jobs.map((job) => (job.record.long ? lookupLong(tab, seriesId, job.record) : pageTranslation.lookup(seriesId, job.record.pageHash))),
+    );
     // 快取都查完才依閱讀順序排：佇列一有工作就開始跑，Spread 的左頁先查完也不能比右頁先送出 LLM（spec 第 3.4 節）
     for (const [i, job] of jobs.entries()) {
       const { record } = job;
       const cached = lookups[i];
       if (!isCurrent(tab)) finish(job, undefined);
-      else if (cached) finish(job, cached);
+      else if (cached && record.long && autoTranslate.get(tabId) !== false) {
+        // 長 Page 命中快取：先顯示快取的整個 Page，這一截照樣辨識，收快取裡還沒有的 Line
+        record.transcript = cached;
+        enqueueLocal(job);
+      } else if (cached) finish(job, cached);
       else if (!isVisible(tab, record)) {
         tab.records = tab.records.filter((r) => r !== record);
         finish(job, undefined);
       } else if (autoTranslate.get(tabId) === false) finish(job, { state: 'pending' });
       else enqueueLocal(job);
     }
+    for (const { record, page, index } of slices) requestSlice(record, page, capture!, { tab, batch, index, group: groupOf(record) });
+    if (newPages.some(({ record }) => record.long)) publish(tab);
     await Promise.all([...visibleRecords].map((r) => r.settled));
   }
 
@@ -395,16 +600,15 @@ export function createTranscriber(deps: TranscriberDeps) {
   async function start(tab: TabState, visible: PageRecord[], translator: Translator | undefined): Promise<void> {
     const batch = ++batches;
     const groupOf = snapshotGroups();
-    const prior = priorOf(tab);
     const started: PageRecord[] = [];
     for (const [index, record] of visible.entries()) {
       if (record.job) continue;
       if (record.transcript.state === 'pending') {
         record.transcript = { state: 'analyzing' };
-        enqueueLocal(newJob({ tab, record, batch, index, group: groupOf(record), prior }));
+        enqueueLocal(newJob({ tab, record, batch, index, group: groupOf(record) }));
       } else if (translator && record.transcript.state === 'done' && record.text) {
         record.transcript = { ...record.transcript, translating: true };
-        const job = newJob({ tab, record, batch, index, group: groupOf(record), prior });
+        const job = newJob({ tab, record, batch, index, group: groupOf(record) });
         job.translator = translator;
         queue.enqueueLlm(job);
       } else continue;

@@ -1,3 +1,4 @@
+import type { Stripe } from './long-page.ts';
 import type { PageText, RatioRect } from './page-text.ts';
 import type { EditableFields, NotesSuggestion, StaleReason, SuggestionRef } from './series-notes.ts';
 import type { SeriesOption } from './series.ts';
@@ -200,6 +201,13 @@ export interface PageOnAnchor {
 export interface PageCandidate {
   anchorId: string;
   rect: Rect;
+  /**
+   * 直式捲動的長 Page（比可見範圍高、寬度放得下，spec #142）才有：看得到的那一截（anchor rect ∩ viewport ∩ 裁切祖先，CSS px）。
+   * 截圖只裁這一截、本機流水線只跑這一截，截圖時也不藏它的覆蓋層。
+   */
+  visible?: Rect;
+  /** 長 Page 才有：截圖裡會出現的自己的擦除與譯文（畫面 CSS px）；跟它們有交集的橫條不算指紋。沒有覆蓋層時省略。 */
+  covered?: Rect[];
   /** 這個 anchor 上正顯示著覆蓋層的 Page（pageHash）；沒有覆蓋層時省略。 */
   overlaid?: string[];
 }
@@ -220,8 +228,13 @@ export interface PageThumb extends PageCandidate {
   subRect?: RatioRect;
   /** 裁切後縮小的 data URL。 */
   thumbnail: string;
-  /** Page 的身分（shared/page-hash.ts），從全解析度的裁切算出來；翻譯快取的 key。 */
+  /**
+   * Page 的身分（shared/page-hash.ts），從全解析度的裁切算出來；翻譯快取的 key。
+   * 長 Page 的身分是 stripes：這裡先放第一條橫條的 hash（沒有就是空字串），transcriber 認出是哪個 Page 後換掉。
+   */
   pageHash: string;
+  /** 長 Page 才有：這一截裡完整看得到、有內容的橫條（shared/long-page.ts）。 */
+  stripes?: Stripe[];
 }
 
 export type CropResponse = { pages: PageThumb[] } | { error: string };
@@ -279,6 +292,8 @@ export interface AnalyzeRequest {
   candidate: PageCandidate;
   /** Page 在候選裡的範圍（PageThumb.subRect）；省略＝整個候選。 */
   subRect?: RatioRect;
+  /** 長 Page（candidate.visible）才有：已收 Line 的外框（Page 座標），這一截裡跟它們重疊的框不做 OCR。 */
+  collected?: RatioRect[];
   /** e2e build 才會帶。 */
   pipeline?: PipelineConfig;
 }

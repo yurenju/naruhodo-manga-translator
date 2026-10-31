@@ -10,6 +10,7 @@ import type { AddressInfo } from 'node:net';
 import { cachedModelPath, TEST_MODEL_FILES } from '../model-cache.ts';
 import { canvasSitePage } from './canvas-site.ts';
 import { ebookReaderPage } from './ebook-reader.ts';
+import { verticalScrollPage } from './vertical-scroll.ts';
 
 const PAGES_DIR = new URL('../../testdata/synthetic/out/', import.meta.url);
 
@@ -20,6 +21,8 @@ export interface MockSite {
   canvasSitePagedUrl: string;
   /** 仿電子書閱讀器：整個 viewport 一張 blob img（Spread＋黑邊），翻頁換 src（#35）。 */
   ebookReaderUrl: string;
+  /** 仿直式捲動網站：自己捲動的容器裡一張比可見範圍高的長 canvas（spec #142）。 */
+  verticalScrollUrl: string;
   /** 取代 https://huggingface.co 的模型下載來源（e2e 透過 test:configure 告訴外掛）。 */
   modelBaseUrl: string;
   /** 外掛向模型下載來源要過的路徑（判斷有沒有重新下載）。 */
@@ -61,6 +64,10 @@ export async function startMockSite(): Promise<MockSite> {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(canvasSitePage(imageOrigin, options));
       return;
     }
+    if (path === '/vertical-scroll/') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(verticalScrollPage(imageOrigin));
+      return;
+    }
     if (path === '/ebook-reader/') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(ebookReaderPage());
       return;
@@ -96,6 +103,7 @@ export async function startMockSite(): Promise<MockSite> {
     canvasSiteUrl: `${siteOrigin}/canvas-site/`,
     canvasSitePagedUrl: `${siteOrigin}/canvas-site/?mode=paged`,
     ebookReaderUrl: `${siteOrigin}/ebook-reader/`,
+    verticalScrollUrl: `${siteOrigin}/vertical-scroll/`,
     modelBaseUrl: `${siteOrigin}/hf`,
     modelRequests,
     corruptModel: (path) => void corrupted.add(path),

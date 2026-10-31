@@ -21,8 +21,8 @@ const notesInput: NotesInput = {
 /** structured outputs 回來的 JSON（text 區塊裡的字串）。 */
 const answer = {
   items: [
-    { id: 'b1', reading: 'おはよう！きょうははやいね', zh: '早安！今天好早喔', unreadable: false },
-    { id: 'l1', reading: 'どどどど', zh: '', unreadable: true },
+    { id: 'b1', reading: 'おはよう！きょうははやいね', zh: '早安！今天好早喔', unreadable: false, sfx: false },
+    { id: 'l1', reading: 'どどどど', zh: '', unreadable: true, sfx: true },
   ],
 };
 
@@ -170,14 +170,14 @@ describe('Claude 翻譯：request', () => {
 });
 
 describe('Claude 翻譯：structured output 回應解析', () => {
-  it('把讀音、譯文、unreadable 依 id 對回來', async () => {
+  it('把讀音、譯文、unreadable、sfx 依 id 對回來', async () => {
     const { translator } = setup([ok]);
 
     const output = await translator.translatePage(input);
 
     expect(output.items).toEqual([
-      { id: 'b1', 讀音: 'おはよう！きょうははやいね', 譯文: '早安！今天好早喔', unreadable: false },
-      { id: 'l1', 讀音: 'どどどど', 譯文: '', unreadable: true },
+      { id: 'b1', 讀音: 'おはよう！きょうははやいね', 譯文: '早安！今天好早喔', unreadable: false, sfx: false },
+      { id: 'l1', 讀音: 'どどどど', 譯文: '', unreadable: true, sfx: true },
     ]);
     expect(output.model).toBe('claude-haiku-5-5');
   });
