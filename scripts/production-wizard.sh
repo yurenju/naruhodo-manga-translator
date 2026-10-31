@@ -218,6 +218,9 @@ SITE_CONFIG='site/wrangler.jsonc'
 D1_NAME='naruhodo'
 PADDLE_API_BASE_URL='https://api.paddle.com'
 PADDLE_DASHBOARD='https://vendors.paddle.com'
+# Worker 需要的 API key 權限；第 10 步照這份清單請使用者勾選，再用 GET / 核對。
+PADDLE_PERMISSIONS=(transaction.write product.write price.write customer.write subscription.write
+  notification_setting.write notification.read customer_portal_session.write)
 WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.updated"]'
 
 CF_SECRETS=() # 這次設定到 Cloudflare 的 Worker secrets
@@ -258,6 +261,14 @@ paddle_api() { api "$1" "$PADDLE_API_BASE_URL$2" "Authorization: Bearer $PADDLE_
 paddle_fail() {
   warn "Paddle API $1 失敗（HTTP $HTTP_STATUS）：$(json_get 'error.code') $(json_get 'error.detail')"
   exit 1
+}
+
+# missing_permissions：GET / 的回應（RESPONSE）裡，PADDLE_PERMISSIONS 有哪些這把 key 沒有，以空白分隔。
+# Paddle 的 API root 會列出 key 的所有權限（write 隱含的 read 也列），不會改到任何資料。
+missing_permissions() {
+  local granted=",$(json_get 'data.caller.permissions')," p missing=()
+  for p in "${PADDLE_PERMISSIONS[@]}"; do [[ "$granted" == *",$p,"* ]] || missing+=("$p"); done
+  printf '%s' "${missing[*]}"
 }
 
 # worker_secret_exists NAME：Cloudflare 上的 Worker 已經有這個 secret。
@@ -506,16 +517,22 @@ else
   step "API keys 分頁 → New API key → Name：naruhodo-worker。"
   step "Permissions 勾這幾個（write 都包含 read）："
   note "    transaction.write、product.write、price.write、customer.write、"
-  note "    subscription.write、notification_setting.write、notification.read"
+  note "    subscription.write、notification_setting.write、notification.read、"
+  note "    customer_portal_session.write（畫面上是 Customer portal sessions → Write；"
+  note "    旁邊的 Customer authentication tokens 不用勾）"
   step "Expiry date 設最長；Save 後複製 key（只會顯示一次，開頭是 pdl_live_apikey_）。"
   while :; do
     ask_secret PADDLE_API_KEY "貼上 API key（輸入不會顯示）："
     if [[ "$PADDLE_API_KEY" != pdl_live_apikey_* ]]; then
       warn "開頭不是 pdl_live_apikey_，可能貼到 sandbox 的 key 或 client-side token"; continue
     fi
-    paddle_api GET "/products?per_page=1"
-    api_ok && break
-    warn "Paddle 拒絕這把 key（HTTP $HTTP_STATUS $(json_get 'error.code')），請檢查權限後重貼"
+    paddle_api GET /
+    if ! api_ok || [[ -z "$(json_get 'data.caller.account')" ]]; then
+      warn "Paddle 拒絕這把 key（HTTP $HTTP_STATUS $(json_get 'error.code')），請檢查後重貼"; continue
+    fi
+    missing=$(missing_permissions)
+    [[ -z "$missing" ]] && break
+    warn "這把 key 少了權限：$missing。回 Paddle 編輯這把 key 補勾後 Save，再貼一次"
   done
   note "key 到期就失效：到期前回這個頁面建新的，再重跑這個 wizard。"
 fi

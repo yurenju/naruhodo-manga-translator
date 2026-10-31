@@ -72,8 +72,11 @@ test.describe('全新安裝', () => {
 /** wrangler.jsonc 的 env.test 的 PADDLE_WEBHOOK_SECRET（假值）。 */
 const TEST_WEBHOOK_SECRET = 'pdl_ntfset_browser_test';
 
+/** worker/src/paddle.ts 的假 Paddle 拒絕替這個 customer 建立 portal session（像 API key 少了 customer_portal_session.write）。 */
+const PORTAL_FORBIDDEN_CUSTOMER = 'ctm_fake_portal_forbidden';
+
 /** 像 Paddle 一樣簽好、送一個 subscription.created 給本機 Worker；custom_data 的 Account id 是 Worker 建立 transaction 時放的。 */
-async function sendSubscriptionCreated(accountId: string): Promise<void> {
+async function sendSubscriptionCreated(accountId: string, customerId = `ctm_browser_${accountId}`): Promise<void> {
   const now = new Date().toISOString();
   const body = JSON.stringify({
     event_id: `evt_browser_${Date.now()}`,
@@ -82,7 +85,7 @@ async function sendSubscriptionCreated(accountId: string): Promise<void> {
     data: {
       id: `sub_browser_${accountId}`,
       status: 'active',
-      customer_id: `ctm_browser_${accountId}`,
+      customer_id: customerId,
       started_at: now,
       current_billing_period: { starts_at: now, ends_at: new Date(Date.now() + 365 * 86_400_000).toISOString() },
       scheduled_change: null,
@@ -174,6 +177,39 @@ test('直式捲動的長 Page 捲動兩次只扣一頁：扣掉最後一頁之�
   await expect(panel.getByText('我是轉學生霧島湊，請多指教')).toBeVisible();
   await expect(panel.getByText('未翻譯')).toHaveCount(0);
   expect(await sw.evaluate(() => globalThis.__translateCalls ?? 0)).toBe(0);
+});
+
+/** 訂閱後按「訂閱」拿到 Account id、送 webhook，回到 side panel 時已經是訂閱中。 */
+async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId?: string): Promise<void> {
+  await context.route('http://localhost:4321/**', (route) => route.fulfill({ contentType: 'text/html', body: '' }));
+  const opened = context.waitForEvent('page');
+  await panel.getByRole('status', { name: '剩餘額度' }).getByRole('button', { name: '訂閱' }).click();
+  const checkout = await opened;
+  await expect.poll(() => checkout.url()).toMatch(/_ptxn=txn_fake_/);
+  await sendSubscriptionCreated(new URL(checkout.url()).searchParams.get('_ptxn')!.replace('txn_fake_', ''), customerId);
+  await checkout.close();
+  await panel.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/^本月剩 800 頁/);
+}
+
+// unit 測不到的：Worker 的 502 經過 hosted-account-client 回到 side panel，畫面真的出現錯誤、沒有打開新分頁（#156）。
+// 「訂閱」失敗走同一個 usePaymentAction 與 PaymentUnavailable，只留「管理訂閱」這一條代表路徑。
+test('管理訂閱：Paddle 拒絕建立 customer portal 時，設定頁顯示付款服務暫時無法使用，不打開新分頁', async ({
+  context,
+  sw,
+  extensionId,
+  mockSite,
+}, testInfo) => {
+  const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
+  await signInOnPanel(panel, context, freshEmail(testInfo.workerIndex));
+  await subscribeOnPanel(panel, context, PORTAL_FORBIDDEN_CUSTOMER);
+  await chooseFromPanelMenu(panel, '設定');
+  const settings = panel.getByRole('region', { name: '設定' });
+
+  const pagesBefore = context.pages().length;
+  await settings.getByRole('button', { name: '管理訂閱' }).click();
+  await expect(settings.getByRole('alert')).toHaveText('付款服務暫時無法使用，請稍後再試。');
+  expect(context.pages()).toHaveLength(pagesBefore);
 });
 
 test('免費額度用完：Worker 回額度不足後，side panel 顯示用完的狀態，逐字稿仍有原文與讀音', async ({ context, sw, extensionId, mockSite }, testInfo) => {

@@ -61,8 +61,8 @@ const t = copy[locale];
           <h3>{t.pricing.sub.title}</h3>
           <p class="price"><Copy text={t.pricing.sub.price} /> <small>{t.pricing.sub.unit}</small></p>
           <ul>{t.pricing.sub.items.map((item) => <li><Copy text={item} /></li>)}</ul>
-          <!-- 訂閱要先有帳號，從外掛裡購買（#94）。Paddle 審核通過前還不能付款（#97），按鈕停用；開放後改回連到 INSTALL_URL -->
-          <span class="btn btn-primary" aria-disabled="true">{t.pricing.sub.cta}</span>
+          <!-- 訂閱要先有帳號，從外掛裡購買（#94） -->
+          <a class="btn btn-primary" href={INSTALL_URL}>{t.pricing.sub.cta}</a>
         </div>
       </div>
       <p class="own-key">{t.pricing.ownKey}</p>

@@ -76,14 +76,6 @@ export function hostedApiUrl({ e2e, debug }: { e2e: boolean; debug: boolean }): 
   return e2e ? `http://localhost:${E2E_WORKER_PORT}` : debug ? 'http://localhost:8787' : 'https://api.naruhodo.page';
 }
 
-/**
- * 訂閱開放了沒：正式 build 等 Paddle 審核通過 naruhodo.page 才開（#97），在那之前按「訂閱」只會拿到 502。
- * e2e build 連假的 Paddle、debug build 連 sandbox，訂閱流程照常可以測。
- */
-export function subscriptionOpen({ e2e, debug }: { e2e: boolean; debug: boolean }): boolean {
-  return e2e || debug;
-}
-
 async function copyFonts(outDir: string): Promise<void> {
   await mkdir(join(outDir, 'fonts'), { recursive: true });
   const files = await overlayFontFiles();
@@ -108,7 +100,6 @@ export async function build({ e2e, debug = false, outDir }: { e2e: boolean; debu
       __E2E__: String(e2e),
       __DEBUG__: String(debug),
       __HOSTED_API_URL__: JSON.stringify(hostedApiUrl({ e2e, debug })),
-      __SUBSCRIPTION_OPEN__: String(subscriptionOpen({ e2e, debug })),
     },
     jsx: 'automatic',
     jsxImportSource: 'preact',

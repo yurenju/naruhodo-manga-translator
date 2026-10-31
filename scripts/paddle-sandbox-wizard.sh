@@ -217,6 +217,9 @@ PADDLE_API_BASE_URL='https://sandbox-api.paddle.com'
 SANDBOX_DASHBOARD='https://sandbox-vendors.paddle.com'
 SITE_ORIGIN_LOCAL='http://localhost:4321'
 WEBHOOK_PATH='/webhooks/paddle'
+# API key permissions the Worker and this wizard need; stage 3 lists them and checks them with GET /.
+PADDLE_PERMISSIONS=(transaction.write product.write price.write customer.write subscription.write
+  notification_setting.write notification.read notification_simulation.write customer_portal_session.write)
 WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.updated"]'
 
 # paddle_api METHOD PATH [JSON]: calls the sandbox API; sets HTTP_STATUS and RESPONSE.
@@ -244,6 +247,15 @@ api_ok() { [[ "$HTTP_STATUS" =~ ^2 ]]; }
 api_fail() {
   warn "Paddle API $1 failed (HTTP $HTTP_STATUS): $(json_get 'error.code') $(json_get 'error.detail')"
   exit 1
+}
+
+# missing_permissions: which PADDLE_PERMISSIONS the key lacks, space-separated, read from a
+# GET / response in RESPONSE. Paddle's API root lists every permission of the key (including
+# the read implied by each write) and changes nothing.
+missing_permissions() {
+  local granted=",$(json_get 'data.caller.permissions')," p missing=()
+  for p in "${PADDLE_PERMISSIONS[@]}"; do [[ "$granted" == *",$p,"* ]] || missing+=("$p"); done
+  printf '%s' "${missing[*]}"
 }
 
 find_cloudflared() {
@@ -299,7 +311,8 @@ step "Name：naruhodo-local-dev；Description：本機 wrangler dev 用。"
 step "Permissions 勾這幾個（write 都包含 read）："
 note "    transaction.write、product.write、price.write、customer.write、"
 note "    subscription.write、notification_setting.write、notification.read、"
-note "    notification_simulation.write"
+note "    notification_simulation.write、customer_portal_session.write"
+note "    （最後這個在畫面上是 Customer portal sessions → Write；旁邊的 Customer authentication tokens 不用勾）"
 step "Expiry date 設最長的一年（預設 90 天）。Rotatable 不用開。"
 step "按 Save，複製 key（只會顯示一次，開頭是 pdl_sdbx_apikey_）。"
 while :; do
@@ -307,9 +320,13 @@ while :; do
   if [[ "$PADDLE_API_KEY" != pdl_sdbx_apikey_* ]]; then
     warn "開頭不是 pdl_sdbx_apikey_，可能貼到 live key 或 client-side token"; continue
   fi
-  paddle_api GET "/products?per_page=1"
-  api_ok && break
-  warn "Paddle 拒絕這把 key（HTTP $HTTP_STATUS $(json_get 'error.code')），請檢查權限後重貼"
+  paddle_api GET /
+  if ! api_ok || [[ -z "$(json_get 'data.caller.account')" ]]; then
+    warn "Paddle 拒絕這把 key（HTTP $HTTP_STATUS $(json_get 'error.code')），請檢查後重貼"; continue
+  fi
+  missing=$(missing_permissions)
+  [[ -z "$missing" ]] && break
+  warn "這把 key 少了權限：$missing。回 Paddle 編輯這把 key 補勾後 Save，再貼一次"
 done
 write_env PADDLE_API_KEY "$PADDLE_API_KEY"
 note "key 會在一年後過期；過期就回到這個頁面建一把新的，再重跑這個 wizard。"

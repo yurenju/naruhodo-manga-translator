@@ -48,7 +48,6 @@ html[data-locale="zh-tw"] [data-l="en"] { display: none; }
 }
 .btn-primary { background: var(--naru-accent); color: var(--naru-on-accent); }
 .btn-ghost { background: var(--naru-surface); color: var(--naru-accent); border-color: var(--naru-line-strong); }
-.btn[aria-disabled='true'] { opacity: 0.55; cursor: default; }
 .btn-small {padding: var(--naru-space-1) var(--naru-space-3); font-size: var(--naru-text-label); }
 
 /* 頁首 */

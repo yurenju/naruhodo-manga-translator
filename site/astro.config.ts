@@ -27,6 +27,6 @@ export default defineConfig({
     server: { fs: { allow: ['..'] } },
     plugins: [cssImportedByScriptsAsText()],
     // 外掛 build 時的常數（scripts/build.ts）：網站等於正式 build
-    define: { __E2E__: 'false', __DEBUG__: 'false', __SUBSCRIPTION_OPEN__: 'false' },
+    define: { __E2E__: 'false', __DEBUG__: 'false' },
   },
 });

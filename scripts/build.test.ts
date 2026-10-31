@@ -55,15 +55,6 @@ describe('正式 build', () => {
     expect(await readText(prodDir, 'background.js')).toContain('"https://api.naruhodo.page"');
   });
 
-  it('訂閱還沒開放：「訂閱」按鈕走「訂閱即將推出」那一支（Paddle 審核通過前，#97）；e2e build 照常可以訂閱', async () => {
-    // esbuild 把 !__SUBSCRIPTION_OPEN__ 折成 true／false；沒 minify，兩支都還在
-    const branch = async (dir: string, file: string) => (await readText(dir, file)).match(/function SubscribeButton[^]*?if \((true|false)\)/)?.[1];
-
-    expect(await branch(prodDir, 'sidepanel.js')).toBe('true');
-    expect(await branch(prodDir, 'onboarding.js')).toBe('true');
-    expect(await branch(e2eDir, 'sidepanel.js')).toBe('false');
-  });
-
   it('不包含 e2e 測試入口、FakeTranslator 與合成頁 ground truth', async () => {
     const sw = await readText(prodDir, 'background.js');
 

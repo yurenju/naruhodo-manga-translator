@@ -12,7 +12,7 @@ import type { StaleReason } from '../shared/series-notes.ts';
 import { Badge, Button, Callout, PageHeader, Progress, SegmentedControl, type SegmentOption } from './components.tsx';
 import { OwnKeyDataFlow } from './data-flow.tsx';
 import { PRIVACY_URL } from './links.ts';
-import { SubscribeButton } from './subscribe-button.tsx';
+import { PaymentUnavailable, SubscribeButton } from './subscribe-button.tsx';
 import { DEFAULT_LEVEL, DisplaySwitch, Transcript, type Display, type Level } from './transcript.tsx';
 import {
   quotaView,
@@ -403,6 +403,8 @@ export interface SidePanelProps {
   quota?: Quota;
   /** 「訂閱」：外掛建立 Paddle checkout、用新分頁打開（#94）；沒給時（網站上的展示）訂閱按鈕停用。 */
   onSubscribe?: () => void;
+  /** 上一次按「訂閱」沒能打開 checkout：顯示付款服務暫時無法使用（#156）。 */
+  paymentFailed?: boolean;
   /** 以下是只有外掛 container 才有的區塊（會讀寫 store、送 chrome 訊息）；沒給就不顯示，⚙ 選單也沒有那一項。 */
   /** ⚙ 選單裡的自動翻譯開關。 */
   autoTranslate?: ComponentChildren;
@@ -534,6 +536,7 @@ export function SidePanel(props: SidePanelProps) {
           onDismissHostedHint={() => props.onDismissHostedHint?.()}
         />
         {quota.exhausted && <QuotaExhaustedCallout exhausted={quota.exhausted} onSubscribe={props.onSubscribe} onUseOwnKey={useOwnKey} />}
+        {props.paymentFailed && <PaymentUnavailable />}
         {done.length > 0 && <DisplaySwitch display={display} onLevel={setLevel} onFurigana={setFurigana} />}
         <ul aria-label="Page">
           {view.pages.map((entry) => (

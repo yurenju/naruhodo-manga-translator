@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   // build 時的常數（scripts/build.ts）；單元測試當正式 build
-  define: { __E2E__: 'false', __DEBUG__: 'false', __HOSTED_API_URL__: '""', __SUBSCRIPTION_OPEN__: 'true' },
+  define: { __E2E__: 'false', __DEBUG__: 'false', __HOSTED_API_URL__: '""' },
   test: {
     projects: [
       {

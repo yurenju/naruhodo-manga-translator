@@ -26,7 +26,7 @@ import { saveTranslationMode, watchTranslationMode, type TranslationMode } from 
 import { Badge, Button, RadioCard, Switch } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
 import { SidePanel } from '../ui/side-panel.tsx';
-import { SubscribeButton } from '../ui/subscribe-button.tsx';
+import { PaymentUnavailable, SubscribeButton } from '../ui/subscribe-button.tsx';
 import { accountPlanView } from '../ui/view.ts';
 import { SeriesNotesSection } from './series-notes.tsx';
 
@@ -118,19 +118,34 @@ function useHostedHint(): boolean {
 /** 用新分頁打開 onboarding（#93）；signIn＝從第 2 步開始。 */
 const openOnboarding = (step?: 'signIn') => void chrome.tabs.create({ url: onboardingUrl(step) });
 
-/** 「訂閱」：向 Worker 建立 checkout，用新分頁打開產品網站的 checkout 頁（#94）。已經訂閱中就重讀額度。 */
-async function subscribe(session: HostedSession): Promise<void> {
+/** 「訂閱」：向 Worker 建立 checkout，用新分頁打開產品網站的 checkout 頁（#94）。已經訂閱中就重讀額度。失敗回 false。 */
+async function subscribe(session: HostedSession): Promise<boolean> {
   const result = await hostedAccount.checkout(session.token, 'zh-tw');
   if (result.ok) void chrome.tabs.create({ url: result.url });
   else if (result.reason === 'alreadySubscribed') void chrome.runtime.sendMessage({ type: 'quota:changed' } satisfies Message).catch(() => {});
-  else console.error('建立 checkout 失敗', result.message);
+  else {
+    console.error('建立 checkout 失敗', result.message);
+    return false;
+  }
+  return true;
 }
 
-/** 「管理訂閱」：向 Worker 建立 Paddle customer portal session，用新分頁打開（取消訂閱、更新付款方式、收據）。 */
-async function managePlan(session: HostedSession): Promise<void> {
+/** 「管理訂閱」：向 Worker 建立 Paddle customer portal session，用新分頁打開（取消訂閱、更新付款方式、收據）。失敗回 false。 */
+async function managePlan(session: HostedSession): Promise<boolean> {
   const result = await hostedAccount.portal(session.token);
   if (result.ok) void chrome.tabs.create({ url: result.url });
   else console.error('打開 customer portal 失敗', result.message);
+  return result.ok;
+}
+
+/** 「訂閱」「管理訂閱」的按鈕：失敗時記下來讓畫面顯示錯誤（#156），再按一次先清掉。 */
+function usePaymentAction(): [failed: boolean, run: (action: () => Promise<boolean>) => void] {
+  const [failed, setFailed] = useState(false);
+  const run = (action: () => Promise<boolean>) => {
+    setFailed(false);
+    void action().then((ok) => setFailed(!ok));
+  };
+  return [failed, run];
 }
 
 /** 這個 side panel 自己改了 session：runtime 訊息不會送回給發送的一方，自己的 useHostedSession 另外通知。 */
@@ -159,6 +174,7 @@ function HostedAccount({
   quota: Quota | undefined;
   onDeleteAccount: () => void;
 }) {
+  const [paymentFailed, runPayment] = usePaymentAction();
   if (!session)
     return (
       <>
@@ -185,11 +201,12 @@ function HostedAccount({
           ))}
         </p>
       )}
+      {paymentFailed && <PaymentUnavailable />}
       <div class="actions">
         {plan?.subscribed ? (
-          <Button onClick={() => void managePlan(session)}>管理訂閱</Button>
+          <Button onClick={() => runPayment(() => managePlan(session))}>管理訂閱</Button>
         ) : (
-          <SubscribeButton variant="primary" onSubscribe={plan && (() => void subscribe(session))} />
+          <SubscribeButton variant="primary" onSubscribe={plan && (() => runPayment(() => subscribe(session)))} />
         )}
         <Button onClick={() => void signOut(accountExit, session.token)}>登出</Button>
         <Button variant="ghost" class="naru-text-danger" onClick={onDeleteAccount}>
@@ -598,6 +615,7 @@ function App({ tabId }: { tabId: number | undefined }) {
   const quota = useHostedQuota(session);
   const onboarding = useOnboarding();
   const hostedHint = useHostedHint();
+  const [paymentFailed, runPayment] = usePaymentAction();
 
   useEffect(() => {
     void apiKeys.get().then((key) => setHasKey(Boolean(key)));
@@ -648,7 +666,8 @@ function App({ tabId }: { tabId: number | undefined }) {
       hostedHint={hostedHint}
       onDismissHostedHint={() => void dismissHostedHint()}
       quota={translationMode === 'hosted' ? quota : undefined}
-      onSubscribe={session ? () => void subscribe(session) : undefined}
+      onSubscribe={session ? () => runPayment(() => subscribe(session)) : undefined}
+      paymentFailed={paymentFailed}
       autoTranslate={running && <AutoTranslateToggle tabId={tabId} />}
       series={running && <SeriesPicker tabId={tabId} />}
       renderSettings={(_close, openDeleteAccount) => (

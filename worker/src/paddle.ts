@@ -62,11 +62,17 @@ function paddleApi(env: Env): Paddle {
   };
 }
 
+/** 假 Paddle 拒絕替這個 customer 建立 portal session：browser test 的 webhook 用這個 customer id，模擬 key 少了權限（#156）。 */
+const FAKE_PORTAL_FORBIDDEN_CUSTOMER = 'ctm_fake_portal_forbidden';
+
 /** browser test 的假 Paddle：transaction id 帶 Account id（測試從 checkout 網址取出來組 webhook 事件）。 */
 function fakePaddle(env: Env): Paddle {
   return {
     createTransaction: async (accountId) => `txn_fake_${accountId}`,
-    portalUrl: async (customerId) => `${env.SITE_ORIGIN}/zh-tw/?fake-portal=${encodeURIComponent(customerId)}`,
+    async portalUrl(customerId) {
+      if (customerId === FAKE_PORTAL_FORBIDDEN_CUSTOMER) throw new PaddleError(`Paddle API /customers/${customerId}/portal-sessions 失敗：HTTP 403`);
+      return `${env.SITE_ORIGIN}/zh-tw/?fake-portal=${encodeURIComponent(customerId)}`;
+    },
     cancelSubscription: async () => {},
   };
 }
