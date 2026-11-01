@@ -1,6 +1,6 @@
 # Naruhodo Refund Policy
 
-Effective date: 2026-10-30
+Effective date: 2026-11-01
 Publisher: Sad Coder, Inc.
 
 The Naruhodo subscription is sold by Paddle.com, our reseller and Merchant of Record, on behalf of Sad Coder, Inc. Paddle handles all payments and refunds. Google is not the seller, and payments do not go through the Chrome Web Store.

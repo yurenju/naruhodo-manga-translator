@@ -1,6 +1,6 @@
 # Naruhodo Privacy Policy
 
-Effective date: 2026-10-31
+Effective date: 2026-11-01
 Publisher: Sad Coder, Inc.
 
 Naruhodo is a Chrome extension that translates Japanese manga on screen into Traditional Chinese, in place. This policy explains what data the extension and the Naruhodo service handle, where the data goes, and how long it is kept.
