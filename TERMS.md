@@ -1,6 +1,6 @@
 # Naruhodo Terms of Service
 
-Effective date: 2026-10-30
+Effective date: 2026-11-01
 Publisher: Sad Coder, Inc.
 
 These terms are an agreement between you and Sad Coder, Inc., a Delaware corporation ("we", "us"), about your use of Naruhodo: the Chrome extension, the Naruhodo translation service, and the Naruhodo website. By using Naruhodo you agree to these terms. If you do not agree, do not use it.
