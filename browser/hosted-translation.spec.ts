@@ -1,7 +1,7 @@
 /**
  * Hosted Translation：外掛連 globalSetup 啟動的本機 Worker（wrangler dev --env test，Anthropic 是 FakeTranslator、寄信是假的實作）。
  * 全新安裝（#93）：SW 處理安裝事件 → 打開 onboarding 分頁 → 用 email 驗證碼登入（驗證碼從假的寄信實作的 outbox 取出）→
- * 先用免費額度 → 在仿 canvas 網站翻完一頁；切到自備金鑰時改走 offscreen 的 FakeTranslator，不經過 Worker。
+ * 先用免費額度 → 第 4 步打開網站的試翻頁（#169）→ 在仿 canvas 網站翻完一頁；切到自備金鑰時改走 offscreen 的 FakeTranslator，不經過 Worker。
  * unit 測不到的：SW 真的打開 onboarding 分頁、onboarding 頁與 side panel 與 SW 透過 chrome.storage／IndexedDB／訊息接起來，
  * side panel 與 SW 真的用 HTTP 打到 Worker、兩邊對 API 契約（路徑、token、輸入與回應格式）的理解一致。
  * 安裝時怎麼決定翻譯模式與 onboarding 在 src/background/install.test.ts。
@@ -17,6 +17,7 @@
 import { createHmac } from 'node:crypto';
 import type { BrowserContext, Page } from '@playwright/test';
 import { DEV_FREE_PAGES_PATH, PADDLE_WEBHOOK_PATH } from '../src/shared/hosted-api.ts';
+import { PRACTICE_URL } from '../src/ui/links.ts';
 import { activateOnMockSite, chooseFromPanelMenu, expect, openPanelMenu, test } from './fixtures.ts';
 import { VERTICAL_VIEW_HEIGHT } from './mock-site/vertical-scroll.ts';
 import { finishOnboarding, onboardingPage, signInFromPanel, signInWithEmail } from './sign-in.ts';
@@ -43,7 +44,12 @@ test.describe('全新安裝', () => {
     const email = freshEmail(testInfo.workerIndex);
     await signInWithEmail(onboarding, email);
     await onboarding.getByRole('button', { name: '先用免費的 50 頁' }).click();
-    await expect(onboarding.getByRole('heading', { name: '開始翻譯' })).toBeVisible();
+    // 第 4 步（#169）：用新分頁打開網站的試翻頁，onboarding 分頁留著。測試不連外：只看分頁要打開的網址
+    // （外掛用 chrome.tabs.create 開的分頁攔不到 context.route，載入失敗時 tab.url 仍是要打開的網址）
+    await onboarding.getByRole('button', { name: '到試翻頁試試看' }).click();
+    const practiceTab = () => sw.evaluate(async (url) => (await chrome.tabs.query({})).find((t) => (t.pendingUrl ?? t.url) === url)?.id, PRACTICE_URL);
+    await expect.poll(practiceTab).toBeDefined();
+    await sw.evaluate((id) => chrome.tabs.remove(id), (await practiceTab())!);
     await finishOnboarding(onboarding);
 
     // 設定完成：side panel 不再只顯示「完成設定」，自動翻譯直接經過 Worker 翻（同意在登入時取得，沒有資料使用說明卡）

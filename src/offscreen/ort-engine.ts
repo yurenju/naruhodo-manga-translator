@@ -33,16 +33,6 @@ export function loadOrt(): Promise<OrtModule> {
   return ortPromise;
 }
 
-/** 有 WebGPU adapter 才用 WebGPU；headless 與部分 Mac 沒有，退回 wasm。 */
-export async function detectExecutionProvider(): Promise<ExecutionProvider> {
-  const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
-  try {
-    return (await gpu?.requestAdapter()) ? 'webgpu' : 'wasm';
-  } catch {
-    return 'wasm';
-  }
-}
-
 export interface OrtEngine extends Engine {
   executionProvider: ExecutionProvider;
   threads: number;

@@ -1,0 +1,84 @@
+---
+/**
+ * 試翻頁（#169）。剛裝好外掛的讀者從 onboarding 第 4 步來，用真的工具列圖示翻一次 Practice Spread；
+ * Worker 認出它的文字就不扣頁。不偵測外掛裝了沒、圖示釘選了沒。
+ * 外掛只翻整張都在畫面裡的圖，所以 Practice Spread 一打開就要整張看得到：寬螢幕步驟在左欄、漫畫在右邊，
+ * 高度不超過頁首以下的畫面；窄螢幕步驟在上、漫畫在下，漫畫不比一個畫面高，捲一次就整張都在。
+ * `?shot`：藏起頁首、頁尾與引導文字，只留置中、填滿視窗高度的 Practice Spread（用正式版外掛重拍 Web Store 截圖）。
+ */
+import PuzzleIcon from '../../components/PuzzleIcon.astro';
+import Base from '../../layouts/Base.astro';
+import { copy } from '../../copy.ts';
+import { INSTALL_URL } from '../../links.ts';
+import { type Locale, LOCALES, byLocale } from '../../locale.ts';
+import spread from '../../../../practice-spread/practice-spread.webp';
+
+export function getStaticPaths() {
+  return LOCALES.map((locale) => ({ params: { locale } }));
+}
+
+const locale = Astro.params.locale as Locale;
+const t = copy[locale].try;
+/** 步驟內文切成文字與 `{puzzle}`／`{shortcut}` 兩種記號。 */
+const parts = (body: string) => body.split(/(\{puzzle\}|\{shortcut\})/);
+---
+<Base locale={locale} title={`Naruhodo — ${t.title}`} alternates={byLocale((l) => `/${l}/try/`)}>
+  <section class="try">
+    <div class="guide">
+      <h1>{t.title}</h1>
+      <p class="lead">{t.lead}<strong>{t.free}</strong></p>
+      <ol class="steps">
+        {t.steps.map((step) => (
+          <li class="card">
+            <h3>{step.title}</h3>
+            <p>
+              {parts(step.body).map((part) =>
+                part === '{puzzle}' ? <PuzzleIcon label={t.puzzleLabel} /> : part === '{shortcut}' ? <Fragment><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd></Fragment> : part,
+              )}
+            </p>
+          </li>
+        ))}
+      </ol>
+      <p class="hint">{t.notInstalled}<a href={INSTALL_URL}>{t.install}</a></p>
+    </div>
+    <figure class="spread"><img src={spread.src} width={spread.width} height={spread.height} alt={t.spreadAlt} /></figure>
+  </section>
+</Base>
+
+<script is:inline>
+  // 在 body 畫出來之前加上 class，?shot 的截圖不會閃過引導文字
+  if (new URLSearchParams(location.search).has('shot')) document.documentElement.classList.add('shot');
+</script>
+
+<style is:global>
+  /* 頁首（site.css 的 .site-header：min-height 60px＋1px 下框線）以下、扣掉上下留白的高度 */
+  .try { --try-gap: var(--naru-space-5); --try-fit: calc(100dvh - 61px - 2 * var(--naru-space-5)); }
+  .try .guide { max-width: 1040px; margin: 0 auto; padding: var(--naru-space-6) var(--naru-space-5) var(--naru-space-4); }
+  .try h1 { margin: 0 0 var(--naru-space-2); }
+  .try .lead { max-width: 720px; }
+  .try .steps { margin: var(--naru-space-4) 0; }
+  .try kbd { padding: 1px 6px; border: 1px solid var(--naru-line-strong); border-bottom-width: 2px; border-radius: 4px; font-family: var(--naru-font-mono); font-size: var(--naru-text-small); background: var(--naru-surface); }
+  .try .hint { color: var(--naru-ink-3); font-size: var(--naru-text-small); }
+  .try .spread { display: flex; justify-content: center; margin: 0 0 var(--naru-space-6); padding: 0 var(--naru-space-4); }
+  /* 不比一個畫面高：外掛只翻整張都在畫面裡的圖 */
+  .try .spread img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 2 * var(--naru-space-4)); }
+
+  /* 左右排時漫畫至少約 820px 寬；更窄字太小，真的 OCR 讀錯、Worker 認不出 Practice Spread */
+  @media (min-width: 1200px) {
+    .try { display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); gap: var(--try-gap); align-items: start; max-width: 1760px; margin: 0 auto; padding: var(--try-gap); }
+    .try .guide { max-width: none; margin: 0; padding: 0; }
+    .try h1 { font-size: var(--naru-text-heading); }
+    .try .lead { font-size: var(--naru-text-label); }
+    .try .steps { grid-template-columns: 1fr; gap: var(--naru-space-3); }
+    .try .steps .card { padding: var(--naru-space-4); }
+    .try .steps li::before { margin-bottom: var(--naru-space-2); }
+    .try .spread { justify-content: flex-start; margin: 0; padding: 0; }
+    .try .spread img { max-height: var(--try-fit); }
+  }
+
+  html.shot .site-header, html.shot .site-footer, html.shot .try .guide { display: none !important; }
+  html.shot body { background: #fff; }
+  html.shot .try { display: block; max-width: none; padding: 0; }
+  html.shot .try .spread { display: flex; align-items: center; justify-content: center; max-width: none; height: 100vh; margin: 0; padding: 0; }
+  html.shot .try .spread img { width: auto; max-width: 100%; max-height: 100vh; }
+</style>

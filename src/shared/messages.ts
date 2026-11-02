@@ -35,8 +35,14 @@ export type Message =
   | { type: 'session:changed' }
   /** SW → side panel：內建翻譯的剩餘額度可能變了（翻譯扣了一頁、Worker 說用完了），重新向 Worker 讀。 */
   | { type: 'quota:changed' }
-  /** side panel → SW：目前的模型狀態。回應 ModelStatusResponse。 */
+  /** side panel、onboarding → SW：目前的模型狀態。回應 ModelStatusResponse。 */
   | { type: 'panel:getModelStatus' }
+  /** onboarding → SW：在背景把辨識模型下載進快取（#169），進度走 models:status。 */
+  | { type: 'onboarding:prefetchModels' }
+  /** SW → offscreen：只下載進 Cache Storage，不建 session、不載入記憶體。 */
+  | { type: 'offscreen:prefetchModels'; pipeline?: PipelineConfig }
+  /** SW → offscreen：這台電腦會用哪一組模型。SW 裡的 navigator.gpu.requestAdapter() 不會回應，要在 document 裡偵測。回應 ExecutionProvider。 */
+  | { type: 'offscreen:detectExecutionProvider' }
   /**
    * side panel → SW：「翻譯此頁／重新翻譯」：用已經辨識好的原文重新呼叫 Translator。
    * pageHash：只翻這一頁（過時提示的「重新翻譯」，#38）。
@@ -300,8 +306,13 @@ export interface AnalyzeRequest {
 
 export type AnalyzeResponse = { text: PageText } | { error: string };
 
+/**
+ * idle＝沒載入、也不確定在不在快取（SW 回答時會查快取，齊全就回 downloaded）；downloaded＝已在快取、還沒載入（#169 預先下載）；
+ * ready＝已載入記憶體。
+ */
 export type ModelStatus =
   | { state: 'idle' }
+  | { state: 'downloaded' }
   | { state: 'loading' }
   | { state: 'downloading'; loaded: number; total: number }
   | { state: 'ready'; executionProvider: ExecutionProvider; threads: number }
@@ -309,4 +320,6 @@ export type ModelStatus =
 
 export interface ModelStatusResponse {
   status: ModelStatus;
+  /** 會下載的那一組模型的總 bytes（WebGPU 約 472 MB、wasm 約 128 MB），onboarding 第 1 步顯示。 */
+  downloadBytes: number;
 }
