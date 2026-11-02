@@ -60,6 +60,10 @@ _Avoid_: context, glossary (ambiguous with this file), dictionary
 The Pages the reader saw just before the one being translated, in the same tab, with their text and translations; sent along when a Page is translated so the translator can follow the conversation and keep its wording. Includes the Pages on screen that come earlier in reading order, such as the right Page of a Spread for its left Page, and the earlier part of a Page taller than the screen. Follows what the reader actually saw, so after a jump or a page back they are not the previous Pages of the Episode.
 _Avoid_: context (that word is avoided for Series Notes), history
 
+**Practice Spread** (試翻跨頁)
+Our own original Spread that a newly installed reader translates for the first time, on a page of our website. It is translated for real, like any other Spread, but never counts as Translated Pages.
+_Avoid_: demo (that is the simulated showcase on the homepage), sample page
+
 ## Accounts and billing
 
 **Hosted Translation** (內建翻譯)
@@ -75,7 +79,7 @@ A reader identified by an email address, needed for Hosted Translation. Holds th
 _Avoid_: user (ambiguous with reader), member, profile
 
 **Translated Page** (已翻譯頁)
-The unit every limit counts: one Page whose translation came back from Hosted Translation, including one the reader asked to translate again. Viewing an already translated Page again, or a translation that failed, is not a Translated Page; a Spread is two.
+The unit every limit counts: one Page whose translation came back from Hosted Translation, including one the reader asked to translate again. Viewing an already translated Page again, a translation that failed, or the Practice Spread is not a Translated Page; a Spread is two.
 _Avoid_: credit, token, request
 
 **Free Pages** (免費額度)

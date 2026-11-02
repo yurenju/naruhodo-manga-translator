@@ -211,6 +211,7 @@ describe('用量紀錄', () => {
       cache_read_tokens: 700,
       cost_usd: expect.any(Number),
       page_record_id: null,
+      practice: 0,
     });
     expect(results).toEqual([record('translate'), record('notes')]);
     const stored = JSON.stringify(results);

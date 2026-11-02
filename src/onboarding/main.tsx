@@ -2,7 +2,8 @@
  * 全頁 onboarding（#93 畫面定案的版本 A：單欄步驟精靈）。全新安裝時 SW 用新分頁打開；side panel 的「完成設定」
  * 回到停下來的那一步，「登入」「改用內建翻譯」從第 2 步開始（?step=signIn）。
  *
- * 1 說明 → 2 同意並登入（SignIn；按「同意並寄送驗證碼」就記下內建翻譯的同意）→ 3 選擇方案 → 4 教學，按「完成」關掉分頁。
+ * 1 說明 → 2 同意並登入（SignIn；按「同意並寄送驗證碼」就記下內建翻譯的同意）→ 3 選擇方案 → 4 到網站的試翻頁試翻一頁（#169），按「完成」關掉分頁。
+ * 按下「開始設定」（或回到 onboarding 後那一步的主要按鈕）就請 SW 在背景下載辨識模型，右下角的藥丸顯示進度（#169）。
  * 頁尾「使用自備金鑰」換成一個不在步驟裡的畫面：存 key 並同意自備金鑰的說明，完成後跳到第 4 步。
  * 選了方案或存了 key 就算設定完成（side panel 不再顯示「完成設定」）；之後的同意、登入、模式切換由 SW 接著翻已啟動的分頁。
  */
@@ -13,11 +14,13 @@ import { grantDataConsent } from '../shared/data-consent.ts';
 import { FREE_PAGES } from '../shared/hosted-api.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { HOSTED_API_URL, loadHostedSession, saveHostedSession, type HostedSession } from '../shared/hosted-session.ts';
-import type { Message } from '../shared/messages.ts';
+import type { Message, ModelStatus, ModelStatusResponse } from '../shared/messages.ts';
+import { downloadNotice, downloadPill } from '../shared/model-download.ts';
 import { loadOnboarding, saveOnboarding, startStep, type OnboardingProgress, type OnboardingStep } from '../shared/onboarding.ts';
 import { saveTranslationMode } from '../shared/translation-mode.ts';
 import { Button, Callout } from '../ui/components.tsx';
 import { OwnKeyDataFlow, PolicyLinks } from '../ui/data-flow.tsx';
+import { PRACTICE_URL } from '../ui/links.ts';
 import { SignIn } from '../ui/sign-in.tsx';
 import { SubscribeButton } from '../ui/subscribe-button.tsx';
 
@@ -49,7 +52,8 @@ function Dots({ current }: { current: OnboardingStep }) {
   );
 }
 
-function Intro({ onNext }: { onNext: () => void }) {
+/** downloadBytes：模型還沒下載時才有（第 1 步說明會在背景下載多少）。 */
+function Intro({ downloadBytes, onNext }: { downloadBytes: number | undefined; onNext: () => void }) {
   return (
     <>
       <h1 class="ob-h1">歡迎使用 Naruhodo</h1>
@@ -64,10 +68,23 @@ function Intro({ onNext }: { onNext: () => void }) {
           <li>回頭看已經翻過的頁面不會扣頁數；翻譯失敗也不扣。</li>
         </ul>
       </div>
+      {downloadBytes !== undefined && <p class="ob-notice">{downloadNotice(downloadBytes)}</p>}
       <Button variant="primary" class="ob-big" onClick={onNext}>
         開始設定
       </Button>
     </>
+  );
+}
+
+/** 右下角的下載進度（#169）。沒有暫停、取消。 */
+function DownloadPill({ status, started }: { status: ModelStatus; started: boolean }) {
+  const pill = downloadPill(status, started);
+  if (!pill) return null;
+  return (
+    <p class={pill.done ? 'ob-pill ob-pill--done' : 'ob-pill'} role="status" title="外掛在背景下載辨識日文的模型，只需要一次">
+      {!pill.done && <span class="ob-pill__spin" aria-hidden="true" />}
+      {pill.text}
+    </p>
   );
 }
 
@@ -81,9 +98,27 @@ const PAYMENT_POLL_MS = 3000;
  * 第 3 步：選擇方案（#93、#94 畫面定案）。「訂閱」向 Worker 建立 checkout，用新分頁打開產品網站的 checkout 頁（Paddle 處理付款）；
  * 這裡每隔幾秒查一次方案，變成訂閱中就換成「訂閱完成」並呼叫 onSubscribed（設定完成），「下一步」才到第 4 步。
  */
-function Plan({ session, onFree, onSubscribed, onNext }: { session: HostedSession; onFree: () => void; onSubscribed: () => void; onNext: () => void }) {
+function Plan({
+  session,
+  onChoose,
+  onFree,
+  onSubscribed,
+  onNext,
+}: {
+  session: HostedSession;
+  /** 按了任一個方案（開始下載辨識模型，#169）。 */
+  onChoose: () => void;
+  onFree: () => void;
+  onSubscribed: () => void;
+  onNext: () => void;
+}) {
   const [state, setState] = useState<PlanState>({ kind: 'choose' });
   const [failure, setFailure] = useState<string | undefined>(undefined);
+
+  const free = () => {
+    onChoose();
+    onFree();
+  };
 
   const subscribed = () => {
     setState({ kind: 'subscribed' });
@@ -91,6 +126,7 @@ function Plan({ session, onFree, onSubscribed, onNext }: { session: HostedSessio
   };
 
   async function subscribe() {
+    onChoose();
     setFailure(undefined);
     const result = await hostedAccount.checkout(session.token, 'zh-tw');
     if (!result.ok) {
@@ -123,7 +159,7 @@ function Plan({ session, onFree, onSubscribed, onNext }: { session: HostedSessio
         <p>付款頁已經在新分頁打開（由 Paddle 處理付款）。付款完成後，這裡會自動更新。</p>
         <div class="naru-row">
           <Button onClick={() => void chrome.tabs.create({ url: state.url })}>重新打開付款頁</Button>
-          <Button variant="ghost" onClick={onFree}>
+          <Button variant="ghost" onClick={free}>
             改成先用免費額度
           </Button>
         </div>
@@ -153,7 +189,7 @@ function Plan({ session, onFree, onSubscribed, onNext }: { session: HostedSessio
           <p class="ob-plan__name">先用免費額度</p>
           <p class="ob-plan__price">{FREE_PAGES} 頁</p>
           <p class="hint">大約兩話，不會過期。用完再決定要不要訂閱。</p>
-          <Button onClick={onFree}>先用免費的 {FREE_PAGES} 頁</Button>
+          <Button onClick={free}>先用免費的 {FREE_PAGES} 頁</Button>
         </section>
         <section class="ob-plan ob-plan--hl" aria-label="訂閱（年繳）">
           <p class="ob-plan__name">訂閱（年繳）</p>
@@ -171,29 +207,23 @@ function Plan({ session, onFree, onSubscribed, onNext }: { session: HostedSessio
   );
 }
 
-function Tutorial() {
+/** 第 4 步：到網站的試翻頁，用真的工具列圖示翻一次 Practice Spread（釘選圖示的教學在試翻頁上）。onboarding 分頁不自動關。 */
+function TryPractice() {
   return (
     <>
-      <h2 class="ob-h2">開始翻譯</h2>
-      <p>打開日文漫畫網站或電子書閱讀器，然後：</p>
-      {/* 假的工具列：網址列＋拼圖圖示＋框起來的外掛圖示 */}
-      <div class="ob-toolbar" aria-hidden="true">
-        <span class="ob-toolbar__url">manga.example/episode/…</span>
-        <span class="ob-toolbar__icon">🧩</span>
-        <span class="ob-toolbar__icon ob-toolbar__icon--hl">
-          <img src={LOGO} alt="" width={24} height={24} />
-        </span>
+      <h2 class="ob-h2">設定完成，來試翻一頁吧</h2>
+      <p>我們準備了一張試翻頁的日文漫畫，這一頁不會用到額度。</p>
+      <div class="naru-row">
+        <Button variant="primary" class="ob-big" onClick={() => void chrome.tabs.create({ url: PRACTICE_URL })}>
+          到試翻頁試試看
+        </Button>
+        <Button class="ob-big" onClick={() => window.close()}>
+          完成
+        </Button>
       </div>
-      <ol>
-        <li>
-          點工具列上的 Naruhodo 圖示，或按 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>。
-        </li>
-        <li>右邊會打開 side panel，翻到的頁面會自動翻譯。</li>
-      </ol>
-      <p class="hint">沒看到圖示？點拼圖圖示 🧩，把 Naruhodo 釘選到工具列。</p>
-      <Button variant="primary" class="ob-big" onClick={() => window.close()}>
-        完成
-      </Button>
+      <p class="hint">
+        之後在任何日文漫畫網站，點工具列上的 Naruhodo 圖示或按 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> 就能翻譯。
+      </p>
     </>
   );
 }
@@ -237,6 +267,9 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
   const [progress, setProgress] = useState<OnboardingProgress | undefined>(undefined);
   const [session, setSession] = useState<HostedSession | null>(null);
   const [step, setStep] = useState<OnboardingStep | undefined>(undefined);
+  const [modelStatus, setModelStatus] = useState<ModelStatus>({ state: 'idle' });
+  const [downloadBytes, setDownloadBytes] = useState<number | undefined>(undefined);
+  const [downloadStarted, setDownloadStarted] = useState(false);
 
   useEffect(() => {
     void Promise.all([loadOnboarding(), loadHostedSession()]).then(([stored, saved]) => {
@@ -245,6 +278,26 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
       setStep(startStep(stored, Boolean(saved), requested));
     });
   }, []);
+
+  // 模型狀態跟 side panel 一樣：先問一次，再聽 offscreen 的廣播
+  useEffect(() => {
+    const listener = (message: Message) => {
+      if (message.type === 'models:status') setModelStatus(message.status);
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    void chrome.runtime.sendMessage<Message, ModelStatusResponse>({ type: 'panel:getModelStatus' }).then((r) => {
+      setModelStatus(r.status);
+      setDownloadBytes(r.downloadBytes);
+    });
+    return () => chrome.runtime.onMessage.removeListener(listener);
+  }, []);
+
+  /** 在背景下載辨識模型（#169）：每一步的主要按鈕都會呼叫；已經在下載或已下載就不再請求。 */
+  function startDownload() {
+    if (downloadStarted || modelStatus.state !== 'idle') return;
+    setDownloadStarted(true);
+    void chrome.runtime.sendMessage({ type: 'onboarding:prefetchModels' } satisfies Message).catch(() => {});
+  }
 
   /** 換到下一步，並記下停在哪裡（side panel 的「完成設定」回到這裡）；設定早就完成的（例如從設定頁來登入）不改回未完成。 */
   function go(next: OnboardingStep) {
@@ -282,11 +335,22 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
       </header>
       {step !== 'ownKey' && <Dots current={step} />}
       <main class="ob-card">
-        {step === 'intro' && <Intro onNext={() => go(session ? 'plan' : 'signIn')} />}
+        {step === 'intro' && (
+          <Intro
+            downloadBytes={modelStatus.state === 'idle' ? downloadBytes : undefined}
+            onNext={() => {
+              startDownload();
+              go(session ? 'plan' : 'signIn');
+            }}
+          />
+        )}
         {step === 'signIn' && (
           <SignIn
             auth={hostedAccount}
-            onConsent={() => grantDataConsent('hosted')}
+            onConsent={() => {
+              startDownload();
+              return grantDataConsent('hosted');
+            }}
             onSignedIn={async (signedIn) => {
               await saveHostedSession(signedIn);
               // side panel 重新讀 session；SW 接著翻已啟動分頁裡還沒翻的頁
@@ -301,6 +365,7 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
           <>
             <Plan
               session={session}
+              onChoose={startDownload}
               onFree={() => void saveTranslationMode('hosted').then(finish)}
               // 付款完成就算設定完成，就算沒按「下一步」就關掉分頁也一樣
               onSubscribed={() => void saveTranslationMode('hosted').then(complete)}
@@ -309,17 +374,18 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
             {back('signIn')}
           </>
         )}
-        {step === 'tutorial' && <Tutorial />}
+        {step === 'tutorial' && <TryPractice />}
         {step === 'ownKey' && (
           <OwnKey
-            onSaved={(key) =>
+            onSaved={(key) => {
+              startDownload();
               // key 先存好，同意與模式寫進 chrome.storage 時 SW 才翻得了已啟動的分頁
               void apiKeys
                 .set(key)
                 .then(() => grantDataConsent('ownKey'))
                 .then(() => saveTranslationMode('ownKey'))
-                .then(finish)
-            }
+                .then(finish);
+            }}
             onBack={() => go('intro')}
           />
         )}
@@ -332,6 +398,7 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
           </Button>
         </p>
       )}
+      <DownloadPill status={modelStatus} started={downloadStarted} />
     </div>
   );
 }

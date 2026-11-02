@@ -85,6 +85,25 @@ export const MODEL_SETS: Record<ExecutionProvider, ModelSet> = {
   },
 };
 
+/** 一組模型的四個檔案（下載與載入的順序）。 */
+export const modelSetFiles = (set: ModelSet): ModelFile[] => [set.detector, set.encoder, set.decoder, set.vocab];
+
+/** 這組模型要下載的總 bytes（onboarding 第 1 步顯示「約 472 或 128 MB」）。 */
+export const modelSetBytes = (set: ModelSet): number => modelSetFiles(set).reduce((sum, file) => sum + file.size, 0);
+
+/**
+ * 有 WebGPU adapter 才用 WebGPU；headless 與部分 Mac 沒有，退回 wasm。翻譯流程、預先下載與 SW 判斷「已下載」都用它選同一組。
+ * 不 import onnxruntime-web，SW 與 onboarding 頁也能用。
+ */
+export async function detectExecutionProvider(): Promise<ExecutionProvider> {
+  const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
+  try {
+    return (await gpu?.requestAdapter()) ? 'webgpu' : 'wasm';
+  } catch {
+    return 'wasm';
+  }
+}
+
 export const HUGGING_FACE = 'https://huggingface.co';
 
 export function modelUrl(file: ModelFile, baseUrl: string = HUGGING_FACE): string {

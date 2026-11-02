@@ -334,6 +334,11 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
     );
     return true;
   }
+  if (message.type === 'offscreen:prefetchModels') {
+    if (__E2E__ && message.pipeline) pipeline.configure(message.pipeline);
+    void pipeline.prefetch();
+    return false;
+  }
   if (message.type === 'offscreen:testConnection') {
     testConnection().then(sendResponse);
     return true;

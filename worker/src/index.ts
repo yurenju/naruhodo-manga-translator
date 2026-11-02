@@ -6,6 +6,8 @@
 import { SYNTHETIC_GROUND_TRUTH } from '../../src/background/synthetic-ground-truth.ts';
 import { createClaudeTranslator } from '../../src/offscreen/claude-translator.ts';
 import { createFakeTranslator } from '../../src/shared/fake-translator.ts';
+import { isPracticeSpreadPage, type PracticeSpreadText } from '../../src/shared/practice-spread.ts';
+import practiceSpread from '../../practice-spread/ocr.json' with { type: 'json' };
 import {
   ACCOUNT_PATH,
   CHECKOUT_PATH,
@@ -97,6 +99,7 @@ const quotaContext = (env: Env, now: number): QuotaContext => ({ now, limit: mon
  * 翻譯（spec #86「額度規則」）：送出前先看還有沒有額度，成功後才用條件式 UPDATE 扣一頁；同時送來的兩頁搶最後一頁時，
  * 扣不到的那個回 402（譯文丟掉）。Notes 不扣。成功的呼叫都寫一筆用量紀錄，扣不到的那次也算（Anthropic 的錢已經花了）；
  * Notes 那筆記下同一頁翻譯那筆的 id。
+ * Practice Spread（#169）：認出試翻頁的文字就不看額度、不扣頁（額度用完也能試翻），用量照記並標成試翻。
  */
 const llm =
   <I,>(
@@ -104,12 +107,14 @@ const llm =
     parse: (body: unknown) => I | undefined,
     run: (t: Translator, input: I) => Promise<CallInfo>,
     pageRecord: (input: I) => number | undefined = () => undefined,
+    practice: (input: I) => boolean = () => false,
   ): AuthedHandler =>
   async ({ request, env, now }, accountId) => {
     const input = parse(await jsonBody(request));
     if (input === undefined) return invalid();
-    const charged = kind === 'translate';
-    const page = pageRecord(input);
+    const isPractice = practice(input);
+    const charged = kind === 'translate' && !isPractice;
+    const page = isPractice ? undefined : pageRecord(input);
     if (charged) {
       const before = await quota(env.DB, accountId, quotaContext(env, now));
       // 額度用完時，條件內的長 Page 接續照樣翻（刻意的）：一張長圖只扣一個 Translated Page，這一頁已經扣過，
@@ -123,13 +128,14 @@ const llm =
       // Anthropic 重試後仍失敗，或回答不符合 schema
       return error(502, e instanceof Error ? e.message : String(e));
     }
-    const record = await recordUsage(env.DB, accountId, kind, output.usage, now, page);
+    const record = await recordUsage(env.DB, accountId, kind, output.usage, now, page, isPractice);
     // 翻譯記到了被接續的那一頁＝長 Page 的接續，不扣頁；其他翻譯（含超過接續上限的）扣一頁
     const continued = record.pageRecordId !== undefined;
     if (charged && !continued && !(await deductPage(env.DB, accountId, quotaContext(env, now)))) {
       return exhausted((await quota(env.DB, accountId, quotaContext(env, now))).plan);
     }
     // 翻譯回應帶回這一頁扣頁那次的用量紀錄 id：同一頁的 Notes 請求與長 Page 的接續請求帶回來
+    // 試翻沒有扣頁，不回 id（它也不能被接續，quota.ts 的 CONTINUABLE）
     return Response.json(charged ? { ...output, usageRecordId: record.pageRecordId ?? record.id } : output);
   };
 
@@ -160,7 +166,15 @@ const VERIFY_ERRORS = {
 } as const;
 
 const ROUTES: Record<string, Handler> = {
-  [`POST ${TRANSLATE_PATH}`]: authed(llm('translate', parseTranslateInput, (t, input) => t.translatePage(input), (input) => input.pageUsageRecordId)),
+  [`POST ${TRANSLATE_PATH}`]: authed(
+    llm(
+      'translate',
+      parseTranslateInput,
+      (t, input) => t.translatePage(input),
+      (input) => input.pageUsageRecordId,
+      (input) => isPracticeSpreadPage(input.items.map((item) => item.原文), practiceSpread as PracticeSpreadText),
+    ),
+  ),
   [`POST ${NOTES_PATH}`]: authed(llm('notes', parseNotesInput, (t, input) => t.proposeNotes(input), (input) => input.pageUsageRecordId)),
   [`POST ${SEND_CODE_PATH}`]: async ({ request, env, now }) => {
     const email = parseEmail(field(await jsonBody(request), 'email'));

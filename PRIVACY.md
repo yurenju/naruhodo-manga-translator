@@ -1,6 +1,6 @@
 # Naruhodo Privacy Policy
 
-Effective date: 2026-11-01
+Effective date: 2026-11-02
 Publisher: Sad Coder, Inc.
 
 Naruhodo is a Chrome extension that translates Japanese manga on screen into Traditional Chinese, in place. This policy explains what data the extension and the Naruhodo service handle, where the data goes, and how long it is kept.
@@ -45,7 +45,7 @@ In both modes, the extension sends, for each page: the Japanese text recognized 
 - **Cloudflare** hosts the Naruhodo service and its database. Like any web host, Cloudflare processes your IP address and the requests you send to the service. See the [Cloudflare Privacy Policy](https://www.cloudflare.com/privacypolicy/).
 - **Resend** sends the sign-in code email. It receives your email address and the code. See the [Resend Privacy Policy](https://resend.com/legal/privacy-policy).
 - **Paddle (Paddle.com)** is our reseller and Merchant of Record and processes subscription payments. When you subscribe, the checkout opens on the Naruhodo website, and you enter your email address, payment details and billing address directly into Paddle's checkout; this information goes to Paddle, not to us. The Naruhodo service never sends your email address to Paddle: it sends only your account's random identifier (and, to open Paddle's subscription management page, Paddle's own identifiers for your subscription), and Paddle tells the service your subscription's identifiers, status and dates. See the [Paddle Privacy Policy](https://www.paddle.com/legal/privacy).
-- **Hugging Face (huggingface.co)**: on first use the extension downloads its text-detection and OCR models from here (about 128 MB, or about 472 MB on computers with WebGPU). This is a plain file download and sends none of your data, although, as with any website, Hugging Face can see your IP address.
+- **Hugging Face (huggingface.co)**: the extension downloads its text-detection and OCR models from here (about 128 MB, or about 472 MB on computers with WebGPU), in the background during setup or, if that did not finish, the first time you translate. This is a plain file download and sends none of your data, although, as with any website, Hugging Face can see your IP address.
 
 The extension connects to nothing else.
 
@@ -60,7 +60,7 @@ Only Hosted Translation uses the Naruhodo service. It keeps:
 | A SHA-256 hash of your email address and how many sign-in codes were tried for it in the past hour | Limiting how many sign-in codes can be tried. Deleted when you sign in. Otherwise the count expires one hour after the first try and is deleted later, the next time anyone requests a sign-in code |
 | A hash of each sign-in token, when it was created and last used, and when you signed out | Keeping you signed in. A token stops working after 180 days without use, or when you sign out |
 | Free pages remaining; for subscribers, the start of the current monthly period and pages used in it | Your page quota |
-| One usage record for each successful translation or Series Notes request: the time, the kind of request, token counts and cost, and for a Series Notes request, which page's translation record it belongs to | Usage and cost accounting. Usage records contain no text, translations, series names or page addresses |
+| One usage record for each successful translation or Series Notes request: the time, the kind of request, token counts and cost, whether it was the practice page on our website, and for a Series Notes request, which page's translation record it belongs to | Usage and cost accounting. Usage records contain no text, translations, series names or page addresses |
 | A SHA-256 hash of each email address that has received free pages, and when | Making sure free pages are given only once per email address |
 | Your Paddle subscription and customer identifiers, subscription status, start date, end of the paid period, whether cancellation is scheduled, and the time of the last update from Paddle | Your subscription |
 | Identifiers of the payment notifications Paddle has sent, and when they arrived | Processing each notification only once. They contain no account or email information |

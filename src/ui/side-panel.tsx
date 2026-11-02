@@ -7,6 +7,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import type { Quota } from '../shared/hosted-api.ts';
 import type { LineRef, ModelStatus, PageView } from '../shared/messages.ts';
+import { megabytes } from '../shared/model-download.ts';
 import type { PageMode } from '../shared/page-mode.ts';
 import type { StaleReason } from '../shared/series-notes.ts';
 import { Badge, Button, Callout, PageHeader, Progress, SegmentedControl, type SegmentOption } from './components.tsx';
@@ -28,14 +29,12 @@ import {
   type TranslationAccess,
 } from './view.ts';
 
-const mb = (bytes: number) => (bytes / 2 ** 20).toFixed(1);
-
 function ModelStatusLine({ status, onRetry }: { status: ModelStatus; onRetry: () => void }) {
   switch (status.state) {
     case 'downloading':
       return (
         <p role="status">
-          第一次使用，下載辨識模型中：{mb(status.loaded)} / {mb(status.total)} MB
+          第一次使用，下載辨識模型中：{megabytes(status.loaded)} / {megabytes(status.total)} MB
           <progress value={status.loaded} max={status.total} />
         </p>
       );

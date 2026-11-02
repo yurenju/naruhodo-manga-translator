@@ -5,7 +5,7 @@ import type { TestOptions } from './browser/fixtures.ts';
 // 先跑 `npm run build:e2e`（`npm run e2e` 會自動做）。
 export default defineConfig<TestOptions>({
   testDir: 'browser',
-  testIgnore: ['smoke/**', 'record-ocr.spec.ts'],
+  testIgnore: ['smoke/**', 'record-ocr.spec.ts', 'record-practice-spread.spec.ts'],
   grep: /@e2e/,
   globalSetup: './browser/global-setup.ts',
   // 真 OCR 第一次要下載＋編譯模型，每頁也要好幾秒；spec 檔裡不寫 OCR 的 timeout，統一在這裡放寬

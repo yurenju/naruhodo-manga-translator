@@ -12,6 +12,11 @@ export interface SiteCopy {
   /** 首頁互動展示（#109）外框上的文字；展示裡面的外掛介面只有繁體中文 */
   demo: { caption: string; hint: string; replay: string };
   how: { title: string; steps: readonly { title: string; body: string }[] };
+  /**
+   * 試翻頁（#169）。步驟內文的 `{puzzle}` 換成 Chrome 工具列的拼圖圖示、`{shortcut}` 換成 Alt+Shift+M 的按鍵；
+   * 漫畫本身（Practice Spread）是日文，不跟著語言換。
+   */
+  try: { title: string; lead: string; free: string; steps: readonly { title: string; body: string }[]; notInstalled: string; install: string; spreadAlt: string; puzzleLabel: string };
   pricing: {
     title: string;
     free: { title: string; items: readonly string[]; cta: string };
@@ -61,6 +66,20 @@ export const copy: Record<Locale, SiteCopy> = {
         { title: '打開你在看的漫畫', body: '在漫畫頁上點外掛圖示，或按 Alt+Shift+M。' },
         { title: '對照著看', body: '譯文疊在對話框上，原文與讀音都留著；已經翻過的頁面再看不會再算一次。' },
       ],
+    },
+    try: {
+      title: '試翻一頁看看',
+      lead: '下面是一張原創的日文漫畫跨頁。照著三個步驟，用 Naruhodo 把它翻成中文。',
+      free: '這一頁不會用到額度。',
+      steps: [
+        { title: '釘選圖示', body: '點網址列右邊的拼圖 {puzzle}，把 Naruhodo 釘選到工具列。' },
+        { title: '啟動翻譯', body: '點工具列上的 Naruhodo 圖示，或按 {shortcut}。右邊會打開 side panel。' },
+        { title: '看讀音', body: '翻好之後，把滑鼠移到對話框上，看原文、讀音和譯文。' },
+      ],
+      notInstalled: '還沒安裝？',
+      install: '加到 Chrome',
+      spreadAlt: '原創日文漫畫跨頁',
+      puzzleLabel: '拼圖圖示',
     },
     pricing: {
       title: '價格',
@@ -137,6 +156,20 @@ export const copy: Record<Locale, SiteCopy> = {
         { title: "Open the manga you're reading", body: 'On the page, click the extension icon or press Alt+Shift+M.' },
         { title: 'Read side by side', body: 'Translations sit on the balloons, with the original text and readings kept. Revisiting a translated page never counts again.' },
       ],
+    },
+    try: {
+      title: 'Try translating a page',
+      lead: 'Below is an original Japanese manga spread. Follow the three steps to translate it with Naruhodo.',
+      free: 'This page does not use your quota.',
+      steps: [
+        { title: 'Pin the icon', body: 'Click the puzzle piece {puzzle} to the right of the address bar and pin Naruhodo to the toolbar.' },
+        { title: 'Start translating', body: 'Click the Naruhodo icon on the toolbar, or press {shortcut}. The side panel opens on the right.' },
+        { title: 'See the readings', body: 'Once translated, hover a speech balloon to see the Japanese, its reading and the translation.' },
+      ],
+      notInstalled: 'Not installed yet?',
+      install: 'Add to Chrome',
+      spreadAlt: 'Original Japanese manga spread',
+      puzzleLabel: 'puzzle icon',
     },
     pricing: {
       title: 'Pricing',

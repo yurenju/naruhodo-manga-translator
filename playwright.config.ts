@@ -8,7 +8,7 @@ import type { TestOptions } from './browser/fixtures.ts';
 export default defineConfig<TestOptions>({
   testDir: 'browser',
   // 錄 FakeEngine 重播結果的在 playwright.record.config.ts
-  testIgnore: ['smoke/**', 'smoke-paddle/**', 'record-ocr.spec.ts'],
+  testIgnore: ['smoke/**', 'smoke-paddle/**', 'record-ocr.spec.ts', 'record-practice-spread.spec.ts'],
   // Hosted Translation 的本機 Worker（wrangler dev，約 2 秒）；e2e build 連它
   globalSetup: './browser/worker-setup.ts',
   // 每個 test 各自開 Chromium context 與 mock site，同一個檔案的測試也能分到不同 worker
