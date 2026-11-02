@@ -1,0 +1,121 @@
+---
+/**
+ * PROTOTYPE（拋棄式）：試翻頁的三種版面，?variant=A|B|C 切換；?shot 只留漫畫（Web Store 截圖用）。
+ * 問題：剛裝好外掛的讀者，怎麼最快在這頁用真的工具列圖示翻出第一個 Practice Spread？
+ * 定案後改寫成 /[locale]/try/，這個檔案與 site/src/prototype/ 只留在 prototype branch。
+ */
+import Base from '../layouts/Base.astro';
+import { INSTALL_URL } from '../links.ts';
+import spread from '../prototype/practice-spread.webp';
+---
+<Base locale="zh-tw" title="Naruhodo — 試翻一頁（prototype）" alternates={{ 'zh-tw': '/try-prototype/', en: '/try-prototype/' }}>
+  <!-- A：步驟在上，漫畫在下 -->
+  <section class="tp tp-a" data-variant="A" hidden>
+    <div class="wrap">
+      <div class="guide">
+        <h1>試翻一頁看看</h1>
+        <p class="lead">下面是一張原創的日文漫畫跨頁。照著三個步驟，用 Naruhodo 把它翻成中文。<strong>這一頁不會用到額度。</strong></p>
+        <ol class="tp-steps">
+          <li class="card"><span class="n">1</span><h3>釘選圖示</h3><p>點網址列右邊的拼圖 <svg class="puzzle" viewBox="0 0 20 20" role="img" aria-label="拼圖圖示"><path fill-rule="evenodd" d="M4.5 17c-0.41 0 -0.77 -0.15 -1.06 -0.44A1.44 1.44 0 0 1 3 15.5v-2.89c0 -0.18 0.06 -0.34 0.17 -0.48a0.65 0.65 0 0 1 0.44 -0.25a2.28 2.28 0 0 0 1 -0.73C4.87 10.81 5 10.43 5 10c0 -0.43 -0.13 -0.81 -0.39 -1.14a2.28 2.28 0 0 0 -1 -0.73a0.64 0.64 0 0 1 -0.44 -0.25A0.78 0.78 0 0 1 3 7.38V4.5c0 -0.41 0.15 -0.77 0.44 -1.06A1.44 1.44 0 0 1 4.5 3H8c0 -0.56 0.19 -1.03 0.58 -1.42A1.93 1.93 0 0 1 10 1c0.56 0 1.03 0.19 1.42 0.58c0.39 0.39 0.58 0.86 0.58 1.42h3.5c0.41 0 0.77 0.15 1.06 0.44c0.29 0.29 0.44 0.65 0.44 1.06V8a1.94 1.94 0 0 1 1.42 0.58c0.39 0.39 0.58 0.86 0.58 1.42c0 0.56 -0.19 1.03 -0.58 1.42A1.94 1.94 0 0 1 17 12v3.5c0 0.41 -0.15 0.77 -0.44 1.06A1.44 1.44 0 0 1 15.5 17Zm0 -1.5h11v-11h-11v2.33a3.23 3.23 0 0 1 1.47 1.28C6.32 8.69 6.5 9.32 6.5 10c0 0.7 -0.18 1.33 -0.53 1.91A3.12 3.12 0 0 1 4.5 13.17ZM10 10Z"/></svg>，把 Naruhodo 釘選到工具列。</p></li>
+          <li class="card"><span class="n">2</span><h3>啟動翻譯</h3><p>點工具列上的 Naruhodo 圖示，或按 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>。右邊會打開 side panel。</p></li>
+          <li class="card"><span class="n">3</span><h3>看讀音</h3><p>翻好之後，把滑鼠移到對話框上，看原文、讀音和譯文。</p></li>
+        </ol>
+        <p class="hint">還沒安裝？<a href={INSTALL_URL}>加到 Chrome</a></p>
+      </div>
+    </div>
+    <figure class="spread"><img src={spread.src} width={spread.width} height={spread.height} alt="原創日文漫畫跨頁" /></figure>
+  </section>
+
+  <!-- B：左邊固定的步驟清單，右邊漫畫 -->
+  <section class="tp tp-b" data-variant="B" hidden>
+    <aside class="side guide">
+      <h1>試翻一頁</h1>
+      <p class="hint">不會用到額度</p>
+      <div class="mini-toolbar" aria-hidden="true">
+        <span class="url">naruhodo.page/try</span><span><svg class="puzzle" viewBox="0 0 20 20" role="img" aria-label="拼圖圖示"><path fill-rule="evenodd" d="M4.5 17c-0.41 0 -0.77 -0.15 -1.06 -0.44A1.44 1.44 0 0 1 3 15.5v-2.89c0 -0.18 0.06 -0.34 0.17 -0.48a0.65 0.65 0 0 1 0.44 -0.25a2.28 2.28 0 0 0 1 -0.73C4.87 10.81 5 10.43 5 10c0 -0.43 -0.13 -0.81 -0.39 -1.14a2.28 2.28 0 0 0 -1 -0.73a0.64 0.64 0 0 1 -0.44 -0.25A0.78 0.78 0 0 1 3 7.38V4.5c0 -0.41 0.15 -0.77 0.44 -1.06A1.44 1.44 0 0 1 4.5 3H8c0 -0.56 0.19 -1.03 0.58 -1.42A1.93 1.93 0 0 1 10 1c0.56 0 1.03 0.19 1.42 0.58c0.39 0.39 0.58 0.86 0.58 1.42h3.5c0.41 0 0.77 0.15 1.06 0.44c0.29 0.29 0.44 0.65 0.44 1.06V8a1.94 1.94 0 0 1 1.42 0.58c0.39 0.39 0.58 0.86 0.58 1.42c0 0.56 -0.19 1.03 -0.58 1.42A1.94 1.94 0 0 1 17 12v3.5c0 0.41 -0.15 0.77 -0.44 1.06A1.44 1.44 0 0 1 15.5 17Zm0 -1.5h11v-11h-11v2.33a3.23 3.23 0 0 1 1.47 1.28C6.32 8.69 6.5 9.32 6.5 10c0 0.7 -0.18 1.33 -0.53 1.91A3.12 3.12 0 0 1 4.5 13.17ZM10 10Z"/></svg></span><span class="hl">な</span>
+      </div>
+      <ol>
+        <li><strong>釘選</strong>：點 <svg class="puzzle" viewBox="0 0 20 20" role="img" aria-label="拼圖圖示"><path fill-rule="evenodd" d="M4.5 17c-0.41 0 -0.77 -0.15 -1.06 -0.44A1.44 1.44 0 0 1 3 15.5v-2.89c0 -0.18 0.06 -0.34 0.17 -0.48a0.65 0.65 0 0 1 0.44 -0.25a2.28 2.28 0 0 0 1 -0.73C4.87 10.81 5 10.43 5 10c0 -0.43 -0.13 -0.81 -0.39 -1.14a2.28 2.28 0 0 0 -1 -0.73a0.64 0.64 0 0 1 -0.44 -0.25A0.78 0.78 0 0 1 3 7.38V4.5c0 -0.41 0.15 -0.77 0.44 -1.06A1.44 1.44 0 0 1 4.5 3H8c0 -0.56 0.19 -1.03 0.58 -1.42A1.93 1.93 0 0 1 10 1c0.56 0 1.03 0.19 1.42 0.58c0.39 0.39 0.58 0.86 0.58 1.42h3.5c0.41 0 0.77 0.15 1.06 0.44c0.29 0.29 0.44 0.65 0.44 1.06V8a1.94 1.94 0 0 1 1.42 0.58c0.39 0.39 0.58 0.86 0.58 1.42c0 0.56 -0.19 1.03 -0.58 1.42A1.94 1.94 0 0 1 17 12v3.5c0 0.41 -0.15 0.77 -0.44 1.06A1.44 1.44 0 0 1 15.5 17Zm0 -1.5h11v-11h-11v2.33a3.23 3.23 0 0 1 1.47 1.28C6.32 8.69 6.5 9.32 6.5 10c0 0.7 -0.18 1.33 -0.53 1.91A3.12 3.12 0 0 1 4.5 13.17ZM10 10Z"/></svg>，把 Naruhodo 釘到工具列</li>
+        <li><strong>啟動</strong>：點圖示，或按 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd></li>
+        <li><strong>等一下</strong>：第一次會先準備辨識模型，side panel 會顯示進度</li>
+        <li><strong>滑過對話框</strong>：看讀音與譯文</li>
+        <li><strong>換到「學習」</strong>：保留日文，滑過才顯示中文</li>
+      </ol>
+      <p class="hint">還沒安裝？<a href={INSTALL_URL}>加到 Chrome</a></p>
+    </aside>
+    <figure class="spread"><img src={spread.src} width={spread.width} height={spread.height} alt="原創日文漫畫跨頁" /></figure>
+  </section>
+
+  <!-- C：漫畫滿版，提示直接指向瀏覽器工具列 -->
+  <section class="tp tp-c" data-variant="C" hidden>
+    <div class="callout guide">
+      <span class="arrow" aria-hidden="true">↗</span>
+      <div>
+        <strong>點工具列上的 Naruhodo 圖示</strong>，或按 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>
+        <p class="hint">沒看到圖示？點 <svg class="puzzle" viewBox="0 0 20 20" role="img" aria-label="拼圖圖示"><path fill-rule="evenodd" d="M4.5 17c-0.41 0 -0.77 -0.15 -1.06 -0.44A1.44 1.44 0 0 1 3 15.5v-2.89c0 -0.18 0.06 -0.34 0.17 -0.48a0.65 0.65 0 0 1 0.44 -0.25a2.28 2.28 0 0 0 1 -0.73C4.87 10.81 5 10.43 5 10c0 -0.43 -0.13 -0.81 -0.39 -1.14a2.28 2.28 0 0 0 -1 -0.73a0.64 0.64 0 0 1 -0.44 -0.25A0.78 0.78 0 0 1 3 7.38V4.5c0 -0.41 0.15 -0.77 0.44 -1.06A1.44 1.44 0 0 1 4.5 3H8c0 -0.56 0.19 -1.03 0.58 -1.42A1.93 1.93 0 0 1 10 1c0.56 0 1.03 0.19 1.42 0.58c0.39 0.39 0.58 0.86 0.58 1.42h3.5c0.41 0 0.77 0.15 1.06 0.44c0.29 0.29 0.44 0.65 0.44 1.06V8a1.94 1.94 0 0 1 1.42 0.58c0.39 0.39 0.58 0.86 0.58 1.42c0 0.56 -0.19 1.03 -0.58 1.42A1.94 1.94 0 0 1 17 12v3.5c0 0.41 -0.15 0.77 -0.44 1.06A1.44 1.44 0 0 1 15.5 17Zm0 -1.5h11v-11h-11v2.33a3.23 3.23 0 0 1 1.47 1.28C6.32 8.69 6.5 9.32 6.5 10c0 0.7 -0.18 1.33 -0.53 1.91A3.12 3.12 0 0 1 4.5 13.17ZM10 10Z"/></svg> 把它釘選起來。這一頁不會用到額度。</p>
+      </div>
+    </div>
+    <figure class="spread"><img src={spread.src} width={spread.width} height={spread.height} alt="原創日文漫畫跨頁" /></figure>
+    <p class="after guide">翻好之後，把滑鼠移到對話框上看讀音 ・ 還沒安裝？<a href={INSTALL_URL}>加到 Chrome</a></p>
+  </section>
+</Base>
+
+<style is:global>
+  /* Chrome 工具列的拼圖是單色外框（Chromium components/vector_icons/chrome_extension.icon 轉成 SVG），不用彩色 emoji */
+  .puzzle { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.2em; fill: currentColor; }
+  .tp[hidden] { display: none !important; }
+  .tp kbd { padding: 1px 6px; border: 1px solid var(--naru-line-strong); border-bottom-width: 2px; border-radius: 4px; font-family: var(--naru-font-mono); font-size: var(--naru-text-small); background: var(--naru-surface); }
+  .tp .hint { color: var(--naru-ink-3); font-size: var(--naru-text-small); }
+  .tp .spread { margin: 0; }
+  .tp .spread img { display: block; width: 100%; height: auto; }
+
+  /* A */
+  .tp-a .guide { padding: var(--naru-space-6) 0 var(--naru-space-4); }
+  .tp-a h1 { margin: 0 0 var(--naru-space-2); }
+  .tp-a .lead { max-width: 720px; }
+  .tp-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--naru-space-3); margin: var(--naru-space-4) 0; padding: 0; list-style: none; }
+  .tp-steps .card { position: relative; padding: var(--naru-space-4); }
+  .tp-steps h3 { margin: 0 0 var(--naru-space-1); }
+  .tp-steps p { margin: 0; }
+  .tp-steps .n { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-bottom: var(--naru-space-2); border-radius: 999px; background: var(--naru-accent); color: var(--naru-on-accent); font-weight: 700; }
+  .tp-a .spread { max-width: 1400px; margin: 0 auto var(--naru-space-6); padding: 0 var(--naru-space-4); }
+
+  /* B */
+  .tp-b { display: grid; grid-template-columns: 300px 1fr; gap: var(--naru-space-5); align-items: start; padding: var(--naru-space-5); }
+  .tp-b .side { position: sticky; top: var(--naru-space-4); padding: var(--naru-space-4); border-radius: var(--naru-radius-md); background: var(--naru-surface); box-shadow: var(--naru-shadow-1); }
+  .tp-b h1 { margin: 0; font-size: 22px; }
+  .tp-b ol { padding-left: var(--naru-space-5); }
+  .tp-b li { margin-bottom: var(--naru-space-2); }
+  .mini-toolbar { display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: var(--naru-radius-md); background: var(--naru-line); font-size: var(--naru-text-caption); }
+  .mini-toolbar .url { flex: 1; padding: 2px 8px; border-radius: 999px; background: var(--naru-surface); color: var(--naru-ink-3); }
+  .mini-toolbar .hl { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px; background: var(--naru-accent); color: #fff; outline: 2px solid var(--naru-highlight); outline-offset: 2px; }
+  @media (max-width: 800px) { .tp-b { grid-template-columns: 1fr; } .tp-b .side { position: static; } }
+
+  /* C */
+  .tp-c { padding-bottom: var(--naru-space-6); }
+  .tp-c .callout { position: fixed; top: 12px; right: 24px; z-index: 10; display: flex; gap: var(--naru-space-2); max-width: 340px; padding: var(--naru-space-3) var(--naru-space-4); border-radius: var(--naru-radius-md); background: var(--naru-tooltip-bg); color: var(--naru-tooltip-ink); box-shadow: 0 6px 24px rgba(0,0,0,.3); }
+  .tp-c .callout .hint { margin: var(--naru-space-1) 0 0; color: var(--naru-tooltip-ink-3); }
+  .tp-c .callout kbd { color: var(--naru-ink); }
+  .tp-c .arrow { font-size: 28px; line-height: 1; animation: nudge 1.2s ease-in-out infinite; }
+  @keyframes nudge { 50% { transform: translate(4px, -4px); } }
+  .tp-c .spread { max-width: 1500px; margin: var(--naru-space-4) auto 0; padding: 0 var(--naru-space-3); }
+  .tp-c .after { text-align: center; color: var(--naru-ink-2); }
+
+  /* ?shot：只留漫畫，填滿視窗高度 */
+  html.shot .site-header, html.shot .site-footer, html.shot .guide { display: none !important; }
+  html.shot body { background: #fff; }
+  html.shot .tp:not([hidden]) { display: block !important; padding: 0 !important; }
+  html.shot .tp .spread { max-width: none; margin: 0; padding: 0; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  html.shot .tp .spread img { width: auto; max-width: 100%; max-height: 100vh; }
+</style>
+
+<script>
+  import { mountSwitcher } from '../prototype/switcher.ts';
+  const params = new URLSearchParams(location.search);
+  if (params.has('shot')) document.documentElement.classList.add('shot');
+  const show = (key: string) => {
+    for (const el of document.querySelectorAll<HTMLElement>('[data-variant]')) el.hidden = el.dataset.variant !== key;
+  };
+  show(params.get('variant') ?? 'A');
+  if (!params.has('shot')) mountSwitcher({ A: '步驟在上', B: '左側清單', C: '提示指向工具列' }, show);
+</script>
