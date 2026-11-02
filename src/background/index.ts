@@ -8,6 +8,7 @@ import type {
   AutoTranslateResponse,
   CaptureFinishedResponse,
   CropResponse,
+  ExecutionProvider,
   FakeTranslatorConfig,
   ImportResponse,
   Message,
@@ -34,7 +35,7 @@ import { BACKUP_KEYS, createBackup } from './backup.ts';
 import { indexedDbPageCache } from './cache-store.ts';
 import { createHostedTranslator } from './hosted-translator.ts';
 import { installPlan } from './install.ts';
-import { detectExecutionProvider, MODEL_SETS, modelSetBytes, modelSetFiles } from '../offscreen/models/model-files.ts';
+import { MODEL_SETS, modelSetBytes, modelSetFiles } from '../offscreen/models/model-files.ts';
 import { isCached, MODEL_CACHE } from '../offscreen/models/model-store.ts';
 import { currentModelStatus } from './model-status.ts';
 import { ensureOffscreenDocument } from './offscreen.ts';
@@ -272,8 +273,22 @@ const overlaySync = createOverlaySync({
 let modelStatus: ModelStatus = { state: 'idle' };
 
 /** 回答目前的模型狀態（#169）：不知道時查快取裡會用的那一組（照翻譯流程的選法）齊不齊全；也帶上那一組的大小。 */
+/** 偵測結果在這台電腦上不會變，問過一次就記住；失敗了下次再問。 */
+let detected: Promise<ExecutionProvider> | undefined;
+
+function executionProvider(): Promise<ExecutionProvider> {
+  if (pipelineConfig.executionProvider) return Promise.resolve(pipelineConfig.executionProvider);
+  detected ??= ensureOffscreenDocument()
+    .then(() => chrome.runtime.sendMessage<Message, ExecutionProvider>({ type: 'offscreen:detectExecutionProvider' }))
+    .catch((e: unknown) => {
+      detected = undefined;
+      throw e;
+    });
+  return detected;
+}
+
 async function modelStatusResponse(): Promise<ModelStatusResponse> {
-  const set = MODEL_SETS[pipelineConfig.executionProvider ?? (await detectExecutionProvider())];
+  const set = MODEL_SETS[await executionProvider()];
   const cached = async () => isCached(await caches.open(MODEL_CACHE), modelSetFiles(set));
   return { status: await currentModelStatus(modelStatus, cached), downloadBytes: modelSetBytes(set) };
 }

@@ -93,7 +93,7 @@ export const modelSetBytes = (set: ModelSet): number => modelSetFiles(set).reduc
 
 /**
  * 有 WebGPU adapter 才用 WebGPU；headless 與部分 Mac 沒有，退回 wasm。翻譯流程、預先下載與 SW 判斷「已下載」都用它選同一組。
- * 不 import onnxruntime-web，SW 與 onboarding 頁也能用。
+ * 只能在 document 裡呼叫：在 SW 裡 requestAdapter() 不會回應，SW 要問 offscreen（offscreen:detectExecutionProvider）。
  */
 export async function detectExecutionProvider(): Promise<ExecutionProvider> {
   const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;

@@ -31,6 +31,7 @@ import { subImageRect, thumbnailSize, toImageRect, toSubRect } from './crop.ts';
 import { eraseLuminance } from './erase-color.ts';
 import { eraseImage, eraseLooseText, meanLuminance, type EraseImage } from './erase-image.ts';
 import { createLocalPipeline } from './local-pipeline.ts';
+import { detectExecutionProvider } from './models/model-files.ts';
 import { pageRgba } from './page-image.ts';
 import { cropImage, splitSpread } from './spread.ts';
 
@@ -338,6 +339,10 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
     if (__E2E__ && message.pipeline) pipeline.configure(message.pipeline);
     void pipeline.prefetch();
     return false;
+  }
+  if (message.type === 'offscreen:detectExecutionProvider') {
+    void detectExecutionProvider().then(sendResponse);
+    return true;
   }
   if (message.type === 'offscreen:testConnection') {
     testConnection().then(sendResponse);

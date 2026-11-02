@@ -41,6 +41,8 @@ export type Message =
   | { type: 'onboarding:prefetchModels' }
   /** SW → offscreen：只下載進 Cache Storage，不建 session、不載入記憶體。 */
   | { type: 'offscreen:prefetchModels'; pipeline?: PipelineConfig }
+  /** SW → offscreen：這台電腦會用哪一組模型。SW 裡的 navigator.gpu.requestAdapter() 不會回應，要在 document 裡偵測。回應 ExecutionProvider。 */
+  | { type: 'offscreen:detectExecutionProvider' }
   /**
    * side panel → SW：「翻譯此頁／重新翻譯」：用已經辨識好的原文重新呼叫 Translator。
    * pageHash：只翻這一頁（過時提示的「重新翻譯」，#38）。
