@@ -29,6 +29,8 @@ export async function signInWithEmail(onboarding: Page, email: string, { subscri
 export async function onboardingPage(context: BrowserContext, open?: () => Promise<void>): Promise<Page> {
   const isOnboarding = (page: Page) => page.url().includes('/onboarding.html');
   const opened = context.waitForEvent('page', { predicate: isOnboarding });
+  // 分頁早就開著的話沒人 await 它：測試結束、context 關掉時它 reject，不處理會被當成測試失敗（#167 的測試先打 Worker 才遇到）
+  opened.catch(() => {});
   await open?.();
   const page = context.pages().find(isOnboarding) ?? (await opened);
   await page.waitForLoadState();
