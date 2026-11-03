@@ -404,6 +404,9 @@ export interface SidePanelProps {
   onSubscribe?: () => void;
   /** 上一次按「訂閱」沒能打開 checkout：顯示付款服務暫時無法使用（#156）。 */
   paymentFailed?: boolean;
+  /** 從 side panel 發起的付款確認了，SW 把讀者帶回來（#176）：顯示一次「已訂閱」。 */
+  subscribedNotice?: boolean;
+  onDismissSubscribedNotice?: () => void;
   /** 以下是只有外掛 container 才有的區塊（會讀寫 store、送 chrome 訊息）；沒給就不顯示，⚙ 選單也沒有那一項。 */
   /** ⚙ 選單裡的自動翻譯開關。 */
   autoTranslate?: ComponentChildren;
@@ -507,12 +510,25 @@ export function SidePanel(props: SidePanelProps) {
     props.onUseOwnKey();
     setPage('settings');
   };
+  // 付款確認後讀者被帶回來時，side panel 不一定已經啟動，兩種畫面都顯示
+  const subscribedNotice = props.subscribedNotice && (
+    <Callout tone="info" class="naru-callout--stack" role="group" aria-label="已訂閱">
+      {/* 價格與上限依最終定價 */}
+      <p>✓ 已訂閱，每月可翻 800 頁。</p>
+      <div class="naru-row">
+        <Button variant="ghost" onClick={() => props.onDismissSubscribedNotice?.()}>
+          知道了
+        </Button>
+      </div>
+    </Callout>
+  );
   if (!running)
     return (
       <div class="naru-side-panel">
         <main>
           {header}
           {consentCard}
+          {subscribedNotice}
           <p>請點外掛圖示啟動</p>
         </main>
       </div>
@@ -536,6 +552,7 @@ export function SidePanel(props: SidePanelProps) {
         />
         {quota.exhausted && <QuotaExhaustedCallout exhausted={quota.exhausted} onSubscribe={props.onSubscribe} onUseOwnKey={useOwnKey} />}
         {props.paymentFailed && <PaymentUnavailable />}
+        {subscribedNotice}
         {done.length > 0 && <DisplaySwitch display={display} onLevel={setLevel} onFurigana={setFurigana} />}
         <ul aria-label="Page">
           {view.pages.map((entry) => (

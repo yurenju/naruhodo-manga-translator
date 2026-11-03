@@ -16,8 +16,13 @@ interface Props {
   title: string;
   /** 語言切換到各語言時的網址 */
   alternates: Record<Locale, string>;
+  /**
+   * 頁首只留 logo，沒有導覽、語言切換與「安裝」（checkout 頁，#176）：來的人一定已經裝好外掛，
+   * 付完款看到「安裝」會以為下一步是去安裝；logo 也不連回首頁，不讓讀者在付款分頁裡逛走。
+   */
+  bare?: boolean;
 }
-const { locale, title, alternates } = Astro.props;
+const { locale, title, alternates, bare = false } = Astro.props;
 // 'auto' 先當英文輸出：script 沒跑時（例如關掉 JavaScript）頁首頁尾仍然是完整的英文
 const initial: Locale = locale === 'auto' ? 'en' : locale;
 const text = <K extends keyof (typeof copy)['en']['nav']>(key: K) => byLocale((l) => copy[l].nav[key]);
@@ -35,8 +40,12 @@ const home = locale === 'auto' ? '/' : `/${locale}/`;
   <body>
     <header class="site-header">
       <div class="wrap">
-        <a class="brand" href={home}><img src={logo.src} alt="" width="30" height="30" />Naruhodo</a>
-        <nav class="nav">
+        {bare ? (
+          <span class="brand"><img src={logo.src} alt="" width="30" height="30" />Naruhodo</span>
+        ) : (
+          <a class="brand" href={home}><img src={logo.src} alt="" width="30" height="30" />Naruhodo</a>
+        )}
+        {!bare && <nav class="nav">
           <L locale={locale} class="hide-sm" text={text('pricing')} href={byLocale((l) => `/${l}/#pricing`)} />
           <L locale={locale} class="hide-sm" text={text('faq')} href={byLocale((l) => `/${l}/#faq`)} />
           <span class="lang-toggle" role="group" aria-label={copy[initial].nav.languageLabel}>
@@ -45,7 +54,7 @@ const home = locale === 'auto' ? '/' : `/${locale}/`;
             ))}
           </span>
           <L locale={locale} class="btn btn-primary btn-small" text={text('install')} href={byLocale(() => INSTALL_URL)} />
-        </nav>
+        </nav>}
       </div>
     </header>
     <main>

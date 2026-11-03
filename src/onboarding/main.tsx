@@ -17,6 +17,7 @@ import { HOSTED_API_URL, loadHostedSession, saveHostedSession, type HostedSessio
 import type { Message, ModelStatus, ModelStatusResponse } from '../shared/messages.ts';
 import { downloadNotice, downloadPill } from '../shared/model-download.ts';
 import { loadOnboarding, saveOnboarding, startStep, type OnboardingProgress, type OnboardingStep } from '../shared/onboarding.ts';
+import { onboardingPaymentChange, openPayment, watchPendingPayment, type PendingPayment } from '../shared/payment-return.ts';
 import { saveTranslationMode } from '../shared/translation-mode.ts';
 import { Button, Callout } from '../ui/components.tsx';
 import { OwnKeyDataFlow, PolicyLinks } from '../ui/data-flow.tsx';
@@ -91,12 +92,11 @@ function DownloadPill({ status, started }: { status: ModelStatus; started: boole
 /** 第 3 步的子畫面：選方案 → 付款頁開在新分頁、等付款完成 → 訂閱完成。 */
 type PlanState = { kind: 'choose' } | { kind: 'waitingPayment'; url: string } | { kind: 'subscribed' };
 
-/** 等付款完成時，每隔這麼久向 Worker 查一次方案（webhook 通常幾秒內就到）。 */
-const PAYMENT_POLL_MS = 3000;
-
 /**
- * 第 3 步：選擇方案（#93、#94 畫面定案）。「訂閱」向 Worker 建立 checkout，用新分頁打開產品網站的 checkout 頁（Paddle 處理付款）；
- * 這裡每隔幾秒查一次方案，變成訂閱中就換成「訂閱完成」並呼叫 onSubscribed（設定完成），「下一步」才到第 4 步。
+ * 第 3 步：選擇方案（#93、#94 畫面定案）。「訂閱」向 Worker 建立 checkout，請 SW 用新分頁打開產品網站的 checkout 頁（Paddle 處理付款）。
+ * SW 每隔幾秒查一次方案，確認了就關掉付款分頁、帶讀者回到這裡（#176）。這裡看 SW 記的付款狀態：付款分頁還開著是「在付款分頁完成付款」，
+ * 被關掉了是「付款頁已經關閉」；SW 清掉付款狀態時（確認了、或關掉 10 分鐘後放棄）向 Worker 讀一次方案，
+ * 訂閱中就換成「訂閱完成」並呼叫 onSubscribed（設定完成），「下一步」才到第 4 步；不是就回到選方案。
  */
 function Plan({
   session,
@@ -114,6 +114,8 @@ function Plan({
 }) {
   const [state, setState] = useState<PlanState>({ kind: 'choose' });
   const [failure, setFailure] = useState<string | undefined>(undefined);
+  /** SW 記的、從 onboarding 發起的付款；undefined＝沒有。 */
+  const [pending, setPending] = useState<PendingPayment | undefined>(undefined);
 
   const free = () => {
     onChoose();
@@ -134,37 +136,57 @@ function Plan({
       else setFailure(`付款頁沒有打開：${result.message}`);
       return;
     }
-    void chrome.tabs.create({ url: result.url });
     setState({ kind: 'waitingPayment', url: result.url });
+    await openPayment(result.url, 'onboarding');
   }
 
   useEffect(() => {
-    if (state.kind !== 'waitingPayment') return;
-    let current = true;
-    const timer = setInterval(() => {
-      void hostedAccount.account(session.token).then((r) => {
-        if (current && r.ok && r.account.quota.plan === 'subscribed') subscribed();
-      });
-    }, PAYMENT_POLL_MS);
-    return () => {
-      current = false;
-      clearInterval(timer);
-    };
-  }, [state.kind]);
+    let previous: PendingPayment | undefined;
+    return watchPendingPayment((next) => {
+      const { mine, action } = onboardingPaymentChange(previous, next);
+      if (action === 'wait') setState((s) => (s.kind === 'choose' ? { kind: 'waitingPayment', url: '' } : s));
+      if (action === 'settled')
+        void hostedAccount.account(session.token).then((r) => {
+          if (r.ok && r.account.quota.plan === 'subscribed') subscribed();
+          else setState((s) => (s.kind === 'waitingPayment' ? { kind: 'choose' } : s));
+        });
+      previous = mine;
+      setPending(mine);
+    });
+  }, []);
 
-  if (state.kind === 'waitingPayment')
+  if (state.kind === 'waitingPayment') {
+    // 付款頁的網址（重新整理後沒有）：沒有的話重新向 Worker 建一個
+    const reopen = () => (state.url ? void openPayment(state.url, 'onboarding') : void subscribe());
+    if (pending?.checkoutTabId === null)
+      return (
+        <>
+          <h2 class="ob-h2">付款頁已經關閉</h2>
+          <p>還沒付款的話，可以重新打開付款頁，或先用免費額度。</p>
+          <div class="naru-row">
+            <Button onClick={reopen}>重新打開付款頁</Button>
+            <Button variant="ghost" onClick={free}>
+              改成先用免費額度
+            </Button>
+          </div>
+          <p class="hint" role="status">
+            如果你已經付款，確認後這裡會自動更新。
+          </p>
+        </>
+      );
     return (
       <>
-        <h2 class="ob-h2">在新分頁完成付款</h2>
-        <p>付款頁已經在新分頁打開（由 Paddle 處理付款）。付款完成後，這裡會自動更新。</p>
+        <h2 class="ob-h2">在付款分頁完成付款</h2>
+        <p>付款頁已經在另一個分頁打開（由 Paddle 處理付款）。付款完成後，會自動帶你回到這裡。</p>
         <div class="naru-row">
-          <Button onClick={() => void chrome.tabs.create({ url: state.url })}>重新打開付款頁</Button>
+          <Button onClick={reopen}>回到付款頁</Button>
           <Button variant="ghost" onClick={free}>
             改成先用免費額度
           </Button>
         </div>
       </>
     );
+  }
   if (state.kind === 'subscribed')
     return (
       <>

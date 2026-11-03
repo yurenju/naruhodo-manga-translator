@@ -20,7 +20,7 @@ const locale = Astro.params.locale as Locale;
 const t = copy[locale].checkout;
 const legal = copy[locale].legal;
 ---
-<Base locale={locale} title={`Naruhodo — ${t.title}`} alternates={byLocale((l) => `/${l}/checkout`)}>
+<Base locale={locale} title={`Naruhodo — ${t.title}`} alternates={byLocale((l) => `/${l}/checkout`)} bare>
   <div class="wrap">
     <div class="card checkout" data-checkout data-paddle-locale={paddleLocale(locale)}>
       <img class="logo" src={logo.src} alt="" width="56" height="56" />
@@ -31,9 +31,12 @@ const legal = copy[locale].legal;
       <div data-view="closed" hidden>
         <h1>{t.closed}</h1>
         <button class="btn btn-primary" data-action="reopen">{t.reopen}</button>
+        <p class="hint cancel">{t.cancel}</p>
       </div>
       <div data-view="completed" hidden>
+        <div class="spinner"></div>
         <p class="notice ok" role="status">{t.completed}</p>
+        <p class="hint slow" data-slow hidden>{t.slow}</p>
       </div>
       <div data-view="failed" hidden>
         <h1>{t.plan}</h1>
@@ -58,7 +61,7 @@ const legal = copy[locale].legal;
     </div>
   </div>
   <script>
-    import { type CheckoutState, checkoutStateAfter, transactionIdFrom } from '../../checkout.ts';
+    import { type CheckoutState, SLOW_RETURN_MS, checkoutStateAfter, transactionIdFrom } from '../../checkout.ts';
 
     // Paddle.js v2 用到的部分（https://developer.paddle.com/paddlejs/overview）
     interface Paddle {
@@ -77,6 +80,9 @@ const legal = copy[locale].legal;
     let state: CheckoutState = 'loading';
 
     function show(next: CheckoutState) {
+      // 付款完成：外掛查到付款就會關掉這個分頁（#176）；一直沒關的話補一句可以自己關
+      // completed 不會再變成別的狀態（checkoutStateAfter），計時器只會設一次
+      if (next === 'completed' && state !== 'completed') setTimeout(() => (root.querySelector<HTMLElement>('[data-slow]')!.hidden = false), SLOW_RETURN_MS);
       state = next;
       for (const view of root.querySelectorAll<HTMLElement>('[data-view]')) {
         view.hidden = !view.dataset.view!.split(' ').includes(state);

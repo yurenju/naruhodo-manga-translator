@@ -33,6 +33,10 @@ export interface SiteCopy {
     closed: string;
     reopen: string;
     completed: string;
+    /** 付款完成後 SW 一直沒把分頁關掉（webhook 很慢、外掛的分頁已經關了）：補一句可以自己關 */
+    slow: string;
+    /** Paddle 視窗在付款前被關掉：關掉分頁就會回到外掛 */
+    cancel: string;
     failed: string;
     retry: string;
     missing: string;
@@ -126,7 +130,9 @@ export const copy: Record<Locale, SiteCopy> = {
       hint: '付款由 Paddle 處理，Naruhodo 不會看到你的卡號。',
       closed: '付款畫面已經關閉。',
       reopen: '重新開啟付款畫面',
-      completed: '付款完成。回到外掛就能開始使用訂閱，這個分頁可以關掉了。',
+      completed: '付款完成，正在帶你回到外掛…',
+      slow: '如果沒有自動回去，可以直接關掉這個分頁。',
+      cancel: '不想付款的話，直接關掉這個分頁就會回到外掛。',
       failed: '付款畫面沒有成功載入。請檢查網路連線後再試一次。',
       retry: '重新載入',
       missing: '這個付款連結不完整。請回到外掛，重新打開付款頁。',
@@ -216,7 +222,9 @@ export const copy: Record<Locale, SiteCopy> = {
       hint: 'Payment is handled by Paddle. Naruhodo never sees your card number.',
       closed: 'The checkout was closed.',
       reopen: 'Open checkout again',
-      completed: 'Payment complete. Go back to the extension to start using your subscription; you can close this tab.',
+      completed: 'Payment complete. Taking you back to the extension…',
+      slow: 'If nothing happens, you can just close this tab.',
+      cancel: 'Changed your mind? Just close this tab to go back to the extension.',
       failed: 'Checkout failed to load. Check your connection and try again.',
       retry: 'Try again',
       missing: 'This checkout link is incomplete. Go back to the extension and open the checkout again.',
