@@ -52,4 +52,4 @@ Get a tracer with `createTrace(ctx)` from `src/shared/trace.ts` and call it with
 
 ## Handling real pages
 
-Screenshots of real sites stay in `%LOCALAPPDATA%` and never enter the repo. Delete a session folder once its bug is fixed. The debug Chrome listens on port 9222, so any local program can drive that profile while it is open.
+Screenshots of real sites stay in `%LOCALAPPDATA%` and never enter the repo; neither do the site's or the title's real names ([public-repo.md](public-repo.md)). Delete a session folder once its bug is fixed. The debug Chrome listens on port 9222, so any local program can drive that profile while it is open.

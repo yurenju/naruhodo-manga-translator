@@ -28,6 +28,10 @@ When your output names a domain concept (in an issue title, a refactor proposal,
 
 If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 
+## No real titles or sites
+
+Glossary entries, ADRs and issues never name a real manga, character or site, even when the discussion did. Use the site kinds in `GLOSSARY.md` and audit codes instead: [public-repo.md](public-repo.md).
+
 ## Flag ADR conflicts
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
