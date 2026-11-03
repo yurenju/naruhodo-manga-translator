@@ -28,6 +28,9 @@ export function checkoutStateAfter(state: CheckoutState, eventName: string): Che
   }
 }
 
+/** 付款完成後等這麼久外掛還沒把分頁關掉（webhook 通常幾秒內就到），就提示讀者可以自己關。 */
+export const SLOW_RETURN_MS = 20_000;
+
 /** 網址的 `_ptxn`；不是 Paddle transaction id（`txn_` 開頭）就是 null。 */
 export function transactionIdFrom(search: string): string | null {
   const id = new URLSearchParams(search).get('_ptxn');

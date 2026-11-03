@@ -8,8 +8,8 @@
  * 兩條路的譯文都來自同一份 ground truth，所以用 __translateCalls（只有走 offscreen 時才加）分辨走了哪一條。
  * 免費額度用完（#92）：Worker 回 402 → SW 的 Hosted Translator → side panel 重新向 Worker 讀額度，這串訊息與 API 契約只有這裡測得到；
  * 顯示規則（哪一行文字、警告色、按鈕）在 src/ui/view.test.ts。
- * 訂閱（#94）：side panel 的「訂閱」向 Worker 建立 checkout、用新分頁打開 checkout 頁 → Paddle 的 webhook 送到 Worker →
- * side panel 重新取得焦點時重讀額度、顯示本月額度。Worker 的 Paddle 是假的（env.test），webhook 由測試用 env.test 的 secret 簽好送出；
+ * 訂閱（#94、#176）：side panel 的「訂閱」向 Worker 建立 checkout、請 SW 用新分頁打開 checkout 頁 → Paddle 的 webhook 送到 Worker →
+ * SW 查到訂閱中就關掉付款分頁、side panel 重讀額度、顯示本月額度。Worker 的 Paddle 是假的（env.test），webhook 由測試用 env.test 的 secret 簽好送出；
  * 真的 Paddle sandbox 只在 `npm run smoke:paddle`。webhook 與額度的規則在 worker/src/subscription.test.ts。
  * 刪除帳號（#95）：設定頁 → 確認頁 → Worker 的 DELETE /v1/account → 清掉 session → side panel 回到未登入。刪除的規則在
  * worker/src/account-deletion.test.ts，清掉 session 的流程在 src/shared/account-exit.test.ts。
@@ -120,7 +120,9 @@ async function signInOnPanel(panel: Page, context: BrowserContext, email: string
   await panel.getByRole('button', { name: '返回' }).click();
 }
 
-test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webhook 送到 Worker 後，side panel 重新取得焦點就顯示本月額度', async ({
+// unit 測不到的（#176）：side panel → SW 的 payment:open、SW 真的向 Worker 查方案、用真的 chrome.tabs 關掉付款分頁，
+// 再透過 chrome.storage.session 讓 side panel 顯示「已訂閱」。什麼時候關、切回哪個分頁的規則在 src/background/payment-return.test.ts。
+test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webhook 送到 Worker 後，SW 關掉付款分頁，side panel 顯示已訂閱與本月額度', async ({
   context,
   sw,
   extensionId,
@@ -140,13 +142,15 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   await expect.poll(() => checkout.url()).toMatch(/^http:\/\/localhost:4321\/zh-tw\/checkout\?_ptxn=txn_fake_/);
   const accountId = new URL(checkout.url()).searchParams.get('_ptxn')!.replace('txn_fake_', '');
 
+  // 讀者付完款不必自己切回來：SW 每 3 秒查一次，查到訂閱中就關掉付款分頁、通知 side panel 重讀額度
+  const closed = checkout.waitForEvent('close');
   await sendSubscriptionCreated(accountId);
-  await checkout.close();
-  // 讀者付完款切回來，side panel 重新取得焦點。Playwright 模擬每個頁面一直都有焦點、一直可見，不會送出 focus／visibilitychange，
-  // 所以由測試代替瀏覽器送 focus 事件；之後向 Worker 重讀額度是外掛自己做的
-  await panel.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await closed;
 
+  await expect(panel.getByRole('group', { name: '已訂閱' })).toBeVisible();
   await expect(remaining).toHaveText(/^本月剩 800 頁・\d+ 月 \d+ 日重置$/);
+  await panel.getByRole('group', { name: '已訂閱' }).getByRole('button', { name: '知道了' }).click();
+  await expect(panel.getByRole('group', { name: '已訂閱' })).toHaveCount(0);
   await chooseFromPanelMenu(panel, '設定');
   const settings = panel.getByRole('region', { name: '設定' });
   await expect(settings.getByText('訂閱中', { exact: true })).toBeVisible();
@@ -192,9 +196,9 @@ async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId
   await panel.getByRole('status', { name: '剩餘額度' }).getByRole('button', { name: '訂閱' }).click();
   const checkout = await opened;
   await expect.poll(() => checkout.url()).toMatch(/_ptxn=txn_fake_/);
+  const closed = checkout.waitForEvent('close');
   await sendSubscriptionCreated(new URL(checkout.url()).searchParams.get('_ptxn')!.replace('txn_fake_', ''), customerId);
-  await checkout.close();
-  await panel.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await closed;
   await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/^本月剩 800 頁/);
 }
 

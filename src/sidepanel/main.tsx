@@ -22,6 +22,7 @@ import type { Quota } from '../shared/hosted-api.ts';
 import { clearHostedSession, HOSTED_API_URL, loadHostedSession, type HostedSession } from '../shared/hosted-session.ts';
 import { dismissHostedHint, onboardingUrl, watchHostedHint, watchOnboarding, type OnboardingProgress } from '../shared/onboarding.ts';
 import { DEFAULT_PAGE_MODE, savePageMode, watchPageMode, type PageMode } from '../shared/page-mode.ts';
+import { dismissSubscribedNotice, openPayment, watchSubscribedNotice } from '../shared/payment-return.ts';
 import { saveTranslationMode, watchTranslationMode, type TranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, RadioCard, Switch } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
@@ -115,13 +116,23 @@ function useHostedHint(): boolean {
   return show;
 }
 
+/** side panel 發起的付款確認了、還沒按「知道了」（#176）。 */
+function useSubscribedNotice(): boolean {
+  const [show, setShow] = useState(false);
+  useEffect(() => watchSubscribedNotice(setShow), []);
+  return show;
+}
+
 /** 用新分頁打開 onboarding（#93）；signIn＝從第 2 步開始。 */
 const openOnboarding = (step?: 'signIn') => void chrome.tabs.create({ url: onboardingUrl(step) });
 
-/** 「訂閱」：向 Worker 建立 checkout，用新分頁打開產品網站的 checkout 頁（#94）。已經訂閱中就重讀額度。失敗回 false。 */
-async function subscribe(session: HostedSession): Promise<boolean> {
+/**
+ * 「訂閱」：向 Worker 建立 checkout，請 SW 用新分頁打開產品網站的 checkout 頁（#94），付款後 SW 帶讀者回到 tabId（#176）。
+ * 已經訂閱中就重讀額度。失敗回 false。tabId＝這個 side panel 跟著的分頁；設定頁沒有傳，用這個視窗正在看的分頁。
+ */
+async function subscribe(session: HostedSession, tabId?: number): Promise<boolean> {
   const result = await hostedAccount.checkout(session.token, 'zh-tw');
-  if (result.ok) void chrome.tabs.create({ url: result.url });
+  if (result.ok) void openPayment(result.url, 'panel', tabId);
   else if (result.reason === 'alreadySubscribed') void chrome.runtime.sendMessage({ type: 'quota:changed' } satisfies Message).catch(() => {});
   else {
     console.error('建立 checkout 失敗', result.message);
@@ -615,6 +626,7 @@ function App({ tabId }: { tabId: number | undefined }) {
   const quota = useHostedQuota(session);
   const onboarding = useOnboarding();
   const hostedHint = useHostedHint();
+  const subscribedNotice = useSubscribedNotice();
   const [paymentFailed, runPayment] = usePaymentAction();
 
   useEffect(() => {
@@ -666,8 +678,10 @@ function App({ tabId }: { tabId: number | undefined }) {
       hostedHint={hostedHint}
       onDismissHostedHint={() => void dismissHostedHint()}
       quota={translationMode === 'hosted' ? quota : undefined}
-      onSubscribe={session ? () => runPayment(() => subscribe(session)) : undefined}
+      onSubscribe={session ? () => runPayment(() => subscribe(session, tabId)) : undefined}
       paymentFailed={paymentFailed}
+      subscribedNotice={subscribedNotice}
+      onDismissSubscribedNotice={() => void dismissSubscribedNotice()}
       autoTranslate={running && <AutoTranslateToggle tabId={tabId} />}
       series={running && <SeriesPicker tabId={tabId} />}
       renderSettings={(_close, openDeleteAccount) => (

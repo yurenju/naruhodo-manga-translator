@@ -129,6 +129,8 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
 .checkout h1 { margin: 0 0 var(--naru-space-2); font-size: var(--naru-text-heading); }
 .checkout .hint { margin: 0; font-size: var(--naru-text-small); color: var(--naru-ink-2); }
 .checkout .logo { display: block; margin: 0 auto var(--naru-space-4); }
+.checkout .hint.cancel { margin-top: var(--naru-space-3); }
+.checkout .hint.slow { margin-bottom: var(--naru-space-4); }
 .spinner { width: 34px; height: 34px; margin: 0 auto var(--naru-space-4); border: 4px solid var(--naru-accent-weak); border-top-color: var(--naru-accent); border-radius: var(--naru-radius-pill); animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .notice { margin: var(--naru-space-4) 0; padding: var(--naru-space-3); font-size: var(--naru-text-label); border-radius: var(--naru-radius-sm); }

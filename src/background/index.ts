@@ -26,7 +26,9 @@ import type {
   ProposeNotesResponse,
 } from '../shared/messages.ts';
 import { acceptSuggestion, editEntry, ignoreSuggestion, pendingSuggestions, type SeriesNotes, type TranslatorVersion } from '../shared/series-notes.ts';
-import { onboardingUrl, saveInstallState } from '../shared/onboarding.ts';
+import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
+import { onboardingUrl, saveInstallState, saveOnboarding } from '../shared/onboarding.ts';
+import { loadPendingPayment, savePendingPayment, showSubscribedNotice } from '../shared/payment-return.ts';
 import { createTrace } from '../shared/trace.ts';
 import { isTranslationModeSet, loadTranslationMode, saveTranslationMode, watchTranslationMode } from '../shared/translation-mode.ts';
 import type { NotesInput, TranslateInput, Translator } from '../shared/translator.ts';
@@ -40,6 +42,7 @@ import { isCached, MODEL_CACHE } from '../offscreen/models/model-store.ts';
 import { currentModelStatus } from './model-status.ts';
 import { ensureOffscreenDocument } from './offscreen.ts';
 import { createOverlaySync } from './overlay-sync.ts';
+import { createPaymentReturn } from './payment-return.ts';
 import { createScanner } from './scan.ts';
 import { createSeriesCatalog } from './series-catalog.ts';
 import { indexedDbBackupRepo, indexedDbNotesStore, indexedDbSeriesRepo } from './series-store.ts';
@@ -424,7 +427,72 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   void activation.handleTabUpdated(tabId, changeInfo);
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
+/**
+ * 付款後回到外掛（#176）：「訂閱」由 SW 開付款分頁，每 3 秒向 Worker 查一次方案，確認了就關掉付款分頁、帶讀者回到發起的分頁。
+ * 每次查都會讀 chrome.storage.session，SW 不會在查的途中被回收；被回收了，下次啟動看到還有待確認的付款就接著查。
+ */
+const hostedAccount = createHostedAccountClient({ apiUrl: HOSTED_API_URL, fetch: (url, init) => fetch(url, init) });
+
+const paymentReturn = createPaymentReturn({
+  load: loadPendingPayment,
+  save: savePendingPayment,
+  createTab: async (url) => (await chrome.tabs.create({ url, active: true })).id!,
+  closeTab: (tabId) => chrome.tabs.remove(tabId).catch(() => {}),
+  async focusTab(tabId) {
+    try {
+      const tab = await chrome.tabs.update(tabId, { active: true });
+      if (tab) await chrome.windows.update(tab.windowId, { focused: true });
+      return tab !== undefined;
+    } catch {
+      return false;
+    }
+  },
+  isActiveTab: (tabId) => chrome.tabs.get(tabId).then((tab) => tab.active, () => false),
+  async isSubscribed() {
+    const token = await hostedSessionToken();
+    if (!token) return false;
+    const result = await hostedAccount.account(token);
+    return result.ok && result.account.quota.plan === 'subscribed';
+  },
+  onConfirmed(from) {
+    trace('payment:confirmed', { from });
+    notifyPanel({ type: 'quota:changed' });
+    // onboarding 分頁可能已經關了：付款完成就算設定完成，跟 onboarding 頁自己寫的一樣
+    if (from === 'onboarding') void saveTranslationMode('hosted').then(() => saveOnboarding('done'));
+    else void showSubscribedNotice();
+  },
+  now: () => Date.now(),
+});
+
+const PAYMENT_POLL_MS = 3000;
+let pollingPayment = false;
+
+async function pollPayment(): Promise<void> {
+  if (pollingPayment) return;
+  pollingPayment = true;
+  try {
+    for (;;) {
+      await sleep(PAYMENT_POLL_MS);
+      const more = await paymentReturn.check().catch((e: unknown) => {
+        console.warn('payment check failed', e);
+        return true;
+      });
+      if (!more) return;
+    }
+  } finally {
+    pollingPayment = false;
+  }
+}
+
+void loadPendingPayment().then((pending) => pending && pollPayment());
+// SW 剛啟動時不知道各視窗正在看哪個分頁，先問一次
+void chrome.tabs.query({ active: true }).then((tabs) => {
+  for (const tab of tabs) if (tab.id !== undefined) paymentReturn.tabActivated(tab.id, tab.windowId);
+});
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => paymentReturn.tabActivated(tabId, windowId));
+
+chrome.tabs.onRemoved.addListener((tabId, { windowId }) => {
+  void paymentReturn.tabRemoved(tabId, windowId);
   void activation.handleTabRemoved(tabId);
   scanner.clear(tabId);
   transcriber.clear(tabId);
@@ -446,6 +514,12 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
       return false;
     case 'panel:getModelStatus':
       void modelStatusResponse().then(sendResponse);
+      return true;
+    case 'payment:open':
+      void paymentReturn.open(message).then(() => {
+        sendResponse();
+        void pollPayment();
+      });
       return true;
     case 'onboarding:prefetchModels':
       prefetchModels().catch((e: unknown) => console.warn('prefetch failed', e));
