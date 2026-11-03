@@ -3,17 +3,17 @@
  * 第 1 頁翻譯（①）後整理 Notes（②，ADR 0005），notes_changes 照 SW 的規則套用後（#37）第 2 頁帶著累積的 Notes
  * 與第 1 頁當 Prior Pages 送出，仍吃到 prompt cache（usage.cache_read_input_tokens > 0）：Notes 變了，
  * 固定的指示那段還是逐字相同。
- * `npm run smoke` 才會跑；沒有 key 時跳過並印出「已跳過」（不能算通過）。key 不印出。
+ * `npm run smoke` 才會跑，key 由 op run 從 1Password 放進環境變數（#175）；沒有 key 時跳過並印出「已跳過」（不能算通過）。key 不印出。
  */
 import { describe, expect, it } from 'vitest';
 import { applyNotesChanges } from '../shared/series-notes.ts';
 import type { TranslatedLine, TranslateInput } from '../shared/translator.ts';
 import { readGroundTruth } from '../testing/synthetic.ts';
-import { readTestApiKey, TEST_API_KEY_FILE } from '../testing/test-api-key.ts';
+import { readTestApiKey, TEST_API_KEY_ENV } from '../testing/test-api-key.ts';
 import { CLAUDE_MODEL, createClaudeTranslator, type ApiUsage } from './claude-translator.ts';
 
 const apiKey = readTestApiKey();
-if (!apiKey) console.log(`已跳過：沒有 NARUHODO_ANTHROPIC_KEY，也沒有 ${TEST_API_KEY_FILE}`);
+if (!apiKey) console.log(`已跳過：沒有 ${TEST_API_KEY_ENV}（用 npm run smoke 跑）`);
 
 const items = (id: string): TranslateInput['items'] =>
   readGroundTruth(id)

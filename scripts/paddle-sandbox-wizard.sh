@@ -203,8 +203,8 @@ finish() {
 #
 # Every value lands in ENV_FILE, outside the repo. Never commit it or paste its
 # values into issues or logs. How the code reads it:
-#   Worker (wrangler dev): copy PADDLE_API_KEY, PADDLE_API_BASE_URL, PADDLE_PRICE_ID,
-#     PADDLE_WEBHOOK_SECRET into the Worker's .dev.vars (gitignored).
+#   Worker (npm run worker:dev): passes this file to wrangler as --env-file; the Claude
+#     key comes from 1Password through op run (#175), so nothing is copied into .dev.vars.
 #   Site (Astro dev): PADDLE_CLIENT_TOKEN and PADDLE_ENVIRONMENT go into the site's
 #     .env.local as PUBLIC_PADDLE_CLIENT_TOKEN / PUBLIC_PADDLE_ENVIRONMENT.
 #   Webhook tunnel: node scripts/paddle-tunnel.ts reads this file directly.

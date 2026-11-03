@@ -1,7 +1,0 @@
-# 複製成 worker/.dev.vars（已 gitignore），給 `wrangler dev --env dev` 呼叫真的 Anthropic 與 Paddle sandbox 用
-CLAUDE_API_KEY=
-# Paddle sandbox（#94）：值從 ~/.config/naruhodo/paddle-sandbox.env 複製同名的行（scripts/paddle-sandbox-wizard.sh 產生）。
-# webhook 要送到本機時另開一個 terminal 跑 `node scripts/paddle-tunnel.ts`
-PADDLE_API_KEY=
-PADDLE_PRICE_ID=
-PADDLE_WEBHOOK_SECRET=

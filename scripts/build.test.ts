@@ -193,7 +193,7 @@ describe('debug build', () => {
     expect(await readText(debugDir, 'background.js')).toContain('test:activate');
   });
 
-  it('Hosted Translation 連開發者自己跑的 `wrangler dev --env dev`（port 8787）', async () => {
+  it('Hosted Translation 連開發者自己跑的 `npm run worker:dev`（port 8787）', async () => {
     expect(await readText(debugDir, 'background.js')).toContain('"http://localhost:8787"');
   });
 });
