@@ -44,7 +44,7 @@ test('正式 build（沒有 host_permissions）：「測試連線」成功', asy
       await onboarding.getByRole('button', { name: '使用自備金鑰' }).click();
       await onboarding.getByLabel('Claude API key').fill(apiKey!);
       await onboarding.getByRole('button', { name: '同意並儲存' }).click();
-      await expect(onboarding.getByRole('heading', { name: '開始翻譯' })).toBeVisible();
+      await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
       const panel = await openSidePanel(context, new URL(sw.url()).host);
       await chooseFromPanelMenu(panel, '設定');
       await panel.getByRole('button', { name: '測試連線' }).click();
