@@ -40,6 +40,14 @@ _Avoid_: SFX (in the UI), onomatopoeia
 One Balloon or one Loose Text entry on a Page, as the transcript lists it in reading order; the unit that hover sync and furigana work on. Its id (b1, l1…) is only unique within its Page, so a Line is always named together with its Page.
 _Avoid_: item, sentence (one Balloon can hold several sentences)
 
+**Unreadable** (無法辨識)
+A Line whose original cannot be trusted or cannot be read: OCR turned it into garble, or the Page draws it to be illegible even to a Japanese reader (a scrawled letter, an invented script). Listed in the side panel with its original but never covered or translated, so the reader sees the Japanese instead of a plausible wrong translation. Stylized Spelling in a Balloon is not Unreadable.
+_Avoid_: garbled, OCR error (only one cause), low confidence (only one cause)
+
+**Stylized Spelling** (變體表記)
+Dialogue the author writes in non-standard spelling to give a character's voice: mixed or misplaced kana (アなタ だレ), all-katakana speech, stretched sounds. It reads fine to a Japanese reader, so in a Balloon it is translated and covered like any other Line, and the translation may keep the odd voice. In Loose Text it cannot be told apart from garbled ads and title lettering, so there it may still end up Unreadable.
+_Avoid_: broken text, garble
+
 **URL Pattern** (網址模式)
 A reading-page URL reduced to origin + path (query and hash ignored), remembered against a Series once the reader chooses a non-provisional Series for it. Only used to preselect that Series the next time the extension is activated on the same URL; never activates the extension by itself.
 _Avoid_: site rule, domain mapping
