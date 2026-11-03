@@ -11,16 +11,18 @@
  * 訂閱（#94、#176）：side panel 的「訂閱」向 Worker 建立 checkout、請 SW 用新分頁打開 checkout 頁 → Paddle 的 webhook 送到 Worker →
  * SW 查到訂閱中就關掉付款分頁、side panel 重讀額度、顯示本月額度。Worker 的 Paddle 是假的（env.test），webhook 由測試用 env.test 的 secret 簽好送出；
  * 真的 Paddle sandbox 只在 `npm run smoke:paddle`。webhook 與額度的規則在 worker/src/subscription.test.ts。
+ * 已訂閱的帳號（#167）：onboarding 的第 3 步一進來就向 Worker 讀方案，訂閱中就不顯示方案選擇。
  * 刪除帳號（#95）：設定頁 → 確認頁 → Worker 的 DELETE /v1/account → 清掉 session → side panel 回到未登入。刪除的規則在
  * worker/src/account-deletion.test.ts，清掉 session 的流程在 src/shared/account-exit.test.ts。
  */
 import { createHmac } from 'node:crypto';
 import type { BrowserContext, Page } from '@playwright/test';
+import { createHostedAccountClient } from '../src/shared/hosted-account-client.ts';
 import { DEV_FREE_PAGES_PATH, PADDLE_WEBHOOK_PATH } from '../src/shared/hosted-api.ts';
 import { PRACTICE_URL } from '../src/ui/links.ts';
 import { activateOnMockSite, chooseFromPanelMenu, expect, openPanelMenu, test } from './fixtures.ts';
 import { VERTICAL_VIEW_HEIGHT } from './mock-site/vertical-scroll.ts';
-import { finishOnboarding, onboardingPage, signInFromPanel, signInWithEmail } from './sign-in.ts';
+import { finishOnboarding, lastCode, onboardingPage, signInFromPanel, signInWithEmail } from './sign-in.ts';
 import { WORKER_URL } from './worker.ts';
 
 test.use({ viewport: null, fakeTranslator: true, requireApiKey: true });
@@ -73,13 +75,47 @@ test.describe('全新安裝', () => {
     await expect.poll(() => sw.evaluate(() => globalThis.__translateCalls)).toBeGreaterThan(0);
     await expect(transcript.getByText('早安！今天好早喔')).toBeVisible();
   });
+
+  // unit 測不到的（#167）：onboarding 的第 3 步真的向 Worker 讀方案；剛登入與已登入時重開 onboarding 兩個入口都經過它
+  test('已訂閱的帳號：onboarding 登入後與重開時都直接顯示「已訂閱」，不出現方案選擇', async ({ context, extensionId }, testInfo) => {
+    const email = freshEmail(testInfo.workerIndex);
+    await subscribeWithoutExtension(email);
+
+    const onboarding = await onboardingPage(context);
+    await onboarding.getByRole('button', { name: '開始設定' }).click();
+    await signInWithEmail(onboarding, email, { subscribed: true });
+    await expect(onboarding.getByText('每月可翻 800 頁')).toBeVisible();
+    await expect(onboarding.getByRole('button', { name: '先用免費的 50 頁' })).toHaveCount(0);
+    await onboarding.getByRole('button', { name: '下一步' }).click();
+    await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
+
+    // side panel 的「登入」打開的第 2 步：已登入就跳到第 3 步
+    const reopened = await context.newPage();
+    await reopened.goto(`chrome-extension://${extensionId}/onboarding.html?step=signIn`);
+    await expect(reopened.getByRole('heading', { name: '已訂閱' })).toBeVisible();
+    await expect(reopened.getByRole('button', { name: '先用免費的 50 頁' })).toHaveCount(0);
+  });
 });
+
+/** 不經過外掛，直接向本機 Worker 登入、建立 checkout、送 webhook：這個 email 的 Account 已經訂閱中。 */
+async function subscribeWithoutExtension(email: string): Promise<void> {
+  const client = createHostedAccountClient({ apiUrl: WORKER_URL, fetch: (url, init) => fetch(url, init) });
+  expect((await client.sendCode(email)).ok).toBe(true);
+  const verified = await client.verifyCode(email, await lastCode(email));
+  if (!verified.ok) throw new Error(`登入失敗：${verified.message}`);
+  const checkout = await client.checkout(verified.token, 'zh-tw');
+  if (!checkout.ok) throw new Error(`checkout 失敗：${checkout.message}`);
+  await sendSubscriptionCreated(accountIdFromCheckout(checkout.url));
+}
 
 /** wrangler.jsonc 的 env.test 的 PADDLE_WEBHOOK_SECRET（假值）。 */
 const TEST_WEBHOOK_SECRET = 'pdl_ntfset_browser_test';
 
 /** worker/src/paddle.ts 的假 Paddle 拒絕替這個 customer 建立 portal session（像 API key 少了 customer_portal_session.write）。 */
 const PORTAL_FORBIDDEN_CUSTOMER = 'ctm_fake_portal_forbidden';
+
+/** 假 Paddle 的 transaction id 是 txn_fake_<Account id>，放在 checkout 頁網址的 _ptxn。 */
+const accountIdFromCheckout = (url: string) => new URL(url).searchParams.get('_ptxn')!.replace('txn_fake_', '');
 
 /** 像 Paddle 一樣簽好、送一個 subscription.created 給本機 Worker；custom_data 的 Account id 是 Worker 建立 transaction 時放的。 */
 async function sendSubscriptionCreated(accountId: string, customerId = `ctm_browser_${accountId}`): Promise<void> {
@@ -140,7 +176,7 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   await remaining.getByRole('button', { name: '訂閱' }).click();
   const checkout = await opened;
   await expect.poll(() => checkout.url()).toMatch(/^http:\/\/localhost:4321\/zh-tw\/checkout\?_ptxn=txn_fake_/);
-  const accountId = new URL(checkout.url()).searchParams.get('_ptxn')!.replace('txn_fake_', '');
+  const accountId = accountIdFromCheckout(checkout.url());
 
   // 讀者付完款不必自己切回來：SW 每 3 秒查一次，查到訂閱中就關掉付款分頁、通知 side panel 重讀額度
   const closed = checkout.waitForEvent('close');
@@ -197,7 +233,7 @@ async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId
   const checkout = await opened;
   await expect.poll(() => checkout.url()).toMatch(/_ptxn=txn_fake_/);
   const closed = checkout.waitForEvent('close');
-  await sendSubscriptionCreated(new URL(checkout.url()).searchParams.get('_ptxn')!.replace('txn_fake_', ''), customerId);
+  await sendSubscriptionCreated(accountIdFromCheckout(checkout.url()), customerId);
   await closed;
   await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/^本月剩 800 頁/);
 }
