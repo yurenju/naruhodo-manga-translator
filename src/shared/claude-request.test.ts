@@ -86,6 +86,13 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
     expect(body.system[0]?.text).toMatch(/sfx[^\n]*擬音[^\n]*擬態[^\n]*感嘆[^\n]*不算/);
   });
 
+  it('unreadable 只指 OCR 亂碼與劇情上本來就看不懂的字，變體表記照常翻譯（#179）', () => {
+    const text = translateRequest(input).system[0]?.text;
+
+    expect(text).toMatch(/unreadable[^\n]*OCR 亂碼[^\n]*本來就[^\n]*看不懂/);
+    expect(text).toMatch(/變體表記不是亂碼（只適用於 kind 是 balloon[^\n]*loose 照上面的規則[^\n]*假名[^\n]*照常翻譯[^\n]*改字[^\n]*不算/);
+  });
+
   it('整理 Notes 的 request body：沒有 Series Notes 時 system 只有指示一段', () => {
     const body = notesRequest(notesInput);
 
