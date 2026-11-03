@@ -118,6 +118,7 @@ npm run build
 | `npm run site:build` | 產品網站的靜態檔，輸出到 `site/dist/` |
 | `bash scripts/paddle-sandbox-wizard.sh` | 一步一步設定 Paddle sandbox（API key、price、webhook），值存在 repo 外的 `~/.config/naruhodo/paddle-sandbox.env` |
 | `bash scripts/production-wizard.sh` | 一步一步開通 production（Cloudflare token、D1、第一次部署、Anthropic、Resend、Paddle live），live 的 key 只送到 Cloudflare 的 Worker secrets（ADR 0008） |
+| `bash scripts/cws-service-account-wizard.sh` | 一步一步設定 release 自動上傳 Chrome Web Store 用的 service account（GCP、GitHub secret `CWS_SERVICE_ACCOUNT_KEY`、Dashboard），最後用 API 驗證；換 key 時重跑 |
 | `node scripts/paddle-tunnel.ts` | 開 cloudflared tunnel，讓 Paddle sandbox 的 webhook 送到本機 `wrangler dev`（`--echo`：Worker 還沒跑時只驗簽章） |
 
 各層測試怎麼分見 [docs/agents/testing.md](docs/agents/testing.md)，真實網站除錯見 [docs/agents/real-site-debugging.md](docs/agents/real-site-debugging.md)，架構決策見 [docs/adr/](docs/adr/)，程式碼規範見 [CODING_STANDARDS.md](CODING_STANDARDS.md)。
