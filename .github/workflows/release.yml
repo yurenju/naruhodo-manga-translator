@@ -18,9 +18,10 @@ on:
         type: string
         required: false
       webstore:
+        # 第一次送審（#84）通過前預設不勾：審核中再上傳新版本可能被拒或蓋掉審核中的版本。上架後改回 true。
         description: 同時上傳到 Chrome Web Store 並送審
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
