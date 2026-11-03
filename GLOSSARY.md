@@ -64,6 +64,18 @@ _Avoid_: context (that word is avoided for Series Notes), history
 Our own original Spread that a newly installed reader translates for the first time, on a page of our website. It is translated for real, like any other Spread, but never counts as Translated Pages.
 _Avoid_: demo (that is the simulated showcase on the homepage), sample page
 
+## Reading sites
+
+How a site lays out its Pages; docs and tests name sites by these kinds, never by their real names.
+
+**Canvas Site** (canvas 網站)
+A reading site that draws each Page on its own canvas, one after another.
+_Avoid_: the site's real name
+
+**E-book Reader** (電子書閱讀器)
+A reading site that shows one composed image covering the whole view, a single Page or a whole Spread, and swaps it to turn pages.
+_Avoid_: the reader app's brand name, viewer
+
 ## Accounts and billing
 
 **Hosted Translation** (內建翻譯)

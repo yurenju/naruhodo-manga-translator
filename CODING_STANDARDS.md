@@ -2,6 +2,12 @@
 
 Judgement rules a reviewer checks a change against. Each rule says what to look for and why.
 
+## No real titles or sites
+
+Code, comments, file names, test samples, test URLs and commit messages name no real manga title, character, author, publisher, manga site or e-book reader brand. Sites are named by layout (Canvas Site, E-book Reader), test URLs use reserved domains (`manga.example`), test titles are invented. Vendors we depend on (Cloudflare, Paddle, Anthropic) are fine. Details: [docs/agents/public-repo.md](docs/agents/public-repo.md).
+
+Why: the repo is public. PR #137 had to rename mock sites, routes and identifiers that carried real site names, and that commit's own message repeated them into history.
+
 ## e2e waits on explicit conditions
 
 When a Playwright test (browser test or e2e) waits for something inside the extension to happen, it waits on a condition: an e2e-build global (such as `__overlaidRecords`) or `expect.poll` on observable state. A fixed delay (`waitForTimeout`) belongs only in a test asserting that something did *not* happen within a window.
