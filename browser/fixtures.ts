@@ -33,12 +33,15 @@ export async function launchWithExtension(
   userDataDir: string,
   realDeviceScaleFactor?: number,
   extensionDir = EXTENSION_DIR,
+  scrollbars = false,
 ): Promise<BrowserContext> {
   const temporary = userDataDir === '';
   if (temporary) userDataDir = await mkdtemp(join(tmpdir(), 'manga-e2e-'));
   await seedLocalState(userDataDir);
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
+    // headless 預設 --hide-scrollbars：捲軸不占寬度。量「捲軸出現把版面擠窄」的測試要真的捲軸
+    ...(scrollbars ? { ignoreDefaultArgs: ['--hide-scrollbars'] } : {}),
     args: [
       `--disable-extensions-except=${extensionDir}`,
       `--load-extension=${extensionDir}`,
@@ -94,6 +97,8 @@ export const test = base.extend<{
    * devicePixelRatio，captureVisibleTab 的截圖仍是 1×，而且不能跟 viewport: null 一起用。
    */
   realDeviceScaleFactor: number | undefined;
+  /** 捲軸占寬度（拿掉 headless 的 --hide-scrollbars）；預設 false。 */
+  scrollbars: boolean;
   /** 用 FakeEngine 取代 OCR 模型（ADR 0007）。browser test 的設定檔設成 true，e2e 與 smoke 用預設的 false。 */
   fakeOcr: boolean;
   /** FakeEngine 每頁故意花的時間：測佇列排程的測試需要 OCR 慢到翻頁時還沒做完。 */
@@ -114,8 +119,9 @@ export const test = base.extend<{
   mockSite: MockSite;
 }>({
   realDeviceScaleFactor: [undefined, { option: true }],
-  context: async ({ realDeviceScaleFactor }, use) => {
-    const context = await launchWithExtension('', realDeviceScaleFactor);
+  scrollbars: [false, { option: true }],
+  context: async ({ realDeviceScaleFactor, scrollbars }, use) => {
+    const context = await launchWithExtension('', realDeviceScaleFactor, undefined, scrollbars);
     await use(context);
     await context.close();
   },

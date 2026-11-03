@@ -20,12 +20,12 @@ const SYNTHETIC = new URL('../testdata/synthetic/out/', import.meta.url);
 const PAGE_WIDTH = 430;
 
 declare global {
-  var __renderOverlay: (input: { image: string; width: number; pages: { sub: RatioRect; text: PageText }[]; pageMode?: PageMode }) => Promise<void>;
+  var __renderOverlay: (input: { image: string; width: number | 'fill'; pages: { sub: RatioRect; text: PageText }[]; pageMode?: PageMode }) => Promise<void>;
   var __overlayCapture: (phase: 'hide' | 'restore', long: boolean) => Promise<void>;
   var __overlayCovered: () => Rect[];
 }
 
-async function render(page: Page, id: string, width: number, pages = groundTruthPageTexts(id), pageMode?: PageMode): Promise<void> {
+async function render(page: Page, id: string, width: number | 'fill', pages = groundTruthPageTexts(id), pageMode?: PageMode): Promise<void> {
   const image = `data:image/png;base64,${(await readFile(new URL(`${id}.png`, SYNTHETIC))).toString('base64')}`;
   await page.evaluate((input) => globalThis.__renderOverlay(input), { image, width, pages, pageMode });
 }
@@ -348,5 +348,38 @@ test.describe('覆蓋渲染（ground truth）', () => {
     await expect(tooltip).toContainText('無法辨識');
     await expect(tooltip.getByText('譯', { exact: true })).toHaveCount(0);
     await expect(tooltip).not.toContainText('滑過這裡看譯文');
+  });
+});
+
+test.describe('覆蓋渲染（圖片剛好塞進視窗）', () => {
+  // p01 原尺寸 880×1280：撐滿 600 寬時高約 873，剛好塞進 900 高的視窗；還沒縮放的 Page 層會超出視窗、撐出捲軸。
+  // 第二個 show() 才會留下錯位：第一個之後 ResizeObserver 有一次初次回報會重排，之後尺寸沒變就不再通知
+  test.use({ viewport: { width: 600, height: 900 }, scrollbars: true });
+
+  test('Spread 兩頁的 Page 層都對齊圖片：放上新層時沒有撐出捲軸、讓 place() 量到被擠窄的圖（試翻頁右頁往左偏）', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    const { text } = groundTruthPageTexts('p01-basic')[0]!;
+    const halves = [
+      { x: 0, y: 0, w: 0.5, h: 1 },
+      { x: 0.5, y: 0, w: 0.5, h: 1 },
+    ];
+    await render(page, 'p01-basic', 'fill', halves.map((sub) => ({ sub, text })));
+
+    const layers = await page.evaluate(() =>
+      [...document.querySelector('[data-naruhodo-overlay]')!.shadowRoot!.querySelectorAll('.pl')].map((layer) => {
+        const r = layer.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      }),
+    );
+    const anchor = await anchorRect(page);
+    expect(layers).toHaveLength(2);
+    for (const [i, sub] of halves.entries()) {
+      const layer = layers.find((l) => Math.abs(l.x - (anchor.x + sub.x * anchor.width)) < 20)!;
+      expect.soft(layer.x, `第 ${i + 1} 頁 左`).toBeCloseTo(anchor.x + sub.x * anchor.width, 0);
+      expect.soft(layer.y, `第 ${i + 1} 頁 上`).toBeCloseTo(anchor.y, 0);
+      expect.soft(layer.width, `第 ${i + 1} 頁 寬`).toBeCloseTo(sub.w * anchor.width, 0);
+      expect.soft(layer.height, `第 ${i + 1} 頁 高`).toBeCloseTo(anchor.height, 0);
+    }
   });
 });

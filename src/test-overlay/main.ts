@@ -7,7 +7,8 @@ import { createOverlay, type Overlay } from '../content/overlay.ts';
 import { createOverlayFontLoader } from '../content/overlay-font.ts';
 
 declare global {
-  var __renderOverlay: (input: { image: string; width: number; pages: { sub: RatioRect; text: PageText }[]; pageMode?: PageMode }) => Promise<void>;
+  /** width 是 'fill'：圖片撐滿視窗寬、slot 不留邊（試翻頁那種剛好塞進視窗的版面）。 */
+  var __renderOverlay: (input: { image: string; width: number | 'fill'; pages: { sub: RatioRect; text: PageText }[]; pageMode?: PageMode }) => Promise<void>;
   /** 截圖前後（hide／restore）；long＝這張圖當成長 Page（擦除與譯文不藏）。 */
   var __overlayCapture: (phase: 'hide' | 'restore', long: boolean) => Promise<void>;
   /** 長 Page 算橫條指紋時要避開的範圍（content script 帶進 PageCandidate.covered 的）。 */
@@ -23,9 +24,9 @@ globalThis.__renderOverlay = async ({ image, width, pages, pageMode = 'read' }) 
   overlay.setPageMode(pageMode);
   // 父元素是 static：跟仿 canvas 網站一樣會被改成 relative
   const slot = document.createElement('div');
-  slot.className = 'slot';
+  slot.className = width === 'fill' ? 'slot fill' : 'slot';
   const img = document.createElement('img');
-  img.style.width = `${width}px`;
+  img.style.width = width === 'fill' ? '100%' : `${width}px`;
   img.src = image;
   slot.append(img);
   document.body.replaceChildren(slot);
