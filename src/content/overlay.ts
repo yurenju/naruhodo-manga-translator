@@ -397,9 +397,11 @@ export function createOverlay({ loadFont, onHover }: { loadFont: LoadFont; onHov
       entry.layers.delete(key);
     }
     entry.layers.set(subKey(sub), layer);
+    // 先縮放再放進 DOM：Page 像素大小的層一放進去就可能超出視窗、撐出捲軸，place() 量到的就是被擠窄的 anchor；
+    // 捲軸在同一段同步程式裡又消失，ResizeObserver 看不到這次變化，層就一直對在錯的位置（試翻頁右頁往左偏）
+    place(entry);
     entry.root.append(element);
     for (const [, old] of olds) old.element.remove();
-    place(entry);
 
     // 縮字只在建立時量一次（實際量測是否溢出）；縮放不重排。最小字級用當下的畫面倍率換算，起始字級每框各自估（#80、#81）。
     // Loose Text 大小差很多（標題、旁白、小註記），各自依文字框估，不夾在整頁 Balloon 的中位數附近
