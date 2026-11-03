@@ -89,11 +89,20 @@ function DownloadPill({ status, started }: { status: ModelStatus; started: boole
   );
 }
 
-/** 第 3 步的子畫面：選方案 → 付款頁開在新分頁、等付款完成 → 訂閱完成。 */
-type PlanState = { kind: 'choose' } | { kind: 'waitingPayment'; url: string } | { kind: 'subscribed' };
+/**
+ * 第 3 步的子畫面：向 Worker 讀方案 → 選方案 → 付款頁開在新分頁、等付款完成 → 訂閱中。
+ * justPaid：在這裡付完款的是「訂閱完成」，本來就訂閱的是「已訂閱」（#167）；limit：讀不到（只知道 Worker 回了 alreadySubscribed）就不顯示頁數。
+ */
+type PlanState =
+  | { kind: 'loading' }
+  | { kind: 'choose' }
+  | { kind: 'waitingPayment'; url: string }
+  | { kind: 'subscribed'; limit: number | undefined; justPaid: boolean };
 
 /**
- * 第 3 步：選擇方案（#93、#94 畫面定案）。「訂閱」向 Worker 建立 checkout，請 SW 用新分頁打開產品網站的 checkout 頁（Paddle 處理付款）。
+ * 第 3 步：選擇方案（#93、#94 畫面定案）。一進來先向 Worker 讀一次方案（#167）：已經訂閱中（剛登入，或已登入時重開 onboarding）
+ * 就不顯示方案選擇，直接是「已訂閱」並呼叫 onSubscribed；讀不到就照常選方案。
+ * 「訂閱」向 Worker 建立 checkout，請 SW 用新分頁打開產品網站的 checkout 頁（Paddle 處理付款）。
  * SW 每隔幾秒查一次方案，確認了就關掉付款分頁、帶讀者回到這裡（#176）。這裡看 SW 記的付款狀態：付款分頁還開著是「在付款分頁完成付款」，
  * 被關掉了是「付款頁已經關閉」；SW 清掉付款狀態時（確認了、或關掉 10 分鐘後放棄）向 Worker 讀一次方案，
  * 訂閱中就換成「訂閱完成」並呼叫 onSubscribed（設定完成），「下一步」才到第 4 步；不是就回到選方案。
@@ -112,7 +121,7 @@ function Plan({
   onSubscribed: () => void;
   onNext: () => void;
 }) {
-  const [state, setState] = useState<PlanState>({ kind: 'choose' });
+  const [state, setState] = useState<PlanState>({ kind: 'loading' });
   const [failure, setFailure] = useState<string | undefined>(undefined);
   /** SW 記的、從 onboarding 發起的付款；undefined＝沒有。 */
   const [pending, setPending] = useState<PendingPayment | undefined>(undefined);
@@ -122,8 +131,14 @@ function Plan({
     onFree();
   };
 
-  const subscribed = () => {
-    setState({ kind: 'subscribed' });
+  /** 向 Worker 讀方案：訂閱中回傳 Monthly Page Limit，不是或讀不到回 undefined。 */
+  async function subscribedLimit(): Promise<number | undefined> {
+    const r = await hostedAccount.account(session.token);
+    return r.ok && r.account.quota.plan === 'subscribed' ? r.account.quota.limit : undefined;
+  }
+
+  const showSubscribed = (limit: number | undefined, justPaid: boolean) => {
+    setState({ kind: 'subscribed', limit, justPaid });
     onSubscribed();
   };
 
@@ -131,28 +146,45 @@ function Plan({
     onChoose();
     setFailure(undefined);
     const result = await hostedAccount.checkout(session.token, 'zh-tw');
-    if (!result.ok) {
-      if (result.reason === 'alreadySubscribed') subscribed();
-      else setFailure(`付款頁沒有打開：${result.message}`);
-      return;
-    }
-    setState({ kind: 'waitingPayment', url: result.url });
-    await openPayment(result.url, 'onboarding');
+    if (result.ok) {
+      setState({ kind: 'waitingPayment', url: result.url });
+      await openPayment(result.url, 'onboarding');
+    } else if (result.reason === 'alreadySubscribed') {
+      // Worker 已經說訂閱中：讀不到頁數上限也照樣是「已訂閱」
+      showSubscribed(await subscribedLimit(), false);
+    } else setFailure(`付款頁沒有打開：${result.message}`);
   }
 
   useEffect(() => {
+    // active：離開第 3 步（上一步、自備金鑰）之後才回來的結果不再改設定；paying：付款中（重新整理）交給付款狀態處理
+    let active = true;
+    let paying = false;
+    void subscribedLimit().then((limit) => {
+      if (!active || paying) return;
+      if (limit !== undefined) showSubscribed(limit, false);
+      else setState((s) => (s.kind === 'loading' ? { kind: 'choose' } : s));
+    });
+
     let previous: PendingPayment | undefined;
-    return watchPendingPayment((next) => {
+    const stop = watchPendingPayment((next) => {
       const { mine, action } = onboardingPaymentChange(previous, next);
-      if (action === 'wait') setState((s) => (s.kind === 'choose' ? { kind: 'waitingPayment', url: '' } : s));
+      if (action === 'wait') {
+        paying = true;
+        setState((s) => (s.kind === 'choose' || s.kind === 'loading' ? { kind: 'waitingPayment', url: '' } : s));
+      }
       if (action === 'settled')
-        void hostedAccount.account(session.token).then((r) => {
-          if (r.ok && r.account.quota.plan === 'subscribed') subscribed();
+        void subscribedLimit().then((limit) => {
+          if (!active) return;
+          if (limit !== undefined) showSubscribed(limit, true);
           else setState((s) => (s.kind === 'waitingPayment' ? { kind: 'choose' } : s));
         });
       previous = mine;
       setPending(mine);
     });
+    return () => {
+      active = false;
+      stop();
+    };
   }, []);
 
   if (state.kind === 'waitingPayment') {
@@ -187,13 +219,27 @@ function Plan({
       </>
     );
   }
+  if (state.kind === 'loading')
+    return (
+      <p class="hint" role="status">
+        正在讀取方案…
+      </p>
+    );
   if (state.kind === 'subscribed')
     return (
       <>
-        <h2 class="ob-h2">訂閱完成</h2>
-        {/* 價格與上限依最終定價 */}
+        <h2 class="ob-h2">{state.justPaid ? '訂閱完成' : '已訂閱'}</h2>
+        {!state.justPaid && (
+          <p>
+            已登入 <strong>{session.email}</strong>，這個帳號已經訂閱，不用再選方案。
+          </p>
+        )}
         <Callout tone="info">
-          <p>✓ 已訂閱：每月可翻 800 頁，每個月的今天重置。</p>
+          <p>
+            {state.limit === undefined
+              ? '✓ 已訂閱。'
+              : `✓ 已訂閱：每月可翻 ${state.limit} 頁，${state.justPaid ? '每個月的今天重置' : '從訂閱那天起每月同一天重置'}。`}
+          </p>
         </Callout>
         <Button variant="primary" class="ob-big" onClick={onNext}>
           下一步
@@ -389,7 +435,7 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
               session={session}
               onChoose={startDownload}
               onFree={() => void saveTranslationMode('hosted').then(finish)}
-              // 付款完成就算設定完成，就算沒按「下一步」就關掉分頁也一樣
+              // 付款完成或本來就訂閱就算設定完成，就算沒按「下一步」就關掉分頁也一樣
               onSubscribed={() => void saveTranslationMode('hosted').then(complete)}
               onNext={() => setStep('tutorial')}
             />
