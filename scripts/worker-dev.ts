@@ -9,15 +9,14 @@
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readTestApiKey, TEST_API_KEY_ENV } from '../src/testing/test-api-key.ts';
+import { PADDLE_SANDBOX_ENV_FILE } from './paddle-tunnel.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const WRANGLER = join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const CONFIG = join(root, 'worker', 'wrangler.jsonc');
-const PADDLE_SANDBOX_ENV = join(homedir(), '.config', 'naruhodo', 'paddle-sandbox.env');
 
 const apiKey = readTestApiKey();
 if (!apiKey) {
@@ -25,15 +24,15 @@ if (!apiKey) {
   process.exit(1);
 }
 const DEV_VARS = join(root, 'worker', '.dev.vars');
-let envFile: string[] = ['--env-file', PADDLE_SANDBOX_ENV];
-if (!existsSync(PADDLE_SANDBOX_ENV)) {
+let envFileArgs: string[] = ['--env-file', PADDLE_SANDBOX_ENV_FILE];
+if (!existsSync(PADDLE_SANDBOX_ENV_FILE)) {
   if (existsSync(DEV_VARS)) {
-    console.error(`${DEV_VARS} 會蓋掉從 1Password 來的 key：刪掉它（Paddle 的值改放 ${PADDLE_SANDBOX_ENV}）`);
+    console.error(`${DEV_VARS} 會蓋掉從 1Password 來的 key：刪掉它（Paddle 的值改放 ${PADDLE_SANDBOX_ENV_FILE}）`);
     process.exit(1);
   }
-  console.warn(`沒有 ${PADDLE_SANDBOX_ENV}：Paddle 相關端點不能用（scripts/paddle-sandbox-wizard.sh 會建立它）`);
-  envFile = [];
+  console.warn(`沒有 ${PADDLE_SANDBOX_ENV_FILE}：Paddle 相關端點不能用（scripts/paddle-sandbox-wizard.sh 會建立它）`);
+  envFileArgs = [];
 }
-const args = [WRANGLER, 'dev', '-c', CONFIG, '--env', 'dev', ...envFile, ...process.argv.slice(2)];
+const args = [WRANGLER, 'dev', '-c', CONFIG, '--env', 'dev', ...envFileArgs, ...process.argv.slice(2)];
 const child = spawn(process.execPath, args, { stdio: 'inherit', env: { ...process.env, CLAUDE_API_KEY: apiKey } });
 child.on('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));

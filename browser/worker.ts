@@ -49,7 +49,7 @@ export async function startWorker({
     const applied = spawnSync(process.execPath, [WRANGLER, 'd1', 'migrations', 'apply', 'DB', '--local', ...common], { encoding: 'utf8' });
     if (applied.status !== 0) throw new Error(`D1 migrations 失敗：\n${applied.stdout}\n${applied.stderr}`);
   }
-  // 一律給 --env-file：沒給的話 wrangler 會讀開發者自己的 worker/.dev.vars，裡面的真 webhook secret 會蓋掉 env.test 的測試 secret
+  // 一律給 --env-file：沒給的話 wrangler 會讀開發者殘留的 worker/.dev.vars（#175 起不再用它），裡面的值會蓋掉這裡要給的
   const vars = envFile ?? join(persistTo, '.dev.vars');
   if (!envFile) await writeFile(vars, '');
   const args = [WRANGLER, 'dev', ...common, '--port', String(E2E_WORKER_PORT), '--ip', '127.0.0.1', '--show-interactive-dev-session=false'];

@@ -11,17 +11,18 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { TEST_API_KEY_ENV } from '../src/testing/test-api-key.ts';
 import { parseEnvFile } from './paddle-tunnel.ts';
 
 export const OP_ENV_FILE = join(homedir(), '.config', 'naruhodo', 'op.env');
 
 const FORMAT = `請建立 ${OP_ENV_FILE}，內容是 1Password 裡測試用 Claude key 的參照（不是 key 本身）：
-  NARUHODO_ANTHROPIC_KEY=op://<vault>/<item>/<field>`;
+  ${TEST_API_KEY_ENV}=op://<vault>/<item>/<field>`;
 
 /** op.env 的內容（undefined＝檔案不存在）能不能用；不能用時回傳給開發者看的說明。 */
 export function opEnvProblem(text: string | undefined): string | undefined {
   if (text === undefined) return `找不到 ${OP_ENV_FILE}。\n${FORMAT}`;
-  if (!parseEnvFile(text).NARUHODO_ANTHROPIC_KEY?.startsWith('op://')) return `${OP_ENV_FILE} 裡沒有 NARUHODO_ANTHROPIC_KEY 的 op:// 參照。\n${FORMAT}`;
+  if (!parseEnvFile(text)[TEST_API_KEY_ENV]?.startsWith('op://')) return `${OP_ENV_FILE} 裡沒有 ${TEST_API_KEY_ENV} 的 op:// 參照。\n${FORMAT}`;
   return undefined;
 }
 
