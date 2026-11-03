@@ -11,10 +11,11 @@
 | 名稱 | `Naruhodo`（從 manifest 讀） |
 | 摘要 | 從 manifest 的 `description` 讀（`src/manifest.ts`，最多 132 字） |
 | 類別 | Tools |
-| 語言 | 中文（繁體）。manifest 沒有 `_locales`，所以只有這一種語言的商店頁；英文放在詳細說明最後一段 |
-| 截圖 | `docs/webstore/screenshot-*.png`（1280×800） |
+| 語言 | Chinese (Taiwan)。manifest 沒有 `_locales`，所以只有這一種語言的商店頁；英文放在詳細說明最後一段 |
+| Store icon | build 產物的 `icons/icon-128.png` |
+| 截圖 | `docs/webstore/screenshot-*.png`（1280×800、不能有 alpha）：正式版外掛在試翻頁 `https://naruhodo.page/zh-tw/try/?shot=1` 拍，再跑 `node scripts/store-images.ts` |
 | Small promo tile | `docs/webstore/promo-small.png`（440×280） |
-| Homepage URL | https://github.com/yurenju/naruhodo-manga-translator |
+| Homepage URL | https://naruhodo.page/zh-tw/ |
 | Support URL | https://github.com/yurenju/naruhodo-manga-translator/issues |
 
 說明裡不寫特定漫畫網站的名稱：列網站名稱會被當成關鍵字堆砌（Yellow Argon），也牽涉商標。
@@ -46,8 +47,8 @@ Naruhodo：邊看日文漫畫邊翻譯、邊學日文
 ■ 付款與退款
 ・訂閱由 Paddle.com（經銷商與 Merchant of Record）代開發者 Sad Coder, Inc. 銷售；賣方不是 Google，付款也不經過 Chrome Web Store。
 ・訂閱每年自動續訂，可以隨時取消：取消後到這一年結束前都能用，不會再扣款。
-・每次付款後 14 天內可以全額退款，透過 Paddle 申請。詳見退款政策：<REFUND_POLICY_URL>
-・服務條款：<TERMS_URL>
+・每次付款後 14 天內可以全額退款，透過 Paddle 申請。詳見退款政策：https://naruhodo.page/refund/
+・服務條款：https://naruhodo.page/terms/
 
 ■ 隱私
 ・對話框偵測和文字辨識（OCR）都在你的電腦上進行，圖片不會上傳，也不會送出網址。
@@ -55,7 +56,7 @@ Naruhodo：邊看日文漫畫邊翻譯、邊學日文
 ・自備金鑰：辨識出的文字用你的 key 直接送到 Anthropic，不經過 Naruhodo 的服務。
 ・開始翻譯前會先說明並徵求你的同意。外掛裡沒有分析或追蹤程式。
 ・外掛只在你點圖示的那個分頁作用，不會在背景讀取其他網站。
-・詳見隱私權政策：<PRIVACY_POLICY_URL>
+・詳見隱私權政策：https://naruhodo.page/privacy/
 
 ■ 使用前須知
 ・第一次使用時，會從 Hugging Face 下載文字辨識模型（大約 128 MB，支援 WebGPU 的電腦大約 472 MB）。
@@ -65,10 +66,10 @@ Naruhodo：邊看日文漫畫邊翻譯、邊學日文
 原始碼以 MIT 授權公開在 GitHub：https://github.com/yurenju/naruhodo-manga-translator
 
 ---
-English: Naruhodo translates Japanese manga on the current tab into Traditional Chinese, in place, and lists the original text, furigana readings and translation side by side for language learners. Detection and OCR run locally. Translation is paid: sign up with your email for 50 free pages, then subscribe (US$20 per year, 800 pages per month), or use your own Anthropic API key instead. The subscription is sold by Paddle.com, as reseller and Merchant of Record, on behalf of the developer, Sad Coder, Inc.; Google is not the seller. Refund policy: <REFUND_POLICY_URL>
+English: Naruhodo translates Japanese manga on the current tab into Traditional Chinese, in place, and lists the original text, furigana readings and translation side by side for language learners. Detection and OCR run locally. Translation is paid: sign up with your email for 50 free pages, then subscribe (US$20 per year, 800 pages per month), or use your own Anthropic API key instead. The subscription is sold by Paddle.com, as reseller and Merchant of Record, on behalf of the developer, Sad Coder, Inc.; Google is not the seller. Refund policy: https://naruhodo.page/refund/
 ```
 
-`<PRIVACY_POLICY_URL>`、`<TERMS_URL>`、`<REFUND_POLICY_URL>` 是產品網站的 `/privacy`、`/terms`、`/refund`（`site/src/pages/[doc].astro`，內容就是 repo 根目錄的 `PRIVACY.md`、`TERMS.md`、`REFUND.md`）。網站上線（#97）後填正式網域。
+隱私權政策、服務條款、退款政策的網址是產品網站的 `/privacy/`、`/terms/`、`/refund/`（`site/src/pages/[doc].astro`，內容就是 repo 根目錄的 `PRIVACY.md`、`TERMS.md`、`REFUND.md`）。
 
 ## Privacy practices 分頁
 
@@ -137,18 +138,27 @@ All JavaScript and WebAssembly, including ONNX Runtime Web, is bundled in the pa
 
 三項 Limited Use 聲明全部勾。
 
-Privacy policy URL：`<PRIVACY_POLICY_URL>`（網站的 `/privacy`）。網站上線前先填 https://github.com/yurenju/naruhodo-manga-translator/blob/main/PRIVACY.md
+Privacy policy URL：https://naruhodo.page/privacy/
+
+## Distribution 分頁
+
+| 欄位 | 內容 |
+|---|---|
+| Visibility | Public |
+| Regions | All regions（稅務與受制裁地區由 Paddle 處理） |
 
 ## Test instructions
 
-審核員用自己的 email 註冊，拿 50 頁 Free Pages 測完所有功能（spec #86 user story 60），不用另外準備測試 key 或帳號。測試頁用一個不用登入就能看的日文漫畫免費話數，只寫在這裡、不進公開說明。
+審核員用自己的 email 註冊，拿 50 頁 Free Pages 測完所有功能（spec #86 user story 60），不用另外準備測試 key 或帳號，Username／Password 欄位留空。測試頁用自己網站的試翻頁（#169，不扣頁數），onboarding 第 4 步本來就會帶過去，也不依賴第三方漫畫網站。
+
+這個欄位最多 500 字，所以只留步驟，按鈕直接寫中文讓審核員照字找。改了 onboarding 的按鈕文字（`src/onboarding/main.tsx`）時這裡要一起改。
 
 ```text
-1. Open a Japanese manga page, for example: <TEST_PAGE_URL>
-2. Installing the extension opens a setup page (the UI is in Traditional Chinese). Click 「開始設定」 (Start setup).
-3. Sign up with any email address you can receive mail at: read the data-use explanation, click 「同意並寄送驗證碼」 (Agree and send code), then enter the 6-digit code from the email. Every new account gets 50 free pages; no payment details are needed. Click 「先用免費的 50 頁」 (Use the 50 free pages first), then 「完成」 (Done).
-4. Click the Naruhodo toolbar icon on the manga tab (or press Alt+Shift+M). The first run downloads the OCR models (~128 MB), then the speech balloons are replaced with Traditional Chinese, and the side panel lists the original text, readings and translations, with the remaining free pages at the bottom.
-5. The gear menu in the side panel → 「設定」 (Settings) shows the account, the remaining pages, Subscribe, Sign out and Delete account. Subscribing opens a Paddle checkout page; there is no need to pay to test the extension.
-
-Source code (MIT): https://github.com/yurenju/naruhodo-manga-translator
+No test account needed: sign up with any email. New accounts get 50 free pages, no payment needed.
+1. The setup page opens on install. Click 開始設定.
+2. Enter your email, click 同意並寄送驗證碼, enter the emailed code.
+3. Click 先用免費的 50 頁.
+4. Click 到試翻頁試試看 to open https://naruhodo.page/zh-tw/try/ (uses no pages).
+5. Click the toolbar icon (Alt+Shift+M): balloons turn into Chinese; the side panel lists original, readings, translation.
+6. Gear menu > 設定: account, pages, Subscribe, Delete account.
 ```
