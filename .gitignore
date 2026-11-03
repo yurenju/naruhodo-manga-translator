@@ -5,7 +5,6 @@ playwright-report/
 # 產品網站（site/）：Astro 產生的型別與本機的 Paddle sandbox 設定
 .astro/
 .env.local
-# Worker（worker/）：wrangler 的本機狀態（本機 D1）與本機秘密（CLAUDE_API_KEY）
+# Worker（worker/）：wrangler 的本機狀態（本機 D1）；本機秘密不寫進 .dev.vars（#175），仍忽略以防萬一
 .wrangler/
 .dev.vars*
-!.dev.vars.example

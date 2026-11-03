@@ -19,13 +19,13 @@ declare namespace Cloudflare {
     /** Resend 的 key（production 用 wrangler secret）與寄件地址（wrangler.jsonc 的 vars）。 */
     RESEND_API_KEY?: string;
     MAIL_FROM?: string;
-    /** 呼叫 Anthropic 的 key：production 用 wrangler secret，本機放 worker/.dev.vars。 */
+    /** 呼叫 Anthropic 的 key：production 用 wrangler secret，本機由 op run 放進 wrangler 的 env（npm run worker:dev，#175）。 */
     CLAUDE_API_KEY?: string;
     /** 訂閱者每月可翻的頁數（wrangler.jsonc 的 vars，起始 800）；調整不用發新版外掛。 */
     MONTHLY_PAGE_LIMIT: string;
     /** checkout 頁所在的產品網站 origin（Worker 組 `<origin>/<locale>/checkout?_ptxn=…`）。 */
     SITE_ORIGIN?: string;
-    /** Paddle API：網址是 vars；key、年繳 price 與 webhook secret 用 wrangler secret，本機放 worker/.dev.vars。 */
+    /** Paddle API：網址是 vars；key、年繳 price 與 webhook secret 用 wrangler secret，本機從 ~/.config/naruhodo/paddle-sandbox.env 讀。 */
     PADDLE_API_BASE_URL: string;
     PADDLE_API_KEY?: string;
     PADDLE_PRICE_ID?: string;

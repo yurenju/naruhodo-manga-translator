@@ -3,23 +3,24 @@
  * - 正式 build（沒有 host_permissions）：全新安裝打開的 onboarding 用「使用自備金鑰」存 key，設定頁「測試連線」成功＝offscreen 直接 fetch 的 CORS 在真的外掛裡也過得去
  *   （#15 只用 curl 模擬過 chrome-extension:// origin）。
  * - e2e build：仿 canvas 網站的 p01 經過本機 OCR 後送給 Haiku 5.5，逐字稿出現譯文，狀態列顯示模型・秒數・費用。
- *   自備 API key 直接打 Anthropic 一次；內建翻譯經過本機 Worker（wrangler dev --env dev，用同一把 key）一次（#90），
+ *   自備 API key 直接打 Anthropic 一次；內建翻譯經過本機 Worker（wrangler dev --env dev，同一把 key 放在它的 env）一次（#90），
  *   先用 email 驗證碼登入（env.dev 的寄信是假的實作，#91）。內建翻譯的狀態列不顯示模型與費用（#92），只有頁數與秒數。
- * 沒有 key 時跳過並印出「已跳過」。key 只在這個測試程序裡讀，不印出。
+ * key 由 `npm run smoke` 經過 op run 從 1Password 放進 NARUHODO_ANTHROPIC_KEY（#175）；直接跑這個檔、沒有 key 時跳過並印出「已跳過」。
+ * key 只在這個測試程序與它啟動的 Worker 裡，不印出、不寫進檔案。
  */
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { build } from '../../scripts/build.ts';
 import type { TranslationMode } from '../../src/shared/translation-mode.ts';
-import { readTestApiKey, TEST_API_KEY_FILE } from '../../src/testing/test-api-key.ts';
+import { readTestApiKey, TEST_API_KEY_ENV } from '../../src/testing/test-api-key.ts';
 import { activateOnMockSite, chooseFromPanelMenu, expect, launchWithExtension, openSidePanel, test } from '../fixtures.ts';
 import { onboardingPage, signInFromPanel } from '../sign-in.ts';
 import { startWorker } from '../worker.ts';
 
 const apiKey = readTestApiKey();
-if (!apiKey) console.log(`已跳過：沒有 NARUHODO_ANTHROPIC_KEY，也沒有 ${TEST_API_KEY_FILE}`);
+if (!apiKey) console.log(`已跳過：沒有 ${TEST_API_KEY_ENV}（用 npm run smoke 跑）`);
 test.skip(!apiKey, '沒有測試用 API key');
 
 async function saveKey(panel: Page): Promise<void> {
@@ -43,7 +44,7 @@ test('正式 build（沒有 host_permissions）：「測試連線」成功', asy
       await onboarding.getByRole('button', { name: '使用自備金鑰' }).click();
       await onboarding.getByLabel('Claude API key').fill(apiKey!);
       await onboarding.getByRole('button', { name: '同意並儲存' }).click();
-      await expect(onboarding.getByRole('heading', { name: '開始翻譯' })).toBeVisible();
+      await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
       const panel = await openSidePanel(context, new URL(sw.url()).host);
       await chooseFromPanelMenu(panel, '設定');
       await panel.getByRole('button', { name: '測試連線' }).click();
@@ -67,11 +68,8 @@ test.describe('e2e build', () => {
   });
 
   test('Hosted Translation：本機 OCR → 本機 Worker（wrangler dev --env dev）→ Haiku 5.5', async ({ context, sw, extensionId, mockSite }) => {
-    // key 寫進只有這個測試用的暫存檔交給 wrangler（--env-file），不放在命令列參數裡
-    const dir = await mkdtemp(join(tmpdir(), 'naruhodo-worker-env-'));
-    const envFile = join(dir, '.dev.vars');
-    await writeFile(envFile, `CLAUDE_API_KEY=${apiKey}\n`, { mode: 0o600 });
-    const stopWorker = await startWorker({ env: 'dev', envFile });
+    // key 只放在 wrangler 子行程的 env，不寫進檔案、不放在命令列參數裡
+    const stopWorker = await startWorker({ env: 'dev', secrets: { CLAUDE_API_KEY: apiKey! } });
     try {
       const { panel } = await activateOnMockSite({
         context,
@@ -91,7 +89,6 @@ test.describe('e2e build', () => {
       await expectTranslatedP01(panel, 'hosted');
     } finally {
       await stopWorker();
-      await rm(dir, { recursive: true, force: true });
     }
   });
 });

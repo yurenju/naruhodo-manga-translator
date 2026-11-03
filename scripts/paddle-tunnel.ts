@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const WEBHOOK_PATH = '/webhooks/paddle';
-const DEFAULT_ENV_FILE = join(homedir(), '.config', 'naruhodo', 'paddle-sandbox.env');
+export const PADDLE_SANDBOX_ENV_FILE = join(homedir(), '.config', 'naruhodo', 'paddle-sandbox.env');
 const CLOUDFLARED_CANDIDATES = [
   'cloudflared',
   join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'cloudflared', 'cloudflared.exe'),
@@ -142,7 +142,7 @@ async function waitUntilReachable(url: string): Promise<void> {
 
 async function main(): Promise<void> {
   const port = Number(option('--port') ?? 8787);
-  const env = parseEnvFile(readFileSync(option('--env') ?? DEFAULT_ENV_FILE, 'utf8'));
+  const env = parseEnvFile(readFileSync(option('--env') ?? PADDLE_SANDBOX_ENV_FILE, 'utf8'));
   if (process.argv.includes('--echo')) startEcho(port, required(env, 'PADDLE_WEBHOOK_SECRET'));
 
   const tunnel = await startCloudflared(port);

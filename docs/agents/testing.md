@@ -8,10 +8,24 @@
 | Worker | Does the Worker's HTTP API answer right? | `npm test` (vitest project `worker`) | no | — | Anthropic faked with `vi.spyOn(fetch)` | shares unit's 15 s | every change |
 | browser test | Do the pieces connect? | `npm run test:browser` | real (mock site) | FakeEngine (replayed) | FakeTranslator (in the extension, or in the local Worker) | < 90 s, build and `wrangler dev` included | every change that touches the extension's behaviour |
 | e2e | Still right with the real models? | `npm run e2e` | real (mock site) | real models (wasm) | FakeTranslator | none; run only when needed | see below |
-| smoke | Does the real Claude API still work? | `npm run smoke` | real (mock site) | real models | real Claude API (direct, and through the local Worker) | — | only when the Claude integration changes; costs money |
+| smoke | Does the real Claude API still work? | `npm run smoke` | real (mock site) | real models | real Claude API (direct, and through the local Worker) | — | only when the Claude integration changes; costs money; the key comes from 1Password (below) |
 | smoke:paddle | Does a real Paddle sandbox checkout reach the Worker? | `npm run smoke:paddle` | real (mock site + local product site) | FakeEngine | — (Paddle sandbox: real checkout overlay, test card, webhook through a cloudflared tunnel) | — | only when the Paddle integration changes; needs `~/.config/naruhodo/paddle-sandbox.env`; a CAPTCHA on the payment screen means stop and ask the developer |
 
 A layer over its budget is a signal that tests have drifted up: find the ones that belong lower.
+
+## The real Claude key (smoke, local Worker)
+
+`npm run smoke` and `npm run worker:dev` (the local Worker on `env.dev`, real Anthropic and Paddle sandbox) run under `op run` (`scripts/with-op.ts`): the 1Password CLI resolves the key once when the command starts, puts it in `NARUHODO_ANTHROPIC_KEY` for every process underneath, and it is gone when the command ends. The key is never written to disk: not in `~/.config`, not in `worker/.dev.vars`, not in a temporary file. The local Worker gets it as `CLAUDE_API_KEY` in its environment; `env.dev`'s `secrets.required` in `worker/wrangler.jsonc` is what makes wrangler read secrets from the environment.
+
+Each run asks for 1Password approval once. That prompt is on purpose: it is how the developer sees that an agent is spending the key. An agent runs these commands only when the developer is there to approve; a denied or timed-out approval fails the command, it does not skip.
+
+The reference lives outside the repo in `~/.config/naruhodo/op.env`, the only place looked at; the developer creates it:
+
+```
+NARUHODO_ANTHROPIC_KEY=op://<vault>/<item>/<field>
+```
+
+Running a smoke file directly (`npx vitest`/`npx playwright test` without `op run`) skips with "已跳過". Don't name the variable `ANTHROPIC_API_KEY`: Claude Code signs in with it.
 
 ## Where a test goes
 

@@ -1,20 +1,11 @@
 /**
- * 真實 API smoke test 用的 key（spec #27 第 12 節第 4 層）：環境變數 NARUHODO_ANTHROPIC_KEY，
- * 沒有的話讀 ~/.config/naruhodo/anthropic-api-key。不用 ANTHROPIC_API_KEY（Claude Code 自己用它登入）。
+ * 真實 API smoke test 用的 key（spec #27 第 12 節第 4 層）：只看環境變數 NARUHODO_ANTHROPIC_KEY，
+ * 由 `npm run smoke` 經過 `op run`（scripts/with-op.ts）從 1Password 放進來，硬碟上沒有（#175）。
+ * 不用 ANTHROPIC_API_KEY（Claude Code 自己用它登入）。
  * key 只在測試程序裡用，不印出、不寫進 log 與報告。
  */
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-
-export const TEST_API_KEY_FILE = join(homedir(), '.config', 'naruhodo', 'anthropic-api-key');
+export const TEST_API_KEY_ENV = 'NARUHODO_ANTHROPIC_KEY';
 
 export function readTestApiKey(): string | undefined {
-  const fromEnv = process.env.NARUHODO_ANTHROPIC_KEY?.trim();
-  if (fromEnv) return fromEnv;
-  try {
-    return readFileSync(TEST_API_KEY_FILE, 'utf8').trim() || undefined;
-  } catch {
-    return undefined;
-  }
+  return process.env[TEST_API_KEY_ENV]?.trim() || undefined;
 }

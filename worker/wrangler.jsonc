@@ -1,5 +1,5 @@
 // Hosted Translation 的 Worker（ADR 0006）。最上層是 production；本機用 env.dev 或 env.test：
-//   npx wrangler dev -c worker/wrangler.jsonc --env dev   真的 Anthropic（key 放 worker/.dev.vars 的 CLAUDE_API_KEY）
+//   npm run worker:dev                                    env.dev：真的 Anthropic 與 Paddle sandbox（scripts/worker-dev.ts）
 //   npx wrangler dev -c worker/wrangler.jsonc --env test  假的 Anthropic（FakeTranslator），browser test 用
 // 兩個本機 env 的寄信都是假的（FAKE_MAIL）：驗證碼印在終端機，也能從 /v1/dev/outbox 取得。
 // 兩個本機 env 也開放開發用的端點（DEV_ENDPOINTS）：/v1/dev/free-pages 直接設定免費額度。
@@ -7,8 +7,10 @@
 // 寄送驗證碼的頻率限制：同一個 IP 每分鐘 10 次、同一個 email 每分鐘 3 次（畫面上 30 秒後才能重新寄送）。
 // 驗證的頻率限制：同一個 IP 每分鐘 30 次、同一個 email 每分鐘 20 次；同一個 email 一小時內最多驗證 10 次另外記在 D1（auth.ts）。
 // Paddle（#94）：MONTHLY_PAGE_LIMIT 是訂閱者每月可翻的頁數。SITE_ORIGIN 是 checkout 頁所在的產品網站（Worker 自己組 checkout 網址）。
-//   env.dev 打 Paddle sandbox，PADDLE_API_KEY、PADDLE_PRICE_ID、PADDLE_WEBHOOK_SECRET 放 worker/.dev.vars
-//   （從 ~/.config/naruhodo/paddle-sandbox.env 複製）；env.test 的 __FAKE_PADDLE__ 換成假的 Paddle，webhook secret 是測試用的假值。
+//   env.dev 打 Paddle sandbox；env.test 的 __FAKE_PADDLE__ 換成假的 Paddle，webhook secret 是測試用的假值。
+// env.dev 的 secrets.required（#175）：有這個欄位，wrangler dev 會把 process env 一起讀進來，只綁定列出的名稱。
+//   CLAUDE_API_KEY 由 op run 從 1Password 放進 env（scripts/with-op.ts），不寫進 .dev.vars；
+//   Paddle 的三個值由 --env-file ~/.config/naruhodo/paddle-sandbox.env 讀。
 // production（#97）：CI 在合併到 main 後部署（.github/workflows/ci.yml 的 deploy-worker，ADR 0008）。
 //   secrets（wrangler secret put，只存在 Cloudflare）：CLAUDE_API_KEY、RESEND_API_KEY、PADDLE_API_KEY、PADDLE_PRICE_ID、PADDLE_WEBHOOK_SECRET，
 //   由 scripts/production-wizard.sh 設定。PADDLE_PRICE_ID 不是秘密，但跟本機一樣當 secret，換價格不用改這個檔。
@@ -45,6 +47,7 @@
         "SITE_ORIGIN": "http://localhost:4321",
         "PADDLE_API_BASE_URL": "https://sandbox-api.paddle.com"
       },
+      "secrets": { "required": ["CLAUDE_API_KEY", "PADDLE_API_KEY", "PADDLE_PRICE_ID", "PADDLE_WEBHOOK_SECRET"] },
       "d1_databases": [{ "binding": "DB", "database_name": "naruhodo", "database_id": "local", "migrations_dir": "migrations" }],
       "ratelimits": [
         { "name": "SEND_CODE_BY_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
