@@ -97,6 +97,29 @@ function ocrBox([x, y, w, h]: PixelBox, width: number, height: number): PixelBox
   return [left, top, Math.min(width - left, w + 2 * pad), Math.min(height - top, h + 2 * pad)];
 }
 
+/**
+ * 裁切範圍碰到別段的文字框，就從碰到的那一邊切掉，讓 OCR 不讀進隔壁的字（重疊的 Balloon 會讓字黏在句首或句尾）。
+ * 每次挑切完面積最大的一邊；切完自己的文字框剩不到這個比例就不切，免得兩段大幅重疊時把自己的字切掉。
+ */
+const KEEP_OWN_TEXT = 0.8;
+
+function trimToNeighbours(crop: PixelBox, own: PixelBox, textBoxes: readonly PixelBox[]): PixelBox {
+  let box = crop;
+  for (const other of textBoxes) {
+    if (other === own || intersection(box, other) === 0) continue;
+    const [x, y, w, h] = box;
+    const cuts: PixelBox[] = [
+      [x, y, other[0] - x, h], // 切右邊
+      [other[0] + other[2], y, x + w - (other[0] + other[2]), h], // 切左邊
+      [x, y, w, other[1] - y], // 切下面
+      [x, other[1] + other[3], w, y + h - (other[1] + other[3])], // 切上面
+    ];
+    const best = cuts.filter((c) => c[2] > 0 && c[3] > 0).sort((a, b) => area(b) - area(a))[0];
+    if (best && intersection(best, own) >= area(own) * KEEP_OWN_TEXT) box = best;
+  }
+  return box;
+}
+
 /** 只有標點（例如臉被當成 Balloon 而 OCR 出「…」）的不算文字。 */
 const hasText = (s: string) => /[\p{L}\p{N}]/u.test(s);
 
@@ -120,10 +143,13 @@ export async function analyzePage(engine: Engine, image: PageImage, reading: (ja
   const { width, height } = image;
   const ratio = ([x, y, w, h]: PixelBox): RatioRect => ({ x: x / width, y: y / height, w: w / width, h: h / height });
   const detections = nms((await engine.detect(image)).filter((d) => d.score >= SCORE_THRESHOLD));
-  const units = readingOrder(group(detections), image.gray()).filter((u) => accept?.(ratio(u.bbox)) ?? true);
+  const all = readingOrder(group(detections), image.gray());
+  const units = all.filter((u) => accept?.(ratio(u.bbox)) ?? true);
+  // accept 不收的段字還在圖上，裁切一樣要避開
+  const textBoxes = all.map((u) => u.textBbox);
   const recognized = await engine.recognize(
     image,
-    units.map((u) => ocrBox(u.textBbox, width, height)),
+    units.map((u) => trimToNeighbours(ocrBox(u.textBbox, width, height), u.textBbox, textBoxes)),
   );
   const orientation = (b: PixelBox): Orientation => (b[3] >= b[2] ? 'vertical' : 'horizontal');
 

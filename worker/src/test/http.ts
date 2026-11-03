@@ -1,11 +1,21 @@
 /** Worker 測試共用：送 HTTP 給真正的 Worker，以及用 email 驗證碼登入拿 session token。 */
 import { exports } from 'cloudflare:workers';
+import { vi } from 'vitest';
 import { DEV_OUTBOX_PATH, SEND_CODE_PATH, VERIFY_CODE_PATH } from '../../../src/shared/hosted-api.ts';
 
 let ips = 0;
 
 /** 每次呼叫一個新的 IP，讓依 IP 的頻率限制不會跨測試累積。 */
 export const freshIp = () => `203.0.113.${++ips}`;
+
+/**
+ * 本機的 rate limit（miniflare）時間窗對齊整分鐘，而且用真的時鐘，不受 vi.useFakeTimers 影響。
+ * 一串請求跨過整分鐘，計數就歸零、該回 429 的回了別的（PR #184 的 CI）。離下一分鐘不到 margin 就等到跨過去再開始。
+ */
+export async function awayFromRateLimitEdge(marginMs = 2_000): Promise<void> {
+  const left = 60_000 - (vi.getRealSystemTime() % 60_000);
+  if (left < marginMs) await new Promise((resolve) => setTimeout(resolve, left + 100));
+}
 
 export function post(path: string, body: unknown, { token, ip = freshIp() }: { token?: string; ip?: string } = {}): Promise<Response> {
   return exports.default.fetch(

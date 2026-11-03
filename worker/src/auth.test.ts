@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { ACCOUNT_PATH, SEND_CODE_PATH, SIGN_OUT_PATH, TRANSLATE_PATH, VERIFY_CODE_PATH } from '../../src/shared/hosted-api.ts';
 import type { TranslateInput } from '../../src/shared/translator.ts';
-import { freshEmail, freshIp, get, lastCode, post, signIn } from './test/http.ts';
+import { awayFromRateLimitEdge, freshEmail, freshIp, get, lastCode, post, signIn } from './test/http.ts';
 
 const translateInput: TranslateInput = { seriesNotes: [], priorPages: [], items: [{ id: 'b1', kind: 'balloon', 原文: 'おはよう', orientation: 'vertical' }] };
 
@@ -137,6 +137,7 @@ describe('猜驗證碼的限制', () => {
   });
 
   it('同一個 IP 一分鐘內第 31 次驗證回 429 rateLimited（即使換 email）', async () => {
+    await awayFromRateLimitEdge();
     const ip = freshIp();
     const statuses = [];
     for (let i = 0; i < 31; i++) statuses.push((await post(VERIFY_CODE_PATH, { email: freshEmail(), code: '123456' }, { ip })).status);
@@ -147,6 +148,7 @@ describe('猜驗證碼的限制', () => {
 
 describe('寄送驗證碼的頻率限制', () => {
   it('同一個 email 一分鐘內第 4 次回 429 rateLimited（即使換 IP），沒有寄出新的驗證碼', async () => {
+    await awayFromRateLimitEdge();
     const email = freshEmail();
     const statuses = [];
     for (let i = 0; i < 3; i++) statuses.push((await post(SEND_CODE_PATH, { email })).status);
@@ -161,6 +163,7 @@ describe('寄送驗證碼的頻率限制', () => {
   });
 
   it('同一個 IP 一分鐘內第 11 次回 429 rateLimited（即使換 email）', async () => {
+    await awayFromRateLimitEdge();
     const ip = freshIp();
     const statuses = [];
     for (let i = 0; i < 11; i++) statuses.push((await post(SEND_CODE_PATH, { email: freshEmail() }, { ip })).status);

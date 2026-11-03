@@ -120,6 +120,27 @@ describe('analyzePage：偵測結果 → Balloon／Loose Text', () => {
     expect(engine.crops).toEqual([[0, 90, 120, 320]]);
   });
 
+  it('裁切範圍碰到別段的文字框就從那一邊切掉，OCR 不讀進隔壁的字', async () => {
+    // 真實網站上兩個 Balloon 重疊：左邊那段的裁切範圍蓋到右邊那段最左一行，句首多讀出亂碼、信心低到被擋（ADR 0009）
+    const engine = fakeEngine([det('text_bubble', [198, 113, 148, 163]), det('text_bubble', [103, 152, 105, 298])], { 198: 'みぎ', 103: 'ひだり' });
+
+    await analyzePage(engine, whitePage(), (ja) => ja);
+
+    expect(engine.crops).toEqual([
+      [208, 99, 152, 191], // 左緣切到左邊那段文字框的右緣
+      [93, 142, 105, 318], // 右緣切到右邊那段文字框的左緣
+    ]);
+  });
+
+  it('切了會少掉自己文字框兩成以上的，就不切', async () => {
+    const engine = fakeEngine([det('text_bubble', [500, 100, 100, 300]), det('text_free', [430, 100, 100, 150])], { 500: 'ながい', 430: 'ドン' });
+
+    await analyzePage(engine, whitePage(), (ja) => ja);
+
+    // 第一段 pad = 10：留下最多的切法是左緣切到 530，但會少掉自己 30% 的寬，所以照原本的外擴範圍
+    expect(engine.crops[0]).toEqual([490, 90, 120, 320]);
+  });
+
   it('accept 不收的框（長 Page 被切到或已收過的）不做 OCR、不出現在結果，順序照收下的編', async () => {
     const engine = fakeEngine(
       [
