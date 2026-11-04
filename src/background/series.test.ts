@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PageTranslation } from '../shared/page-text.ts';
 import type { Series } from '../shared/series.ts';
-import { mergeTranslations, provisionalSeries, seriesMenu, urlPattern } from './series.ts';
+import { mergeTranslations, provisionalSeries, seriesMenu, seriesTitles, urlPattern } from './series.ts';
 
 describe('provisionalSeries', () => {
   it('名稱是「未命名・網站・月/日」，標成 provisional', () => {
@@ -64,9 +64,26 @@ describe('seriesMenu', () => {
     expect(seriesMenu(series, patterns).map((o) => o.id)).toEqual(['used-recently', 'used-long-ago', 'new', 'old']);
   });
 
-  it('Provisional Series 顯示為「未歸類」', () => {
-    const [option] = seriesMenu([{ id: 'p', name: '未命名・127.0.0.1・10/26', provisional: true, createdAt: 1 }], []);
+  it('選單用名稱：自動建的 Series 名稱就是原名（#186）', () => {
+    const [option] = seriesMenu([{ id: 'p', name: '鉄の庭', provisional: true, createdAt: 1, originalTitles: ['鉄の庭'], zhTitle: '鐵之庭' }], []);
 
-    expect(option!.label).toBe('未歸類（未命名・127.0.0.1・10/26）');
+    expect(option!.label).toBe('鉄の庭');
+  });
+});
+
+describe('seriesTitles（作品卡的兩行字，#186）', () => {
+  const series: Series = { id: 'p', name: '鉄の庭', provisional: true, createdAt: 1, originalTitles: ['鉄の庭'], zhTitle: '鐵之庭' };
+
+  it('大字是猜的中文譯名、小字是原名', () => {
+    expect(seriesTitles(series)).toEqual({ title: '鐵之庭', subtitle: '鉄の庭' });
+  });
+
+  it('讀者改過名（沒有中文譯名）：大字是讀者的名稱，小字照樣是原名', () => {
+    const { zhTitle: _zh, ...renamed } = series;
+    expect(seriesTitles({ ...renamed, name: '我的作品' })).toEqual({ title: '我的作品', subtitle: '鉄の庭' });
+  });
+
+  it('猜不出原名的未命名作品只有一行', () => {
+    expect(seriesTitles({ id: 'u', name: '未命名・manga.example・10/25', provisional: true, createdAt: 1 })).toEqual({ title: '未命名・manga.example・10/25' });
   });
 });

@@ -55,8 +55,10 @@ export interface TranscriberDeps {
   getTranslator(): Translator | undefined | Promise<Translator | undefined>;
   /** 目前會用來翻譯的模型與 prompt 版本（過時提示比對用）；沒有 Translator 時 undefined，就不比版本。 */
   translatorVersion?(): TranslatorVersion | undefined | Promise<TranslatorVersion | undefined>;
-  /** 這個 tab 啟動時選定的 Series（或 Provisional Series）；沒有就不查也不寫快取。 */
+  /** 這個 tab 啟動時選定的 Series（或 Provisional Series）；沒有就不查也不寫快取。正在猜作品原名時等猜完才回答（#186）。 */
   getSeriesId(tabId: number): Promise<string | undefined>;
+  /** 這個 tab 的 Series 還在猜（#186）：新 Page 先跑 OCR，翻譯前才等 Series、查快取。 */
+  isSeriesPending?(tabId: number): boolean;
   /** 送出翻譯時讀 Series 的名稱（讀者在這之間可能改名）。 */
   getSeries(seriesId: string): Promise<Series | undefined>;
   cache: PageCache;
@@ -143,6 +145,8 @@ interface Job extends QueuedJob {
   group: SnapshotGroup;
   /** 排程時這頁之前最近看過的頁（含同一批裡閱讀順序在前的頁）；送出 ① 時才看哪些已經翻好。 */
   prior: SeenPage[];
+  /** Series 還在猜時先排進本機段的頁（#186）：翻譯前等它、記到這頁上、再查一次快取。 */
+  seriesPending?: Promise<string | undefined>;
   resolve(): void;
 }
 
@@ -359,11 +363,24 @@ export function createTranscriber(deps: TranscriberDeps) {
     record.text = text;
     const translator = await deps.getTranslator();
     if (!translator) {
-      complete(job, { state: 'done', text, translated: false });
+      complete(job, (await seriesDecided(job)) ?? { state: 'done', text, translated: false });
       return false;
     }
     job.translator = translator;
     return true;
+  }
+
+  /**
+   * Series 還在猜時先跑了 OCR（#186）：等 Series 決定、記到這頁上，再查一次那部 Series 的快取（例如在新分頁重看同一話）。
+   * 命中就回傳快取的結果。在 LLM 段等，不卡住下一頁的 OCR。
+   */
+  async function seriesDecided(job: Job): Promise<Transcript | undefined> {
+    const pending = job.seriesPending;
+    if (!pending) return undefined;
+    job.seriesPending = undefined;
+    const seriesId = await pending;
+    job.record.seriesId = seriesId;
+    return pageTranslation.lookup(seriesId, job.record.pageHash);
   }
 
   /** 長 Page 的一截辨識完：新收的 Line 併進整個 Page；有新的才翻譯。 */
@@ -388,6 +405,11 @@ export function createTranscriber(deps: TranscriberDeps) {
 
   async function runLlm(job: Job): Promise<void> {
     const { record } = job;
+    const cached = await seriesDecided(job);
+    if (cached) {
+      complete(job, cached);
+      return;
+    }
     report(job, 'llm');
     const { long } = record;
     const transcript = await pageTranslation.translate({
@@ -527,6 +549,25 @@ export function createTranscriber(deps: TranscriberDeps) {
     }
     queue.dropUnwanted();
     publish(tab);
+
+    // Series 還在猜（#186）：一般 Page 先排進本機段跑 OCR，翻譯前才等 Series、查快取（seriesDecided）。
+    // 長 Page 要先用 Series 查快取認身分，自動翻譯關著的要先查快取決定顯示什麼，都照常等。
+    if (deps.isSeriesPending?.(tabId) && autoTranslate.get(tabId) !== false && newPages.every(({ record }) => !record.long)) {
+      const seriesPending = deps.getSeriesId(tabId);
+      const groupOf = snapshotGroups();
+      for (const { record, index } of newPages) {
+        const job = newJob({ tab, record, batch, index, group: groupOf(record) });
+        job.seriesPending = seriesPending;
+        enqueueLocal(job);
+      }
+      for (const { record, page, index } of slices) requestSlice(record, page, capture!, { tab, batch, index, group: groupOf(record) });
+      // 這一批記成最近看過的（之後的頁拿來當 Prior Pages）
+      void seriesPending.then((seriesId) => {
+        if (isCurrent(tab)) see(tab, seriesId, pages);
+      });
+      await Promise.all([...visibleRecords].map((r) => r.settled));
+      return;
+    }
 
     const seriesId = await deps.getSeriesId(tabId);
     // 先記下這一批（Series 換了就清空），排程時才看得到同一批裡在前的頁

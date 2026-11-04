@@ -213,7 +213,19 @@ describe('逐字稿：本機流水線＋Translator', () => {
     expect(calls.map((c) => c.seriesName)).toEqual(['星屑バンド']);
   });
 
-  it('Provisional Series 的名稱是自動產生的，不當作品名送出', async () => {
+  it('有原名的 Series（自動歸類的 Provisional Series，或讀者改過名的）：作品名送原名（#186）', async () => {
+    const calls: TranslateInput[] = [];
+    const { transcriber } = setup({
+      getTranslator: () => translatorReturning('譯', calls),
+      getSeries: async (id) => ({ id, name: '我取的名字', provisional: true, createdAt: 0, originalTitles: ['星屑バンド', '星屑バンド 外伝'] }),
+    });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    expect(calls.map((c) => c.seriesName)).toEqual(['星屑バンド']);
+  });
+
+  it('未命名的 Provisional Series（猜不出原名）：名稱是自動產生的，不當作品名送出', async () => {
     const calls: TranslateInput[] = [];
     const { transcriber } = setup({
       getTranslator: () => translatorReturning('譯', calls),
@@ -550,6 +562,57 @@ function gatedAnalyze() {
   }
   return { analyze, calls, finishNext };
 }
+
+describe('Series 還沒決定（啟動時正在猜作品原名，#186）', () => {
+  /** getSeriesId 卡住，直到 decide(seriesId)。 */
+  function pendingSeries() {
+    let decide!: (seriesId: string) => void;
+    const decided = new Promise<string>((r) => (decide = r));
+    let pending = true;
+    return {
+      deps: { getSeriesId: () => decided, isSeriesPending: () => pending } satisfies Partial<TranscriberDeps>,
+      decide(seriesId: string) {
+        pending = false;
+        decide(seriesId);
+      },
+    };
+  }
+
+  it('OCR 不等 Series 先跑；翻譯等 Series 決定才送，帶那部 Series 的 Notes', async () => {
+    const series = pendingSeries();
+    const calls: TranslateInput[] = [];
+    const notes = memoryNotes([{ seriesId: 'series-x', 原文: '湊', 讀音: 'みなと', 譯文: '湊', 類別: '人名', locked: false }]);
+    const { transcriber, deps } = setup({ ...series.deps, notes, getTranslator: () => translatorReturning('譯', calls) });
+
+    const done = transcriber.update(1, [thumb('a1')], capture);
+    await vi.waitFor(() => expect(deps.analyze).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual([]);
+
+    series.decide('series-x');
+    await done;
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.seriesNotes.map((n) => n.原文)).toEqual(['湊']);
+  });
+
+  it('Series 決定後先查它的快取：命中就用快取，不送翻譯', async () => {
+    const cache = memoryCache();
+    const first = setup({ cache, getSeriesId: async () => 'series-x', getTranslator: () => translatorReturning('快取裡的') });
+    await first.transcriber.update(1, [thumb('a1')], capture);
+    const series = pendingSeries();
+    const calls: TranslateInput[] = [];
+    const { transcriber, published } = setup({ ...series.deps, cache, getTranslator: () => translatorReturning('新翻的', calls) });
+
+    const done = transcriber.update(2, [thumb('a1')], capture);
+    series.decide('series-x');
+    await done;
+
+    expect(calls).toEqual([]);
+    const last = published.at(-1)![0]!.transcript;
+    expect(last.state === 'done' && last.text.balloons[0]!.譯文).toBe('快取裡的-b1');
+  });
+});
 
 describe('翻譯佇列（#34）', () => {
   it('後進先出：本機段一次一個，新出現的可見 Page 先做', async () => {

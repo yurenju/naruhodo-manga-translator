@@ -25,7 +25,7 @@ import type {
 
 export const CLAUDE_MODEL = 'claude-haiku-5-5';
 /** 寫進快取判斷過時用（#33）；改 ① 的 prompt 或 schema 就要改這個。② 的 prompt 不影響已快取的譯文，不用改。 */
-export const PROMPT_VERSION = 'claude-text-v6';
+export const PROMPT_VERSION = 'claude-text-v7';
 
 const MAX_TOKENS = 16_000;
 
@@ -82,7 +82,7 @@ const TRANSLATE_TEXT = `你是日文漫畫翻譯助手，幫助讀者一邊看�
 
 翻譯時請遵守 Series Notes 的譯名。
 
-使用者可能會告訴你作品名（讀者為這部作品取的名稱）。原文裡出現作品名時，那是作品名，不是狀聲詞；作品有官方中文譯名就用官方譯名。
+使用者可能會告訴你作品名（作品的原名，或讀者為這部作品取的名稱）。原文裡出現作品名時，那是作品名，不是狀聲詞；作品有官方中文譯名就用官方譯名。
 
 真實世界的樂團、品牌、作品名（例如歌手、商品、電影），用官方的中文寫法；沒有官方中文寫法就保留原文，不要自己音譯或意譯。
 
