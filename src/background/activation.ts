@@ -5,7 +5,11 @@
  * 自動歸類（#186、ADR 0010）：新的啟動先看網址模式，對不上就從頁面標題猜作品原名。猜測跟擷取、OCR 並行：
  * 一啟動就通知（開始擷取），getSeriesId 等猜完才回答，所以翻譯呼叫等兩邊都完成才出發。
  * 同分頁換網址：網址模式命中就換；對不上就在載入完成後重讀標題，跟上次一樣就不猜，不一樣才重猜。
+ *
+ * 圖示是開關（#185、ADR 0003）：沒啟動就啟動，Side Panel on Activation 開著才一起開 side panel；已啟動就停止並關掉 side panel。
+ * 點圖示的當下卡住（沒同意、沒登入、額度 0）照常啟動，同時打開 onboarding 能解決問題的那一步。
  */
+import type { RequestedStep } from '../shared/onboarding.ts';
 import type { TitleGuess } from '../shared/series.ts';
 import { createTrace } from '../shared/trace.ts';
 import type { TitleSignals } from '../shared/translator.ts';
@@ -26,6 +30,9 @@ export interface TabState {
   titleSignals?: TitleSignals;
 }
 
+/** 卡住時 onboarding 要跳到的那一步。 */
+export type BlockedStep = RequestedStep;
+
 export interface TabStateStore {
   get(tabId: number): Promise<TabState | undefined>;
   set(tabId: number, state: TabState): Promise<void>;
@@ -35,7 +42,22 @@ export interface TabStateStore {
 export interface ActivationDeps {
   store: TabStateStore;
   getTabUrl(tabId: number): Promise<string | undefined>;
-  openSidePanel(tabId: number): Promise<void>;
+  /**
+   * Side Panel on Activation（shared/side-panel-setting.ts）；SW 剛醒來、還沒從 chrome.storage 讀到時是 undefined。
+   * 一定要同步回答：sidePanel.open() 要在第一個 await 之前呼叫。
+   */
+  sidePanelOnActivation(): boolean | undefined;
+  /**
+   * 打開這個 tab 的 side panel，必須在 user gesture 裡同步呼叫。
+   * onlyIfEnabled：設定還沒讀到，只呼叫 open、不把這個 tab 設成 enabled，讓 Chrome 照 SW 同步過去的 enabled 決定開不開。
+   */
+  openSidePanel(tabId: number, options?: { onlyIfEnabled?: boolean }): Promise<void>;
+  /** 圖示當開關、停止時關掉這個 tab 的 side panel（沒開也沒關係）。 */
+  closeSidePanel(tabId: number): Promise<void>;
+  /** 點圖示的當下卡在哪一步（沒同意、沒登入、額度 0、沒有 key）；能翻譯就是 undefined。 */
+  blockedStep(): Promise<BlockedStep | undefined>;
+  /** 用新分頁打開 onboarding、直接跳到能解決問題的那一步；完成後「回到漫畫」切回 tabId。 */
+  openOnboarding(tabId: number, step: BlockedStep): Promise<void>;
   injectContentScript(tabId: number): Promise<void>;
   stopContentScript(tabId: number): Promise<void>;
   onStatusChanged(tabId: number, active: boolean): void;
@@ -66,6 +88,23 @@ export function createActivation(deps: ActivationDeps) {
   const starting = new Map<number, Promise<TabState | undefined>>();
   /** 同分頁換網址後正在重猜（或等載入完成才猜）；start 在載入完成時呼叫。 */
   const navigating = new Map<number, { done: Promise<void>; start?: () => void }>();
+  /** 這個 SW 看過的啟動狀態，同步回答（toggle 在 user gesture 裡決定要不要開 side panel）；SW 剛醒來是空的。 */
+  const knownActive = new Map<number, boolean>();
+  const store: TabStateStore = {
+    get: async (tabId) => {
+      const state = await deps.store.get(tabId);
+      knownActive.set(tabId, state !== undefined);
+      return state;
+    },
+    set: async (tabId, state) => {
+      knownActive.set(tabId, true);
+      await deps.store.set(tabId, state);
+    },
+    delete: async (tabId) => {
+      knownActive.set(tabId, false);
+      await deps.store.delete(tabId);
+    },
+  };
 
   /** 新的啟動還在猜時先等它（同一個 tab 的事件與再點一次圖示都要看到它的結果）。 */
   async function currentState(tabId: number): Promise<TabState | undefined> {
@@ -75,22 +114,69 @@ export function createActivation(deps: ActivationDeps) {
       // 猜完了、狀態還在寫進 store：直接用這次的結果（store 可能還讀不到）。期間按了停止就已經不在 starting 裡
       if (starting.get(tabId) === pending) return state;
     }
-    return deps.store.get(tabId);
+    return store.get(tabId);
   }
 
-  /** 點圖示／快捷鍵／e2e 測試入口都呼叫這一個。 */
+  /**
+   * 依 Side Panel on Activation 打開 side panel。必須在第一個 await 之前呼叫，否則 Chrome 認為已離開 user gesture。
+   * 測試入口沒有 user gesture，這裡一定失敗；side panel 打不開不影響啟動。
+   */
+  function openPanelOnActivation(tabId: number): void {
+    const setting = deps.sidePanelOnActivation();
+    if (setting === false) return;
+    deps.openSidePanel(tabId, setting === undefined ? { onlyIfEnabled: true } : {}).catch((e: unknown) => console.warn('sidePanel.open failed', e));
+  }
+
+  /** e2e 測試入口（等同點圖示啟動，但已啟動時不停止）。 */
   async function activate(tabId: number): Promise<void> {
-    // 必須在第一個 await 之前呼叫，否則 Chrome 認為已離開 user gesture。
-    // 測試入口沒有 user gesture，這裡一定失敗；side panel 打不開不影響啟動。
+    openPanelOnActivation(tabId);
+    await start(tabId);
+  }
+
+  /**
+   * 點圖示／快捷鍵：沒啟動就啟動（設定開著就一起開 side panel），已啟動就停止並關掉 side panel。
+   * 已啟動的 tab 這時不開 side panel；SW 剛醒來還不知道（knownActive 沒有）就照沒啟動處理，查到已啟動再關掉。
+   */
+  async function toggle(tabId: number): Promise<void> {
+    if (knownActive.get(tabId) !== true) openPanelOnActivation(tabId);
+    if (await isActive(tabId)) {
+      await stop(tabId);
+      await deps.closeSidePanel(tabId).catch(() => {});
+      return;
+    }
+    await startFromGesture(tabId);
+  }
+
+  /** 點圖示（或快捷鍵、右鍵「打開側邊欄」）的新啟動。 */
+  async function startFromGesture(tabId: number): Promise<void> {
+    // 卡住（沒同意、沒登入、額度 0）時照常啟動，同時打開 onboarding；跟決定 Series 一起進行，不等它
+    const blocked = deps.blockedStep().catch(() => undefined);
+    let started!: () => void;
+    const activated = new Promise<void>((resolve) => (started = resolve));
+    const onboarding = Promise.all([blocked, activated]).then(async ([step]) => {
+      if (step && (await isActive(tabId))) await deps.openOnboarding(tabId, step).catch((e: unknown) => console.warn('open onboarding failed', e));
+    });
+    await start(tabId, started);
+    // 沒啟動成功（注入失敗）就不等 onboarding
+    if (await isActive(tabId)) await onboarding;
+  }
+
+  /** 圖示右鍵的「打開側邊欄」：不管設定一律打開（同步，user gesture），還沒啟動就順便啟動。 */
+  async function openPanel(tabId: number): Promise<void> {
     deps.openSidePanel(tabId).catch((e: unknown) => console.warn('sidePanel.open failed', e));
+    if (!(await isActive(tabId))) await startFromGesture(tabId);
+  }
+
+  /** onStarted：新的啟動開始擷取的當下（不等 Series 決定）。 */
+  async function start(tabId: number, onStarted?: () => void): Promise<void> {
     const url = await deps.getTabUrl(tabId);
     if (url === undefined) return;
     if (!(await tryInject(tabId))) return;
-    // 已啟動的 tab 再點一次圖示不算新的啟動，沿用同一個 Series。
+    // 已啟動的 tab 再啟動一次（測試入口、或 toggle 判斷時剛好啟動完成）不算新的啟動，沿用同一個 Series。
     const existing = await currentState(tabId);
     if (existing) {
       trace('activate', { tabId, seriesId: existing.seriesId, reused: true });
-      await deps.store.set(tabId, existing);
+      await store.set(tabId, existing);
       deps.onStatusChanged(tabId, true);
       return;
     }
@@ -112,10 +198,11 @@ export function createActivation(deps: ActivationDeps) {
     starting.set(tabId, settled);
     // 不等 Series：先開始擷取與 OCR，翻譯在 getSeriesId 等它（#186）
     deps.onStatusChanged(tabId, true);
+    onStarted?.();
     const state = await settled;
     // 期間按了停止（或換 origin、關 tab）：不算啟動
     if (starting.get(tabId) !== settled) return;
-    if (state) await deps.store.set(tabId, state);
+    if (state) await store.set(tabId, state);
     starting.delete(tabId);
     trace('activate', { tabId, seriesId: state?.seriesId, reused: false });
     if (!state) await markInactive(tabId);
@@ -123,7 +210,7 @@ export function createActivation(deps: ActivationDeps) {
   }
 
   async function isActive(tabId: number): Promise<boolean> {
-    return starting.has(tabId) || (await deps.store.get(tabId)) !== undefined;
+    return starting.has(tabId) || (await store.get(tabId)) !== undefined;
   }
 
   /** 這個 tab 的 Series 還沒決定（啟動或換網址後正在猜）。 */
@@ -137,7 +224,7 @@ export function createActivation(deps: ActivationDeps) {
     const nav = navigating.get(tabId);
     if (!state || !nav) return state;
     await nav.done;
-    return deps.store.get(tabId);
+    return store.get(tabId);
   }
 
   async function getSeriesId(tabId: number): Promise<string | undefined> {
@@ -147,7 +234,7 @@ export function createActivation(deps: ActivationDeps) {
   /** side panel 選了別的 Series（或合併後改用目標）：之後的快取查詢與翻譯都用它。沒啟動就不動。 */
   async function setSeriesId(tabId: number, seriesId: string): Promise<void> {
     const state = await currentState(tabId);
-    if (state) await deps.store.set(tabId, { ...state, seriesId, by: state.seriesId === seriesId ? state.by : 'manual' });
+    if (state) await store.set(tabId, { ...state, seriesId, by: state.seriesId === seriesId ? state.by : 'manual' });
   }
 
   async function tryInject(tabId: number): Promise<boolean> {
@@ -164,7 +251,7 @@ export function createActivation(deps: ActivationDeps) {
   async function markInactive(tabId: number): Promise<void> {
     starting.delete(tabId);
     navigating.get(tabId)?.start?.();
-    await deps.store.delete(tabId);
+    await store.delete(tabId);
     deps.onStatusChanged(tabId, false);
   }
 
@@ -212,7 +299,7 @@ export function createActivation(deps: ActivationDeps) {
     if (remembered === undefined) return false;
     if (remembered === state.seriesId) return true;
     trace('series:navigate', { tabId, from: state.seriesId, seriesId: remembered, by: 'urlPattern' });
-    await deps.store.set(tabId, { ...state, seriesId: remembered, by: 'urlPattern' });
+    await store.set(tabId, { ...state, seriesId: remembered, by: 'urlPattern' });
     deps.onSeriesChanged(tabId, remembered);
     return true;
   }
@@ -244,22 +331,22 @@ export function createActivation(deps: ActivationDeps) {
 
   /** 標題跟上次一樣就不猜（避免 SPA 的舊 metadata，也省一次呼叫）；猜到另一部就換過去，猜不出來就沿用目前的。 */
   async function reguess(tabId: number): Promise<void> {
-    const state = await deps.store.get(tabId);
+    const state = await store.get(tabId);
     if (!state) return;
     const signals = await deps.readTitleSignals(tabId).catch(() => undefined);
     if (!signals || sameSignals(signals, state.titleSignals)) {
       trace('series:reguess', { tabId, skipped: signals ? 'sameSignals' : 'noSignals' });
       return;
     }
-    await deps.store.set(tabId, { ...state, titleSignals: signals });
+    await store.set(tabId, { ...state, titleSignals: signals });
     const guess = await deps.guessSeries(signals);
-    const latest = await deps.store.get(tabId);
+    const latest = await store.get(tabId);
     if (!guess || !latest) {
       trace('series:reguess', { tabId, skipped: guess ? 'stopped' : 'unknown' });
       return;
     }
     const assigned = await deps.seriesForGuess(guess);
-    await deps.store.set(tabId, { ...latest, ...assigned });
+    await store.set(tabId, { ...latest, ...assigned });
     if (assigned.seriesId !== latest.seriesId) trace('series:navigate', { tabId, from: latest.seriesId, ...assigned });
     deps.onSeriesAssigned(tabId);
   }
@@ -267,7 +354,7 @@ export function createActivation(deps: ActivationDeps) {
   async function handleTabRemoved(tabId: number): Promise<void> {
     starting.delete(tabId);
     navigating.get(tabId)?.start?.();
-    await deps.store.delete(tabId);
+    await store.delete(tabId);
   }
 
   /** side panel 的「停止」。 */
@@ -277,5 +364,5 @@ export function createActivation(deps: ActivationDeps) {
     await deps.stopContentScript(tabId).catch(() => {});
   }
 
-  return { activate, stop, isActive, isSeriesPending, getTab, getSeriesId, setSeriesId, handleTabUpdated, handleTabRemoved };
+  return { activate, toggle, openPanel, stop, isActive, isSeriesPending, getTab, getSeriesId, setSeriesId, handleTabUpdated, handleTabRemoved };
 }

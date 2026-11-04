@@ -35,7 +35,9 @@ export function createCapturePrep({ overlay, anchors, longAnchors, isOwn }: {
     occluders = hideOccluders(found);
     if (__DEBUG__) trace('capture:prepare', { hideOverlay, ms: performance.now() - startedAt, occluders: found.slice(0, 10).map(describeElement) });
     try {
-      await Promise.all([hideOverlay ? overlay.hideForCapture(longAnchors) : undefined, occluders.count > 0 ? untilRepainted() : undefined]);
+      // Page 上的狀態（#185）一律藏：小標籤的字不能進 OCR，也不能改變 Page hash
+      const hidStatus = overlay.hideStatusForCapture();
+      await Promise.all([hideOverlay ? overlay.hideForCapture(longAnchors) : undefined, occluders.count > 0 || hidStatus ? untilRepainted() : undefined]);
     } catch (e) {
       // SW 收到失敗就不會叫 finish：自己先還原，網站的元素才不會一直藏著
       finish();

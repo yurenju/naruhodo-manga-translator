@@ -32,7 +32,7 @@ describe('正式 build', () => {
     const manifest = await readJson(prodDir, 'manifest.json');
 
     expect(manifest.manifest_version).toBe(3);
-    expect([...manifest.permissions].sort()).toEqual(['activeTab', 'offscreen', 'scripting', 'sidePanel', 'storage', 'unlimitedStorage']);
+    expect([...manifest.permissions].sort()).toEqual(['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage', 'unlimitedStorage']);
     expect(manifest.host_permissions).toBeUndefined();
     expect(manifest.optional_host_permissions).toBeUndefined();
     expect(manifest.content_scripts).toBeUndefined();

@@ -10,13 +10,15 @@
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { indexedDbApiKeyStore } from '../shared/api-key-store.ts';
-import { grantDataConsent } from '../shared/data-consent.ts';
+import { grantDataConsent, hasDataConsent } from '../shared/data-consent.ts';
 import { FREE_PAGES } from '../shared/hosted-api.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { HOSTED_API_URL, loadHostedSession, saveHostedSession, type HostedSession } from '../shared/hosted-session.ts';
 import type { Message, ModelStatus, ModelStatusResponse } from '../shared/messages.ts';
 import { downloadNotice, downloadPill } from '../shared/model-download.ts';
-import { loadOnboarding, saveOnboarding, startStep, type OnboardingProgress, type OnboardingStep } from '../shared/onboarding.ts';
+import { loadOnboarding, onboardingRequest, saveOnboarding, startStep, type OnboardingProgress, type OnboardingStep, type RequestedStep } from '../shared/onboarding.ts';
+import { savePageMode, type PageMode } from '../shared/page-mode.ts';
+import { saveSidePanelOnActivation } from '../shared/side-panel-setting.ts';
 import { onboardingPaymentChange, openPayment, watchPendingPayment, type PendingPayment } from '../shared/payment-return.ts';
 import { saveTranslationMode } from '../shared/translation-mode.ts';
 import { Button, Callout } from '../ui/components.tsx';
@@ -275,11 +277,63 @@ function Plan({
   );
 }
 
+/**
+ * 第 4 步的一題（#185）：看漫畫＝不開側邊欄＋閱讀，學日文＝開側邊欄＋學習。只是一次設好兩個獨立的設定，不另外存「使用目的」；
+ * 之後在圖示右鍵改「啟動時打開側邊欄」。Practice Spread 試翻也照這個設定走，所以放在試翻按鈕上面。
+ * 不選也可以直接按「完成」：設定維持預設（開側邊欄、閱讀）。
+ */
+function Purpose() {
+  const [chosen, setChosen] = useState<PageMode | undefined>(undefined);
+  const choose = (purpose: PageMode) => {
+    setChosen(purpose);
+    void Promise.all([saveSidePanelOnActivation(purpose === 'learn'), savePageMode(purpose)]);
+  };
+  return (
+    <section aria-label="使用方式">
+      <h3 class="ob-h3">你想怎麼用 Naruhodo？</h3>
+      <div class="ob-plans" role="group" aria-label="使用方式">
+        <button type="button" class="ob-plan ob-choice" aria-pressed={chosen === 'read'} onClick={() => choose('read')}>
+          <span class="ob-plan__name">看漫畫</span>
+          <span class="hint">對話框直接換成中文，不開側邊欄。</span>
+        </button>
+        <button type="button" class="ob-plan ob-choice" aria-pressed={chosen === 'learn'} onClick={() => choose('learn')}>
+          <span class="ob-plan__name">學日文</span>
+          <span class="hint">保留日文原文，側邊欄列出讀音與譯文。</span>
+        </button>
+      </div>
+      <p class="hint">之後隨時可以在工具列的 Naruhodo 圖示上按右鍵，改「啟動時打開側邊欄」。</p>
+    </section>
+  );
+}
+
+/** 點圖示時卡住、在這裡解決之後（#185）：回到漫畫分頁，SW 接著翻畫面上還沒翻的頁（#93），不必再點一次圖示。 */
+function ReturnToManga({ from }: { from: number }) {
+  return (
+    <>
+      <h2 class="ob-h2">設定好了</h2>
+      <p>回到漫畫後會自動接著翻譯，不用再點一次圖示。</p>
+      <Button
+        variant="primary"
+        class="ob-big"
+        onClick={() =>
+          void chrome.runtime
+            .sendMessage({ type: 'onboarding:return', tabId: from } satisfies Message)
+            .catch(() => {})
+            .then(() => window.close())
+        }
+      >
+        回到漫畫
+      </Button>
+    </>
+  );
+}
+
 /** 第 4 步：到網站的試翻頁，用真的工具列圖示翻一次 Practice Spread（釘選圖示的教學在試翻頁上）。onboarding 分頁不自動關。 */
 function TryPractice() {
   return (
     <>
       <h2 class="ob-h2">設定完成，來試翻一頁吧</h2>
+      <Purpose />
       <p>我們準備了一張試翻頁的日文漫畫，這一頁不會用到額度。</p>
       <div class="naru-row">
         <Button variant="primary" class="ob-big" onClick={() => void chrome.tabs.create({ url: PRACTICE_URL })}>
@@ -331,7 +385,8 @@ function OwnKey({ onSaved, onBack }: { onSaved: (key: string) => void; onBack: (
   );
 }
 
-function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
+/** requested＋from：點圖示時卡住（#185），解決了那一步就到「回到漫畫」，不走後面的步驟。 */
+function Onboarding({ requested, from }: { requested: RequestedStep | undefined; from: number | undefined }) {
   const [progress, setProgress] = useState<OnboardingProgress | undefined>(undefined);
   const [session, setSession] = useState<HostedSession | null>(null);
   const [step, setStep] = useState<OnboardingStep | undefined>(undefined);
@@ -340,10 +395,11 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
   const [downloadStarted, setDownloadStarted] = useState(false);
 
   useEffect(() => {
-    void Promise.all([loadOnboarding(), loadHostedSession()]).then(([stored, saved]) => {
+    void Promise.all([loadOnboarding(), loadHostedSession(), hasDataConsent('hosted')]).then(([stored, saved, consented]) => {
       setProgress(stored);
       setSession(saved ?? null);
-      setStep(startStep(stored, Boolean(saved), requested));
+      // 已登入但沒同意（同意的版本更新了）：第 2 步不能跳過，同意就在那一步
+      setStep(startStep(stored, Boolean(saved) && consented, requested));
     });
   }, []);
 
@@ -382,9 +438,12 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
     await saveOnboarding('done');
   }
 
+  /** 設定完成之後：從漫畫分頁卡住來的回到漫畫，其他照常到第 4 步。 */
+  const afterSetup = (): OnboardingStep => (from === undefined ? 'tutorial' : 'return');
+
   async function finish() {
     await complete();
-    setStep('tutorial');
+    setStep(afterSetup());
   }
 
   if (step === undefined) return null;
@@ -401,7 +460,7 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
         <img src={LOGO} alt="" width={24} height={24} />
         Naruhodo
       </header>
-      {step !== 'ownKey' && <Dots current={step} />}
+      {step !== 'ownKey' && step !== 'return' && <Dots current={step} />}
       <main class="ob-card">
         {step === 'intro' && (
           <Intro
@@ -424,7 +483,8 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
               // side panel 重新讀 session；SW 接著翻已啟動分頁裡還沒翻的頁
               void chrome.runtime.sendMessage({ type: 'session:changed' } satisfies Message).catch(() => {});
               setSession(signedIn);
-              go('plan');
+              // 卡住來的、設定早就完成（只是登入失效）：登入就解決了
+              go(from !== undefined && progress === 'done' ? 'return' : 'plan');
             }}
             emailFooter={back('intro')}
           />
@@ -437,12 +497,13 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
               onFree={() => void saveTranslationMode('hosted').then(finish)}
               // 付款完成或本來就訂閱就算設定完成，就算沒按「下一步」就關掉分頁也一樣
               onSubscribed={() => void saveTranslationMode('hosted').then(complete)}
-              onNext={() => setStep('tutorial')}
+              onNext={() => setStep(afterSetup())}
             />
             {back('signIn')}
           </>
         )}
         {step === 'tutorial' && <TryPractice />}
+        {step === 'return' && from !== undefined && <ReturnToManga from={from} />}
         {step === 'ownKey' && (
           <OwnKey
             onSaved={(key) => {
@@ -458,7 +519,7 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
           />
         )}
       </main>
-      {step !== 'ownKey' && (
+      {step !== 'ownKey' && step !== 'return' && (
         <p class="ob-foot">
           已經有 Anthropic API key？
           <Button variant="link" onClick={() => setStep('ownKey')}>
@@ -471,5 +532,5 @@ function Onboarding({ requested }: { requested: 'signIn' | undefined }) {
   );
 }
 
-const requested = new URLSearchParams(location.search).get('step') === 'signIn' ? 'signIn' : undefined;
-render(<Onboarding requested={requested} />, document.getElementById('app')!);
+const { step: requested, from } = onboardingRequest(location.search);
+render(<Onboarding requested={requested} from={from} />, document.getElementById('app')!);

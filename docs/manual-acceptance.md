@@ -32,7 +32,7 @@
 |---|---|---|
 | A1 | 在漫畫 tab 點工具列圖示 | trace：出現 `status`（`active: true`）、`scan`，接著 `candidates`。使用者回報：side panel 自動打開 |
 | A2 | 啟動前先捲動、翻幾頁再點圖示 | trace：點圖示之前沒有任何 `ctx: content` 的記錄（content script 只在點圖示後才注入） |
-| A3 | 已啟動時再點一次圖示 | trace：第二次的 `activate` 是 `reused: true`、`seriesId` 跟第一次相同；沒有新的 `series:forUrl` |
+| A3 | 已啟動時再點一次圖示（#185：圖示是開關） | trace：`status` 是 `active: false`；畫面上的覆蓋層與 Page 上的狀態都消失、圖示沒有 badge，側邊欄開著的話一起關掉 |
 | A4 | 在沒有漫畫的普通網頁點圖示 | trace：`scan:noCandidates`；沒有 `console-error`／`exception`。使用者回報：side panel 顯示沒有 Page，不當掉 |
 | A5 | 啟動中重新整理 tab，**不點圖示**，等 10 秒 | 記錄結果即可：同 origin 會重新注入、繼續啟動（`src/background/index.ts` 的 `tabs.onUpdated`），但 Chrome 換頁時會收回 `activeTab`。trace：看有沒有新的 `capture`，或 `console-warn`／`console-error` 出現截圖失敗。使用者回報：有沒有繼續翻譯 |
 | A6 | 看工具列上的外掛圖示（釘選出來），Chrome 外觀分別切淺色與深色主題各看一次；再打開 side panel | 使用者回報：16px icon（藍色對話框裡白色「な」）在淺色與深色工具列上都認得出來；side panel 標題是 logo＋「Naruhodo」 |

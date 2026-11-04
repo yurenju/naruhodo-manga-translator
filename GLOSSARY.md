@@ -64,6 +64,10 @@ _Avoid_: learning mode (that is the whole feature), overlay toggle
 Which parts of every Line the side panel transcript shows, switched once for all Pages. Under the 閱讀 Page Mode it is one of three levels: 只看譯文, 原文＋譯文, 加振り仮名 (the default). Under 學習 it is only a furigana on/off switch; the translation always stays hidden until revealed step by step.
 _Avoid_: mode, learning mode (that is the whole feature)
 
+**Side Panel on Activation** (啟動時開側邊欄)
+A global setting, remembered like Page Mode, that decides whether activating the extension on a tab also opens the side panel. Pages are translated the same either way; a reader who only wants to read manga turns it off, one learning Japanese keeps it on.
+_Avoid_: reader mode, learning mode, panel mode
+
 **Series Notes** (角色與用語)
 The fixed translations a Series has settled on — names and terms, plus how each character refers to themself, speaks, and addresses others — used to keep translations consistent. The translator accumulates names and terms as it reads; how each character speaks comes only from the reader, since the text alone does not say who is speaking. The reader reviews it and occasionally corrects it. No plot progress. Belongs to the Series, shared across every site the Series is read on.
 _Avoid_: context, glossary (ambiguous with this file), dictionary, 作品筆記 (the UI name before #186)

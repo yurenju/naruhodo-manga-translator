@@ -351,7 +351,7 @@ describe('翻譯此頁', () => {
     expect(transcriber.get(1)[0]!.transcript).toEqual({ state: 'done', text: pageText, translated: false, translateError: 'Claude API 500：boom' });
   });
 
-  it('額度用完（QuotaExhaustedError）不算翻譯失敗：顯示原文與 kuromoji 讀音，不帶錯誤', async () => {
+  it('額度用完（QuotaExhaustedError）不算翻譯失敗：顯示原文與 kuromoji 讀音，不帶錯誤，記下是哪種額度（Page 上的紅標籤）', async () => {
     const translator: Translator = {
       ...noNotes,
       translatePage: async () => Promise.reject(new QuotaExhaustedError('Hosted Translation 402：免費額度已用完', 'freePagesExhausted')),
@@ -360,7 +360,19 @@ describe('翻譯此頁', () => {
 
     await transcriber.update(1, [thumb('a1')], capture);
 
-    expect(transcriber.get(1)[0]!.transcript).toEqual({ state: 'done', text: pageText, translated: false });
+    expect(transcriber.get(1)[0]!.transcript).toEqual({ state: 'done', text: pageText, translated: false, quotaExhausted: 'free' });
+  });
+
+  it('本月額度用完：記成 monthly', async () => {
+    const translator: Translator = {
+      ...noNotes,
+      translatePage: async () => Promise.reject(new QuotaExhaustedError('Hosted Translation 402：本月額度已用完', 'monthlyLimitReached')),
+    };
+    const { transcriber } = setup({ getTranslator: () => translator });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    expect(transcriber.get(1)[0]!.transcript).toMatchObject({ translated: false, quotaExhausted: 'monthly' });
   });
 
   it('還沒設定 key 時按「翻譯此頁」不改變逐字稿', async () => {
