@@ -35,42 +35,44 @@
 
 ## 安裝
 
-目前還沒有上架 Chrome Web Store，要從 GitHub Releases 下載後手動載入。
-
 ### 需要的東西
 
 - Chrome 116 以上
 - 一個收得到信的 email（內建翻譯），或一組 [Claude API key](https://console.anthropic.com/)（自備金鑰）。兩個都沒有也能用，但只會顯示原文與讀音，不會翻譯
 
-### 1. 下載
+### 1. 從 Chrome Web Store 安裝
 
-下載最新版的 [naruhodo.zip](https://github.com/yurenju/naruhodo-manga-translator/releases/latest/download/naruhodo.zip)（各版本的更新內容見 [Releases](https://github.com/yurenju/naruhodo-manga-translator/releases)），解壓縮到一個固定的資料夾，例如 `文件/naruhodo`。
+到 [Chrome Web Store 的 Naruhodo 頁面](https://chromewebstore.google.com/detail/gadioeddhiophjhefjnfkcfiennghbol)按「加到 Chrome」。建議把 Naruhodo 釘選到工具列，之後比較好點。
 
-這個資料夾之後不要搬動或刪除：Chrome 是直接從這裡載入外掛的，換了位置就會被當成另一個外掛，設定、作品筆記與翻譯快取都會看不到。
+之後有新版本，Chrome 會自動更新，不用自己下載。各版本的更新內容見 [Releases](https://github.com/yurenju/naruhodo-manga-translator/releases)。
 
-### 2. 在 Chrome 載入
+### 2. 設定翻譯方式
 
-1. 在網址列打開 `chrome://extensions`。
-2. 打開右上角的「開發人員模式」（Developer mode）。
-3. 按「載入未封裝項目」（Load unpacked），選擇剛剛解壓縮的資料夾（裡面要直接看得到 `manifest.json`）。
-4. 建議把 Naruhodo 釘選到工具列，之後比較好點。
-
-### 3. 設定翻譯方式
-
-第一次載入時會自動打開設定頁：
+第一次安裝時會自動打開設定頁：
 
 - **內建翻譯**：按「開始設定」，輸入 email、按「同意並寄送驗證碼」，再輸入信裡的 6 位數驗證碼，就有 50 頁免費額度。之後可以在同一頁或 side panel 的設定裡訂閱。
 - **自備金鑰**：按設定頁下方的「使用自備金鑰」，貼上 Claude API key。key 只存在這台電腦的外掛裡，不會交給網頁，也不會出現在匯出檔。建議在 Anthropic Console 為這個外掛建立專用的 key，並替它的 workspace 設定花費上限。
 
 之後要換方式、登出、刪除帳號或改 key，都在 side panel 右上角的 ⚙ →「設定」。
 
-### 更新到新版
+### 從手動安裝的版本換到商店版
 
-1. 保險起見，先在 side panel 用「匯出」備份作品、筆記與翻譯快取。
-2. 下載最新版的 [naruhodo.zip](https://github.com/yurenju/naruhodo-manga-translator/releases/latest/download/naruhodo.zip)，**解壓縮覆蓋到原本的同一個資料夾**。
-3. 到 `chrome://extensions` 按外掛卡片上的重新載入按鈕。
+上架前是從 GitHub Releases 下載 zip、用「載入未封裝項目」手動安裝的。手動安裝的版本跟商店版在 Chrome 眼裡是**兩個不同的外掛**，資料不互通，也不會自動更新。換過去的步驟：
 
-一定要覆蓋同一個資料夾：解壓縮到新的資料夾再載入，Chrome 會當成另一個外掛，API key、筆記與快取都要重新設定或從備份匯入。這個外掛以前叫 Manga Translator，如果當初解壓縮到 `manga-translator` 之類的資料夾，更新時一樣覆蓋到那個資料夾，不用改名。
+1. 在舊版 side panel 的 ⚙ →「設定」→「資料」按「匯出 JSON」，備份作品、筆記與翻譯快取。
+2. 到 `chrome://extensions` 移除舊版（移除會一併刪掉它的資料，所以一定要先匯出）。
+3. 從 [Chrome Web Store](https://chromewebstore.google.com/detail/gadioeddhiophjhefjnfkcfiennghbol) 安裝，在 side panel 的同一個位置按「匯入 JSON」，選剛剛匯出的檔案。
+4. 重新設定翻譯方式：內建翻譯用同一個 email 登入，額度與訂閱都跟著帳號；自備金鑰要重新貼一次 key（匯出檔不含 key）。
+
+### 手動安裝（不透過商店）
+
+想用 GitHub Releases 上的版本也可以，但 Chrome 不會自動更新：
+
+1. 下載最新版的 [naruhodo.zip](https://github.com/yurenju/naruhodo-manga-translator/releases/latest/download/naruhodo.zip)，解壓縮到一個固定的資料夾，例如 `文件/naruhodo`。這個資料夾之後不要搬動或刪除：Chrome 是直接從這裡載入外掛的，換了位置就會被當成另一個外掛，設定、作品筆記與翻譯快取都會看不到。
+2. 在網址列打開 `chrome://extensions`，打開右上角的「開發人員模式」（Developer mode）。
+3. 按「載入未封裝項目」（Load unpacked），選擇剛剛解壓縮的資料夾（裡面要直接看得到 `manifest.json`）。
+
+更新時先用「匯出 JSON」備份，再把新版的 zip **解壓縮覆蓋到原本的同一個資料夾**，到 `chrome://extensions` 按外掛卡片上的重新載入按鈕。解壓縮到新的資料夾再載入，Chrome 會當成另一個外掛，API key、筆記與快取都要重新設定或從備份匯入。
 
 ## 使用
 
@@ -102,7 +104,7 @@ npm install
 npm run build
 ```
 
-建置完成後，外掛會輸出在 `dist/prod/` 資料夾，照[安裝](#2-在-chrome-載入)的方式用「載入未封裝項目」選這個資料夾即可。之後更新程式碼（例如 `git pull`）時，重新跑一次 `npm run build`，再到 `chrome://extensions` 按重新載入。
+建置完成後，外掛會輸出在 `dist/prod/` 資料夾，照[手動安裝](#手動安裝不透過商店)的方式用「載入未封裝項目」選這個資料夾即可。之後更新程式碼（例如 `git pull`）時，重新跑一次 `npm run build`，再到 `chrome://extensions` 按重新載入。
 
 ### 常用指令
 
@@ -129,8 +131,9 @@ npm run build
 
 - `bump`：選 `patch`／`minor`／`major`，自動算出下一個版本號（預設 `patch`）。
 - `version`：想指定版本號時才填，例如 `0.2.0`，必須比目前版本大；有填就忽略 `bump`。
+- `webstore`：同時上傳到 Chrome Web Store 並送審（預設勾選）。只想發 GitHub Release 時取消勾選。
 
-workflow 會先跑型別檢查與單元測試，通過後更新 `package.json` 的版本號、commit 回 `main` 並打 tag，再建立 GitHub Release，附上 `naruhodo.zip`。版本號只寫在 `package.json`，`manifest.json` 的版本是建置時從這裡讀的。
+workflow 會先跑型別檢查與單元測試，通過後更新 `package.json` 的版本號、commit 回 `main` 並打 tag，再建立 GitHub Release，附上 `naruhodo.zip`，最後把同一個 zip 上傳到 Chrome Web Store 送審，審過就自動上線。版本號只寫在 `package.json`，`manifest.json` 的版本是建置時從這裡讀的。
 
 ## 授權
 
