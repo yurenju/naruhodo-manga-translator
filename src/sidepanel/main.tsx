@@ -17,6 +17,7 @@ import type {
   TestConnectionResponse,
 } from '../shared/messages.ts';
 import { deleteAccount, signOut, type AccountExitDeps } from '../shared/account-exit.ts';
+import type { SeriesOption } from '../shared/series.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import type { Quota } from '../shared/hosted-api.ts';
 import { clearHostedSession, HOSTED_API_URL, loadHostedSession, type HostedSession } from '../shared/hosted-session.ts';
@@ -370,7 +371,7 @@ function Settings({
         </RadioCard>
       </div>
       <h2>資料</h2>
-      <p class="hint">在兩台電腦之間搬 Series、Series Notes 與翻譯快取（不含 API key 與帳號）。</p>
+      <p class="hint">在兩台電腦之間搬作品、角色與用語與翻譯快取（不含 API key 與帳號）。</p>
       <Backup />
     </section>
   );
@@ -466,13 +467,12 @@ function AutoTranslateToggle({ tabId }: { tabId: number }) {
   return <Switch label="自動翻譯" description="翻頁就翻，關掉只顯示快取" checked={enabled} onChange={toggle} />;
 }
 
-const NEW_SERIES = '__new__';
-
-/** 名稱輸入（新增 Series／改名）；送出空白不算。 */
+/** 名稱輸入（新增作品／取名字）；送出空白不算。 */
 function NameForm({ label, submit, initial = '', onDone }: { label: string; submit: string; initial?: string; onDone: (name: string | undefined) => void }) {
   const [name, setName] = useState(initial);
   return (
     <form
+      class="series-sheet__form"
       onSubmit={(e) => {
         e.preventDefault();
         if (name.trim()) onDone(name.trim());
@@ -487,31 +487,50 @@ function NameForm({ label, submit, initial = '', onDone }: { label: string; subm
   );
 }
 
-/** 鉛筆圖示（改系列名稱）。 */
-function PencilIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-    </svg>
-  );
+/** 作品卡的「為什麼歸到這部」（#186）。 */
+function assignmentReason(assignment: SeriesResponse['assignment']): string | undefined {
+  const title = assignment?.originalTitle;
+  switch (assignment?.by) {
+    case 'urlPattern':
+      return '之前在這個網址選過這部作品';
+    case 'title':
+      return `頁面標題猜到原名「${title}」，跟這部作品相同`;
+    case 'created':
+      return `頁面標題猜到原名「${title}」，還沒有這部作品，所以新建一部`;
+    case 'unnamed':
+      return '頁面上看不出作品名稱，所以新建一部未命名作品';
+    case 'manual':
+      return '你選了這部作品';
+    default:
+      return undefined;
+  }
 }
 
+/** 搜尋作品清單：比對名稱、中文譯名與原名（忽略大小寫與全形半形）。 */
+const matchesQuery = (option: SeriesOption, query: string) => {
+  const q = query.normalize('NFKC').toLowerCase().trim();
+  return q === '' || [option.label, option.title, ...(option.originalTitles ?? [])].some((t) => t.normalize('NFKC').toLowerCase().includes(q));
+};
+
 /**
- * 底部列的系列（spec #27 第 8 節、#36、#77）：平常只是一行「系列＋名稱（過長截斷）＋鉛筆」；點鉛筆才展開編輯區：
- * 改名、切換 Series（最近用過的在最上面、Provisional Series 顯示為「未歸類」、「新增 Series…」）、
- * 把 Provisional Series 合併進既有 Series。
+ * Transcript 上方的作品卡（#186，prototype B）：中文譯名（大）＋原名（小）＋「自動判斷 · N 個條目」（純文字，不能點）。
+ * 讀者還沒確認的作品下面有問句列：猜到原名是「這是正確的作品嗎？［是］［換一部］」，猜不出來是「看不出是哪部作品［取名字］［選一部］」；
+ * 確認過的只有右上角的「更改」。「換一部」從下方拉出可搜尋的作品清單，並顯示為什麼歸到這部。
  */
-function SeriesPicker({ tabId }: { tabId: number }) {
+function SeriesCard({ tabId }: { tabId: number }) {
   const [series, setSeries] = useState<SeriesResponse | undefined>(undefined);
-  /** undefined＝收起；rename＝鉛筆打開的編輯區；new＝在編輯區選了「新增 Series…」 */
-  const [editing, setEditing] = useState<'new' | 'rename' | undefined>(undefined);
+  const [sheet, setSheet] = useState(false);
+  /** 清單裡打開的表單：new＝新增作品；rename＝取名字／改名。 */
+  const [form, setForm] = useState<'new' | 'rename' | undefined>(undefined);
+  const [query, setQuery] = useState('');
   const [mergeTarget, setMergeTarget] = useState('');
 
   useEffect(() => {
     const refresh = () => void send<SeriesResponse>({ type: 'panel:getSeries', tabId }).then(setSeries);
     const onMessage = (message: Message) => {
       if ((message.type === 'series:changed' || message.type === 'status:changed') && message.tabId === tabId) refresh();
+      // 條目數會變
+      if (message.type === 'notes:changed') refresh();
     };
     chrome.runtime.onMessage.addListener(onMessage);
     refresh();
@@ -520,88 +539,149 @@ function SeriesPicker({ tabId }: { tabId: number }) {
 
   if (!series?.current) return null;
   const current = series.options.find((o) => o.id === series.current);
-  const targets = series.options.filter((o) => !o.provisional && o.id !== series.current);
-  const choose = (value: string) => {
-    if (value === NEW_SERIES) setEditing('new');
-    else {
-      setEditing(undefined);
-      void send({ type: 'panel:selectSeries', tabId, seriesId: value });
-    }
+  if (!current) return null;
+  const close = () => {
+    setSheet(false);
+    setForm(undefined);
+    setQuery('');
   };
-  const label = current?.label ?? '';
+  const open = (withForm?: 'rename') => {
+    setSheet(true);
+    setForm(withForm);
+  };
+  const guessed = (current.originalTitles?.length ?? 0) > 0;
+  const info = [current.provisional ? '自動判斷' : '已確認', `${series.notesCount ?? 0} 個條目`].join(' · ');
+  const targets = series.options.filter((o) => !o.provisional && o.id !== current.id);
+  const reason = assignmentReason(series.assignment);
   return (
     <>
-      <div role="group" aria-label="系列" class="series-row">
-        <span class="series-row__label" aria-hidden="true">
-          系列
-        </span>
-        <span class="series-row__name" title={label}>
-          {label}
-        </span>
-        <Button
-          variant="icon"
-          aria-label="改系列名稱"
-          aria-expanded={editing !== undefined}
-          onClick={() => setEditing(editing === undefined ? 'rename' : undefined)}
-        >
-          <PencilIcon />
-        </Button>
-      </div>
-      {editing !== undefined && (
-        <section aria-label="編輯系列" class="series-editor">
-          {editing === 'rename' && (
-            <NameForm
-              label="新名稱"
-              submit="儲存"
-              initial={current?.provisional ? '' : current?.name}
-              onDone={(name) => {
-                setEditing(undefined);
-                if (name) void send({ type: 'panel:renameSeries', tabId, name });
-              }}
-            />
+      <section aria-label="作品" class="series-card">
+        <div class="series-card__top">
+          <div class="series-card__names">
+            <span class="series-card__title">{current.title}</span>
+            {current.subtitle && (
+              <span class="series-card__original" lang="ja">
+                {current.subtitle}
+              </span>
+            )}
+          </div>
+          {!current.provisional && (
+            <Button variant="ghost" onClick={() => open()}>
+              更改
+            </Button>
           )}
-          <label class="series-editor__field">
-            切換 Series
-            <select aria-label="Series" value={editing === 'new' ? NEW_SERIES : series.current} onChange={(e) => choose(e.currentTarget.value)}>
-              {series.options.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-              <option value={NEW_SERIES}>新增 Series…</option>
-            </select>
-          </label>
-          {editing === 'new' && (
-            <NameForm
-              label="Series 名稱"
-              submit="建立"
-              onDone={(name) => {
-                setEditing(undefined);
-                if (name) void send({ type: 'panel:createSeries', tabId, name });
-              }}
-            />
-          )}
-          {current?.provisional && targets.length > 0 && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!mergeTarget) return;
-                setEditing(undefined);
-                void send({ type: 'panel:mergeSeries', tabId, targetId: mergeTarget });
-              }}
-            >
-              <select aria-label="合併進" value={mergeTarget} onChange={(e) => setMergeTarget(e.currentTarget.value)}>
-                <option value="">合併進…</option>
-                {targets.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <Button type="submit">合併</Button>
-            </form>
-          )}
-        </section>
+        </div>
+        <span class="series-card__info">{info}</span>
+        {current.provisional && (
+          <div class="series-card__ask" role="group" aria-label="確認作品">
+            <span class="series-card__question">{guessed ? '這是正確的作品嗎？' : '看不出是哪部作品'}</span>
+            {guessed ? (
+              <Button variant="primary" onClick={() => void send({ type: 'panel:confirmSeries', tabId })}>
+                是
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={() => open('rename')}>
+                取名字
+              </Button>
+            )}
+            <Button onClick={() => open()}>{guessed ? '換一部' : '選一部'}</Button>
+          </div>
+        )}
+      </section>
+      {sheet && (
+        <div class="series-sheet" onClick={(e) => e.target === e.currentTarget && close()}>
+          <div role="dialog" aria-label="這頁是哪部作品？" class="series-sheet__panel">
+            <div class="series-sheet__head">
+              <h2>這頁是哪部作品？</h2>
+              <Button variant="icon" aria-label="關閉" onClick={close}>
+                ×
+              </Button>
+            </div>
+            {reason && <p class="series-sheet__why">{reason}</p>}
+            {form === 'rename' ? (
+              <NameForm
+                label="作品名稱"
+                submit="儲存"
+                initial={current.provisional && !guessed ? '' : current.title}
+                onDone={(name) => {
+                  close();
+                  if (name) void send({ type: 'panel:renameSeries', tabId, name });
+                }}
+              />
+            ) : (
+              <>
+                <input aria-label="搜尋作品" placeholder="搜尋作品…" value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
+                <ul aria-label="作品清單" class="series-sheet__list">
+                  {series.options
+                    .filter((o) => matchesQuery(o, query))
+                    .map((o) => (
+                      <li key={o.id}>
+                        <button
+                          type="button"
+                          class="series-item"
+                          aria-current={o.id === current.id}
+                          onClick={() => {
+                            close();
+                            if (o.id !== current.id) void send({ type: 'panel:selectSeries', tabId, seriesId: o.id });
+                          }}
+                        >
+                          <span class="series-item__text">
+                            <span class="series-item__title">{o.title}</span>
+                            {o.subtitle && (
+                              <span class="series-item__original" lang="ja">
+                                {o.subtitle}
+                              </span>
+                            )}
+                          </span>
+                          {o.provisional && <span class="series-item__meta">自動</span>}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+                {form === 'new' ? (
+                  <NameForm
+                    label="新作品名稱"
+                    submit="建立"
+                    onDone={(name) => {
+                      close();
+                      if (name) void send({ type: 'panel:createSeries', tabId, name });
+                    }}
+                  />
+                ) : (
+                  <div class="naru-row">
+                    <Button variant="ghost" onClick={() => setForm('new')}>
+                      ＋ 新增作品…
+                    </Button>
+                    <Button variant="ghost" onClick={() => setForm('rename')}>
+                      {current.provisional && !guessed ? '取名字…' : '改名…'}
+                    </Button>
+                  </div>
+                )}
+                {current.provisional && targets.length > 0 && (
+                  <form
+                    class="series-sheet__form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!mergeTarget) return;
+                      close();
+                      void send({ type: 'panel:mergeSeries', tabId, targetId: mergeTarget });
+                    }}
+                  >
+                    <select aria-label="合併進" value={mergeTarget} onChange={(e) => setMergeTarget(e.currentTarget.value)}>
+                      <option value="">合併進…</option>
+                      {targets.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.title}
+                        </option>
+                      ))}
+                    </select>
+                    <Button type="submit">合併</Button>
+                  </form>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       )}
     </>
   );
@@ -609,7 +689,7 @@ function SeriesPicker({ tabId }: { tabId: number }) {
 
 /**
  * 外掛的 container（#108）：接 chrome 訊息、API key、同意狀態與 Page Mode 的 store，把資料交給純畫面的 SidePanel。
- * 會讀寫 store 的區塊（設定頁、Series Notes 頁、系列、自動翻譯開關）也在這裡，以 slot 交給 SidePanel。
+ * 會讀寫 store 的區塊（設定頁、角色與用語頁、作品卡、自動翻譯開關）也在這裡，以 slot 交給 SidePanel。
  * 沒做完 onboarding（#93）時 SidePanel 只顯示「完成設定」；「登入」「完成設定」用新分頁打開 onboarding。
  */
 function App({ tabId }: { tabId: number | undefined }) {
@@ -683,7 +763,7 @@ function App({ tabId }: { tabId: number | undefined }) {
       subscribedNotice={subscribedNotice}
       onDismissSubscribedNotice={() => void dismissSubscribedNotice()}
       autoTranslate={running && <AutoTranslateToggle tabId={tabId} />}
-      series={running && <SeriesPicker tabId={tabId} />}
+      series={running && <SeriesCard tabId={tabId} />}
       renderSettings={(_close, openDeleteAccount) => (
         <Settings mode={translationMode} session={session} quota={quota} onKeyChanged={setHasKey} onDeleteAccount={openDeleteAccount} />
       )}

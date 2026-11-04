@@ -9,7 +9,7 @@ import { matchingStripe, type Stripe } from '../shared/long-page.ts';
 import type { PageView } from '../shared/messages.ts';
 import { pageLines, type PageCharge, type PageText, type PageTranslation } from '../shared/page-text.ts';
 import { staleReason, usedNotes, type StaleReason, type TranslatorVersion } from '../shared/series-notes.ts';
-import type { Series } from '../shared/series.ts';
+import { seriesNameForLlm, type Series } from '../shared/series.ts';
 import { createTrace } from '../shared/trace.ts';
 import type { NotesChanges, NotesEntry, PriorPage, TranslateInput, TranslateOutput, Translator } from '../shared/translator.ts';
 import { QuotaExhaustedError } from './hosted-translator.ts';
@@ -64,9 +64,10 @@ export interface LongPageRequest {
 
 const trace = createTrace('sw');
 
-/** 只送讀者取的名稱：Provisional Series 的名稱是自動產生的（網站＋日期），不是作品名。 */
+/** 作品名送原名（#186），沒有就送讀者取的名稱；未命名的 Provisional Series 的名稱是自動產生的（網站＋日期），不送。 */
 function seriesName(series: Series | undefined): Pick<TranslateInput, 'seriesName'> {
-  return series && !series.provisional ? { seriesName: series.name } : {};
+  const name = seriesNameForLlm(series);
+  return name ? { seriesName: name } : {};
 }
 
 function toTranslateInput(text: PageText, seriesNotes: NotesEntry[], priorPages: PriorPage[]): Omit<TranslateInput, 'seriesName'> {

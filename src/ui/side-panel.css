@@ -109,20 +109,50 @@
   background: var(--naru-surface); border-top: 1px solid var(--naru-line);
   font-size: var(--naru-text-caption); color: var(--naru-ink-3);
 }
-:where(.naru-side-panel) .series-row, :where(.naru-side-panel) .status-row { display: flex; align-items: center; gap: var(--naru-space-2); min-width: 0; }
-:where(.naru-side-panel) .series-row__label { flex: none; }
-:where(.naru-side-panel) .series-row__name {
-  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: var(--naru-text-label); font-weight: 500; color: var(--naru-ink);
-}
+:where(.naru-side-panel) .status-row { display: flex; align-items: center; gap: var(--naru-space-2); min-width: 0; }
 :where(.naru-side-panel) .status-row > span { flex: 1 1 auto; min-width: 0; }
 :where(.naru-side-panel) .status-row > .naru-progress { margin: 0; }
 :where(.naru-side-panel) .status-row > .naru-btn { flex: none; }
 /* 內建翻譯的剩餘頁數（#92）；剩 5 頁以下用警告色 */
 :where(.naru-side-panel) .quota-row { font-size: var(--naru-text-small); color: var(--naru-ink-2); }
 :where(.naru-side-panel) .quota-row--warn { color: var(--naru-warn); }
-/* 點鉛筆才出現的編輯區 */
-:where(.naru-side-panel) .series-editor { display: flex; flex-direction: column; gap: var(--naru-space-2); padding: var(--naru-space-2) 0; }
-:where(.naru-side-panel) .series-editor form { display: flex; flex-wrap: wrap; gap: var(--naru-space-1); align-items: center; }
-:where(.naru-side-panel) .series-editor input, :where(.naru-side-panel) .series-editor select { flex: 1 1 8em; min-width: 0; max-width: 100%; }
-:where(.naru-side-panel) .series-editor__field { display: flex; flex-direction: column; gap: var(--naru-space-1); color: var(--naru-ink-2); }
+/* Transcript 上方的作品卡（#186）：資訊是純文字（灰、無外框），按鈕是 naru-btn；長名稱截斷，不撐出水平捲軸 */
+:where(.naru-side-panel) .series-card {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  padding: var(--naru-space-2) var(--naru-space-3); margin: 0 0 var(--naru-space-2);
+  border-radius: var(--naru-radius-md); background: var(--naru-surface-2);
+}
+:where(.naru-side-panel) .series-card__top { display: flex; align-items: flex-start; gap: var(--naru-space-2); min-width: 0; }
+:where(.naru-side-panel) .series-card__names, :where(.naru-side-panel) .series-item__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+:where(.naru-side-panel) .series-card__title { font-size: var(--naru-text-body); font-weight: 700; color: var(--naru-ink); overflow-wrap: anywhere; }
+:where(.naru-side-panel) .series-card__original, :where(.naru-side-panel) .series-item__original {
+  font-family: var(--naru-font-ja); font-size: var(--naru-text-small); color: var(--naru-ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+:where(.naru-side-panel) .series-card__info { font-size: var(--naru-text-small); color: var(--naru-ink-3); }
+:where(.naru-side-panel) .series-card__ask {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--naru-space-2);
+  margin-top: var(--naru-space-2); padding-top: var(--naru-space-2); border-top: 1px solid var(--naru-line);
+}
+:where(.naru-side-panel) .series-card__question { flex: 1 1 8em; min-width: 0; font-size: var(--naru-text-caption); font-weight: 500; color: var(--naru-ink); }
+/* 「換一部」從下方拉出的作品清單 */
+:where(.naru-side-panel) .series-sheet { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.25); }
+:where(.naru-side-panel) .series-sheet__panel {
+  margin-top: auto; max-height: 85%; overflow: auto; display: flex; flex-direction: column; gap: var(--naru-space-2);
+  padding: var(--naru-space-3); background: var(--naru-surface); border-radius: 12px 12px 0 0;
+}
+:where(.naru-side-panel) .series-sheet__head { display: flex; align-items: center; gap: var(--naru-space-2); }
+:where(.naru-side-panel) .series-sheet__head h2 { flex: 1 1 auto; margin: 0; font-size: var(--naru-text-body); }
+:where(.naru-side-panel) .series-sheet__why { margin: 0; font-size: var(--naru-text-caption); color: var(--naru-ink-3); }
+:where(.naru-side-panel) .series-sheet__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+:where(.naru-side-panel) .series-sheet__form { display: flex; flex-wrap: wrap; gap: var(--naru-space-1); align-items: center; }
+:where(.naru-side-panel) .series-sheet input, :where(.naru-side-panel) .series-sheet select { flex: 1 1 8em; min-width: 0; max-width: 100%; }
+:where(.naru-side-panel) .series-item {
+  display: flex; align-items: center; gap: var(--naru-space-2); width: 100%; padding: var(--naru-space-2);
+  border: 1px solid transparent; border-radius: var(--naru-radius-md); background: none;
+  text-align: left; font: inherit; color: var(--naru-ink); cursor: pointer;
+}
+:where(.naru-side-panel) .series-item:hover { background: var(--naru-surface-2); }
+:where(.naru-side-panel) .series-item[aria-current='true'] { border-color: var(--naru-accent); }
+:where(.naru-side-panel) .series-item__title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:where(.naru-side-panel) .series-item__meta { flex: none; font-size: var(--naru-text-small); color: var(--naru-accent); }

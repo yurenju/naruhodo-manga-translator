@@ -1,5 +1,6 @@
 /**
- * #36：Series 選擇與歸類。網址模式＝origin＋path；選定非 Provisional 的 Series 後才記住。
+ * #36、#186：Series 的選擇與自動歸類。網址模式＝origin＋path；確認過的 Series 才記住。網址模式對不上時從頁面標題猜作品原名
+ * （FakeTranslator 的 fakeSeriesGuess：仿 canvas 網站每一話的標題相同，所以猜到同一個原名）。
  * 「停止」後再啟動才是新的一次啟動（已啟動的 tab 重新整理會沿用同一個 Series），所以每次都先停止再重新整理。
  */
 import type { Page, Worker } from '@playwright/test';
@@ -11,19 +12,18 @@ import { activateOnMockSite, expect, readStore, testActivate, test } from './fix
 /** 跟 cache.spec.ts 一樣用真的視窗：截圖與 rect 才對得上。 */
 test.use({ viewport: null });
 
-const footer = (panel: Page) => panel.getByRole('contentinfo', { name: '狀態列' });
-/** 底部那一行「系列＋名稱＋鉛筆」；平常只顯示名稱。 */
-const seriesRow = (panel: Page) => footer(panel).getByRole('group', { name: '系列' });
-/** 點鉛筆展開編輯區（改名、切換、新增、合併都在裡面）。 */
-const openSeriesEditor = (panel: Page) => footer(panel).getByRole('button', { name: '改系列名稱' }).click();
-const seriesSelect = (panel: Page) => footer(panel).getByRole('combobox', { name: 'Series', exact: true });
+/** Transcript 上方的作品卡。 */
+const card = (panel: Page) => panel.getByRole('region', { name: '作品' });
+/** 從作品卡拉出作品清單（「換一部」「選一部」或確認過的「更改」）。 */
+const openSheet = (panel: Page) => card(panel).getByRole('button', { name: /^(換一部|選一部|更改)$/ }).click();
+const sheet = (panel: Page) => panel.getByRole('dialog', { name: '這頁是哪部作品？' });
 
 async function createSeries(panel: Page, name: string): Promise<void> {
-  await openSeriesEditor(panel);
-  await seriesSelect(panel).selectOption({ label: '新增 Series…' });
-  await panel.getByRole('textbox', { name: 'Series 名稱' }).fill(name);
-  await panel.getByRole('button', { name: '建立' }).click();
-  await expect(seriesRow(panel)).toContainText(name);
+  await openSheet(panel);
+  await sheet(panel).getByRole('button', { name: '＋ 新增作品…' }).click();
+  await sheet(panel).getByRole('textbox', { name: '新作品名稱' }).fill(name);
+  await sheet(panel).getByRole('button', { name: '建立' }).click();
+  await expect(card(panel)).toContainText(name);
 }
 
 /** 停止 → 重新整理 → 再啟動（新的一次啟動，要靠網址模式預選）。 */
@@ -43,17 +43,19 @@ const currentSeries = async (panel: Page, tabId: number) =>
 
 const seriesNamed = async (sw: Worker, name: string) => (await readStore<Series>(sw, 'series')).find((s) => s.name === name);
 
-// 規則（網址模式怎麼比對、預選時不再建 Provisional、改名 ID 不變、合併時快取與 Notes 怎麼併）在 series 與 series-catalog
-// 的 unit；這裡只確認 side panel 的操作會經過 SW 寫進 IndexedDB（預選那條再確認下一次啟動讀得回來）。
+// 規則（網址模式怎麼比對、原名怎麼比對、優先順序、選擇與合併時記住原名、改名 ID 不變、合併時快取與 Notes 怎麼併）在 series、
+// series-catalog 與 activation 的 unit；這裡只確認 side panel 的操作會經過 SW 寫進 IndexedDB，以及頁面標題真的會從分頁經過 SW 歸類。
 
 test('選 Series 後重新整理再啟動，自動預選同一部 Series', async ({ context, sw, extensionId, mockSite }) => {
   const { page, panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite });
-  await expect(seriesRow(panel)).toContainText(/未歸類（未命名・127\.0\.0\.1・/);
+  // 沒有 Translator（還沒同意資料使用）就不猜，建未命名的
+  await expect(card(panel)).toContainText(/未命名・127\.0\.0\.1・/);
+  await expect(card(panel)).toContainText('看不出是哪部作品');
 
   await createSeries(panel, '範例作品');
   await stopReloadActivate(page, panel, tabId);
 
-  await expect(seriesRow(panel)).toContainText('範例作品');
+  await expect(card(panel)).toContainText('範例作品');
 });
 
 // #145：換不換、對不上就沿用是 activation 與 series-catalog 的 unit；這裡確認真的導航會經過 SW 換掉 Series，side panel 跟著顯示
@@ -66,32 +68,49 @@ test('同分頁導航回記住了另一部 Series 的網址：side panel 換成�
   const otherWork = new URL('other-work/', mockSite.canvasSiteUrl).href;
   await page.goto(otherWork);
   await page.locator('body[data-ready="true"]').waitFor();
-  await expect(seriesRow(panel)).toContainText('作品甲');
+  await expect(card(panel)).toContainText('作品甲');
   await createSeries(panel, '作品乙');
 
   await page.goto(mockSite.canvasSiteUrl);
   await page.locator('body[data-ready="true"]').waitFor();
 
-  await expect(seriesRow(panel)).toContainText('作品甲');
+  await expect(card(panel)).toContainText('作品甲');
   expect(await currentSeries(panel, tabId)).toBe(first);
 });
 
-test('Provisional Series 在 side panel 改名：顯示新名稱，也寫進 store', async ({ context, sw, extensionId, mockSite }) => {
+test('猜不出作品時在作品卡「取名字」：顯示新名稱、不再問，也寫進 store', async ({ context, sw, extensionId, mockSite }) => {
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
-  await expect(seriesRow(panel)).toContainText(/未歸類（/);
 
-  // 平常只是文字；點鉛筆才出現輸入框
-  await expect(footer(panel).getByRole('textbox')).toHaveCount(0);
-  await openSeriesEditor(panel);
-  await panel.getByRole('textbox', { name: '新名稱' }).fill('範例作品');
-  await panel.getByRole('button', { name: '儲存' }).click();
-  await expect(seriesRow(panel)).toContainText('範例作品');
+  await card(panel).getByRole('button', { name: '取名字' }).click();
+  await sheet(panel).getByRole('textbox', { name: '作品名稱' }).fill('範例作品');
+  await sheet(panel).getByRole('button', { name: '儲存' }).click();
+
+  await expect(card(panel)).toContainText('範例作品');
+  await expect(card(panel).getByRole('group', { name: '確認作品' })).toHaveCount(0);
   // 改名後 ID 不變、不再是 Provisional 是 series-catalog 的 unit；這裡只確認改名有經過 SW 寫進去
   await expect.poll(() => seriesNamed(sw, '範例作品')).toBeDefined();
 });
 
-test.describe('合併（FakeTranslator）', () => {
+test.describe('FakeTranslator', () => {
   test.use({ fakeTranslator: true });
+
+  // #186 的代表路徑：unit 看不到「分頁的標題 → SW 猜原名 → IndexedDB 的 Series → side panel 作品卡」這串
+  test('兩個分頁讀不同話：從頁面標題猜到同一個原名，歸到同一部；按「是」確認', async ({ context, sw, extensionId, mockSite }) => {
+    const first = await activateOnMockSite({ context, sw, extensionId, mockSite });
+    await expect(card(first.panel)).toContainText('（譯名）');
+    await expect(card(first.panel)).toContainText('這是正確的作品嗎？');
+    const seriesId = await currentSeries(first.panel, first.tabId);
+
+    const second = await activateOnMockSite({ context, sw, extensionId, mockSite, url: new URL('episode-2/', mockSite.canvasSiteUrl).href });
+    await expect(card(second.panel)).toContainText('（譯名）');
+    expect(await currentSeries(second.panel, second.tabId)).toBe(seriesId);
+
+    await card(second.panel).getByRole('button', { name: '是' }).click();
+
+    await expect(card(second.panel)).toContainText('已確認');
+    await expect(card(second.panel).getByRole('group', { name: '確認作品' })).toHaveCount(0);
+    await expect.poll(async () => (await readStore<Series>(sw, 'series')).find((s) => s.id === seriesId)?.provisional).toBe(false);
+  });
 
   test('Provisional Series 合併進既有 Series：store 裡快取改掛目標、臨時 Series 刪掉，不重翻', async ({ context, sw, extensionId, mockSite }) => {
     const first = await activateOnMockSite({ context, sw, extensionId, mockSite });
@@ -102,17 +121,25 @@ test.describe('合併（FakeTranslator）', () => {
     // 選了新的 Series 會重新擷取、用新 ID 翻譯：等它寫完，目標就有這兩頁的快取
     await expect.poll(async () => (await readStore<PageTranslation>(sw, 'pageTranslations')).filter((t) => t.seriesId === target.id).length).toBe(2);
 
-    const other = await activateOnMockSite({ context, sw, extensionId, mockSite, url: new URL('episode-2/', mockSite.canvasSiteUrl).href });
+    // 標題清掉：猜不出作品，建未命名的 Provisional Series（猜得到的話會直接歸到範例作品）
+    const other = await activateOnMockSite({
+      context,
+      sw,
+      extensionId,
+      mockSite,
+      url: new URL('episode-2/', mockSite.canvasSiteUrl).href,
+      beforeActivate: (_panel, page) => page.evaluate(() => void (document.title = '')),
+    });
     await expect(other.panel.getByRole('status', { name: '翻譯狀態' }).filter({ hasText: /^已翻譯・/ })).toHaveCount(2);
     const provisionalId = (await currentSeries(other.panel, other.tabId))!;
     expect((await readStore<PageTranslation>(sw, 'pageTranslations')).filter((t) => t.seriesId === provisionalId)).toHaveLength(2);
     const calls = await sw.evaluate(() => globalThis.__translateCalls ?? 0);
 
-    await openSeriesEditor(other.panel);
-    await other.panel.getByRole('combobox', { name: '合併進' }).selectOption({ label: '範例作品' });
-    await other.panel.getByRole('button', { name: '合併' }).click();
+    await openSheet(other.panel);
+    await sheet(other.panel).getByRole('combobox', { name: '合併進' }).selectOption({ label: '範例作品' });
+    await sheet(other.panel).getByRole('button', { name: '合併' }).click();
 
-    await expect(seriesRow(other.panel)).toContainText('範例作品');
+    await expect(card(other.panel)).toContainText('範例作品');
     await expect.poll(async () => (await readStore<Series>(sw, 'series')).some((s) => s.id === provisionalId)).toBe(false);
     const cached = await readStore<PageTranslation>(sw, 'pageTranslations');
     expect(cached.filter((t) => t.seriesId === provisionalId)).toEqual([]);

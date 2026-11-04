@@ -19,13 +19,14 @@ import type {
   TestConnectionResponse,
   TranslateResponse,
   ProposeNotesResponse,
+  GuessSeriesResponse,
 } from '../shared/messages.ts';
 import { rejectInSlice, sliceOf, stripeFingerprint, toPageText } from '../shared/long-page.ts';
 import { pageHash, type GrayImage } from '../shared/page-hash.ts';
 import type { BalloonText, EraseData, LooseText, PageText, RatioRect } from '../shared/page-text.ts';
 import { grayOfRgba, type RgbaImage } from '../shared/pixels.ts';
 import { createTrace } from '../shared/trace.ts';
-import type { NotesInput, NotesOutput, TranslateInput, TranslateOutput } from '../shared/translator.ts';
+import type { NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, TranslateInput, TranslateOutput } from '../shared/translator.ts';
 import { createClaudeTranslator } from './claude-translator.ts';
 import { subImageRect, thumbnailSize, toImageRect, toSubRect } from './crop.ts';
 import { eraseLuminance } from './erase-color.ts';
@@ -292,6 +293,22 @@ async function proposeNotes(input: NotesInput, fake: FakeTranslatorConfig | unde
   }
 }
 
+/** 猜作品原名（#186）：失敗由 SW 當成猜不出來。 */
+async function guessSeries(input: TitleSignals, fake: FakeTranslatorConfig | undefined): Promise<SeriesGuessOutput> {
+  if (__E2E__ && fake) return createFakeTranslator(SYNTHETIC_GROUND_TRUTH, fake).guessSeries(input);
+  const translator = await claude();
+  if (!translator) throw new NoApiKeyError('尚未設定 API key');
+  trace('seriesGuess:request', { input });
+  try {
+    const output = await translator.guessSeries(input);
+    trace('seriesGuess:response', { output });
+    return output;
+  } catch (e) {
+    trace('seriesGuess:error', { error: e });
+    throw e;
+  }
+}
+
 async function testConnection(): Promise<TestConnectionResponse> {
   try {
     const translator = await claude();
@@ -332,6 +349,13 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
     proposeNotes(message.input, message.fake).then(
       (output) => sendResponse({ output } satisfies ProposeNotesResponse),
       (e: unknown) => sendResponse({ error: e instanceof Error ? e.message : String(e) } satisfies ProposeNotesResponse),
+    );
+    return true;
+  }
+  if (message.type === 'offscreen:guessSeries') {
+    guessSeries(message.input, message.fake).then(
+      (output) => sendResponse({ output } satisfies GuessSeriesResponse),
+      (e: unknown) => sendResponse({ error: e instanceof Error ? e.message : String(e) } satisfies GuessSeriesResponse),
     );
     return true;
   }

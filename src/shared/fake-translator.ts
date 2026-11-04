@@ -3,7 +3,7 @@
  * TranslateInput 沒有座標，所以用原文相似度（1 − 字元編輯距離 / 長度）把 OCR 結果對回 ground truth。
  */
 import { normalizeText } from './series-notes.ts';
-import type { NotesChanges, NotesInput, NotesOutput, TranslateInput, TranslateOutput, Translator } from './translator.ts';
+import type { NotesChanges, NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, TranslateInput, TranslateOutput, Translator } from './translator.ts';
 
 /** FakeTranslator 的模型與 prompt 版本（寫進快取、過時提示比對用）。 */
 export const FAKE_VERSION = { model: 'fake', promptVersion: 'fake' };
@@ -67,6 +67,16 @@ function notesChanges(notes: NotesChanges['added'], input: NotesInput): NotesCha
   return changes;
 }
 
+/**
+ * 模擬 Haiku 猜原名（#186）：og:title 優先、沒有就用 title；去掉開頭的 [話數]，取「 - 」「 | 」之前那一段。
+ * 剩下空字串就是 unknown。中文譯名固定是「原名（譯名）」。
+ */
+export function fakeSeriesGuess(signals: TitleSignals): Pick<SeriesGuessOutput, 'status' | '原名' | '中文譯名'> {
+  const text = (signals.ogTitle || signals.title).replace(/^\[[^\]]*\]/, '');
+  const 原名 = (text.split(/ [-|] /)[0] ?? '').trim();
+  return 原名 ? { status: 'work', 原名, 中文譯名: `${原名}（譯名）` } : { status: 'unknown', 原名: '', 中文譯名: '' };
+}
+
 const NO_COST = { usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 }, model: FAKE_VERSION.model, latencyMs: 0 };
 
 export function createFakeTranslator(
@@ -98,6 +108,9 @@ export function createFakeTranslator(
     },
     async proposeNotes(input: NotesInput): Promise<NotesOutput> {
       return { notes_changes: notesChanges(notes, input), ...NO_COST };
+    },
+    async guessSeries(input: TitleSignals): Promise<SeriesGuessOutput> {
+      return { ...fakeSeriesGuess(input), ...NO_COST };
     },
   };
 }

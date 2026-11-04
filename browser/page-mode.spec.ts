@@ -29,7 +29,8 @@ test('Page Mode 在重開 side panel、新分頁啟動後沿用', async ({ conte
   // 新分頁啟動：翻好後頁面上有覆蓋層（hover 要用），但看不到譯文
   const second = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
   await expect(pageMode(second.panel, '學習')).toHaveAttribute('aria-pressed', 'true');
-  await expect(statusLines(second.panel)).toHaveText([/^已翻譯・/]);
+  // 同一個仿 canvas 網站的標題相同，新分頁自動歸到同一部作品（#186），第一個分頁翻好的頁直接從快取來
+  await expect(statusLines(second.panel)).toHaveText([/^快取・/]);
   await expect.poll(async () => (await overlayTexts(second.page)).length).toBeGreaterThan(0);
   await expect(shownTranslations(second.page)).toHaveCount(0);
 

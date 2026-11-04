@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readGroundTruth } from '../testing/synthetic.ts';
-import { createFakeTranslator, NO_MATCH } from './fake-translator.ts';
+import { createFakeTranslator, fakeSeriesGuess, NO_MATCH } from './fake-translator.ts';
 
 const translator = createFakeTranslator([readGroundTruth('p01-basic'), readGroundTruth('p04-outside')]);
 
@@ -93,5 +93,16 @@ describe('FakeTranslator：模擬無法辨識', () => {
       { id: 'b1', 讀音: '', 譯文: '', unreadable: true, sfx: false },
       { id: 'b2', 讀音: 'いいにおい！', 譯文: '好香！', unreadable: false, sfx: false },
     ]);
+  });
+});
+
+describe('FakeTranslator：模擬猜作品原名（#186）', () => {
+  it('去掉開頭的話數與「 - 」之後的作者、網站名；og:title 優先', () => {
+    expect(fakeSeriesGuess({ title: '[第3話]範例作品 - 作者 | 網站', ogTitle: '', headings: [] })).toEqual({ status: 'work', 原名: '範例作品', 中文譯名: '範例作品（譯名）' });
+    expect(fakeSeriesGuess({ title: '閱讀器', ogTitle: '另一部作品', headings: [] }).原名).toBe('另一部作品');
+  });
+
+  it('沒有標題時是 unknown', () => {
+    expect(fakeSeriesGuess({ title: '', ogTitle: '', headings: [] }).status).toBe('unknown');
   });
 });

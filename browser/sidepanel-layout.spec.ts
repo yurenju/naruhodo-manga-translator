@@ -1,5 +1,5 @@
 /**
- * #77：side panel 的版面。底部系列名稱原本是一個很寬的下拉選單，把窄的 side panel 撐出水平捲軸。
+ * #77：side panel 的版面。底部系列名稱原本是一個很寬的下拉選單，把窄的 side panel 撐出水平捲軸；#186 起作品在 Transcript 上方的作品卡。
  */
 import type { Page } from '@playwright/test';
 import { activateOnMockSite, chooseFromPanelMenu, expect, openPanelMenu, test } from './fixtures.ts';
@@ -24,20 +24,23 @@ test.use({ fakeTranslator: true, viewport: null });
 test('窄寬度下 side panel 沒有水平捲軸', async ({ context, sw, extensionId, mockSite }) => {
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   await expect(panel.getByRole('status', { name: '翻譯狀態' }).filter({ hasText: /^已翻譯・/ })).toHaveCount(2);
-  // mock 網站的臨時名稱很短；真實網站的作品名與網域長得多，舊版的下拉選單縮不到比最長選項窄
-  const footer = panel.getByRole('contentinfo', { name: '狀態列' });
-  await footer.getByRole('button', { name: '改系列名稱' }).click();
-  await footer.getByRole('textbox', { name: '新名稱' }).fill(LONG_NAME);
-  await footer.getByRole('button', { name: '儲存' }).click();
-  await expect(footer.getByRole('group', { name: '系列' })).toContainText(LONG_NAME);
+  // mock 網站的作品名很短；真實網站的作品名與網域長得多，舊版的下拉選單縮不到比最長選項窄
+  const card = panel.getByRole('region', { name: '作品' });
+  const sheet = panel.getByRole('dialog', { name: '這頁是哪部作品？' });
+  await card.getByRole('button', { name: '換一部' }).click();
+  await sheet.getByRole('button', { name: '改名…' }).click();
+  await sheet.getByRole('textbox', { name: '作品名稱' }).fill(LONG_NAME);
+  await sheet.getByRole('button', { name: '儲存' }).click();
+  await expect(card).toContainText(LONG_NAME);
   await panel.setViewportSize(NARROW);
 
-  // 平常：名稱過長用「…」截斷，不撐開
+  // 平常：作品卡的長名稱換行或截斷，不撐開
   await expectNoHorizontalScroll(panel);
-  // 點鉛筆展開的編輯區（裡面有列出長名稱的下拉選單）也不撐開
-  await footer.getByRole('button', { name: '改系列名稱' }).click();
-  await expect(footer.getByRole('combobox', { name: 'Series', exact: true })).toBeVisible();
+  // 拉出的作品清單（裡面有長名稱與合併的下拉選單）也不撐開
+  await card.getByRole('button', { name: '更改' }).click();
+  await expect(sheet).toBeVisible();
   await expectNoHorizontalScroll(panel);
+  await sheet.getByRole('button', { name: '關閉' }).click();
   // ⚙ 選單展開、從選單打開的區塊也一樣
   await openPanelMenu(panel);
   await expectNoHorizontalScroll(panel);
@@ -60,8 +63,8 @@ test.describe('逐字稿出來之前', () => {
     const consent = main.getByRole('region', { name: '資料使用說明' });
     await consent.getByRole('button', { name: '同意並啟用翻譯' }).click();
     await expect(consent).toHaveCount(0);
-    // Page 列表與逐字稿之前的控制項：停止、⚙（只有圖示）、Page Mode 兩格（含副標）。顯示層級要等逐字稿出來，不在這裡
-    await expect(main.getByRole('button').filter({ visible: true })).toHaveText(['停止', '', /^閱讀/, /^學習/]);
+    // Page 列表與逐字稿之前的控制項：停止、⚙（只有圖示）、Page Mode 兩格（含副標）、作品卡的問句列（#186）。顯示層級要等逐字稿出來，不在這裡
+    await expect(main.getByRole('button').filter({ visible: true })).toHaveText(['停止', '', /^閱讀/, /^學習/, '是', '換一部']);
     await expect(main.getByRole('button', { name: '設定', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await expect(main.getByRole('switch')).toHaveCount(0);
 
@@ -69,7 +72,7 @@ test.describe('逐字稿出來之前', () => {
     const menu = await openPanelMenu(panel);
     await expect(menu.getByRole('switch', { name: '自動翻譯' })).toHaveAccessibleDescription('翻頁就翻，關掉只顯示快取');
     await expect(menu.getByRole('button', { name: '重新擷取頁面' })).toHaveAccessibleDescription('翻頁沒被偵測到時用');
-    await expect(menu.getByRole('button')).toHaveText([/^重新擷取頁面/, 'Series Notes', '設定']);
+    await expect(menu.getByRole('button')).toHaveText([/^重新擷取頁面/, '角色與用語', '設定']);
     // 按 Esc 收起
     await panel.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);

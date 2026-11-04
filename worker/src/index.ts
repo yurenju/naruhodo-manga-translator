@@ -18,6 +18,7 @@ import {
   PADDLE_WEBHOOK_PATH,
   PORTAL_PATH,
   SEND_CODE_PATH,
+  SERIES_GUESS_PATH,
   SIGN_OUT_PATH,
   TRANSLATE_PATH,
   VERIFY_CODE_PATH,
@@ -33,7 +34,7 @@ import {
 import type { CallInfo, Translator } from '../../src/shared/translator.ts';
 import { accountEmail, authenticate, deleteAccount, revokeSession, sendCode, verifyCode } from './auth.ts';
 import { continuable, deductPage, monthlyLimit, quota, recordUsage, setFreePages, type QuotaContext, type UsageKind } from './quota.ts';
-import { parseNotesInput, parseTranslateInput } from './input.ts';
+import { parseNotesInput, parseTitleSignals, parseTranslateInput } from './input.ts';
 import { lastSentCode, mailer } from './mailer.ts';
 import { paddle, PaddleError, verifyWebhook } from './paddle.ts';
 import { activeSubscription, applyPaddleEvent, cancellationOnDelete, paddleIds, recordPaddleEvent, refundedSubscription } from './subscription.ts';
@@ -176,6 +177,17 @@ const ROUTES: Record<string, Handler> = {
     ),
   ),
   [`POST ${NOTES_PATH}`]: authed(llm('notes', parseNotesInput, (t, input) => t.proposeNotes(input), (input) => input.pageUsageRecordId)),
+  // 猜作品原名（#186）：不看也不扣額度、不寫用量紀錄（usage_records 只收翻譯與 Notes）；濫用由依 Account 的頻率限制擋
+  [`POST ${SERIES_GUESS_PATH}`]: authed(async ({ request, env }, accountId) => {
+    const input = parseTitleSignals(await jsonBody(request));
+    if (input === undefined) return invalid();
+    if (!(await env.SERIES_GUESS_BY_ACCOUNT.limit({ key: accountId })).success) return error(429, '猜作品太頻繁', 'rateLimited');
+    try {
+      return Response.json(await translator(env).guessSeries(input));
+    } catch (e) {
+      return error(502, e instanceof Error ? e.message : String(e));
+    }
+  }),
   [`POST ${SEND_CODE_PATH}`]: async ({ request, env, now }) => {
     const email = parseEmail(field(await jsonBody(request), 'email'));
     if (!email) return invalid();

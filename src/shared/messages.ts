@@ -2,7 +2,7 @@ import type { Stripe } from './long-page.ts';
 import type { PageText, RatioRect } from './page-text.ts';
 import type { EditableFields, NotesSuggestion, StaleReason, SuggestionRef } from './series-notes.ts';
 import type { SeriesOption } from './series.ts';
-import type { NotesChanges, NotesEntry, NotesInput, NotesOutput, TranslateInput, TranslateOutput } from './translator.ts';
+import type { NotesChanges, NotesEntry, NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, TranslateInput, TranslateOutput } from './translator.ts';
 
 /** onnxruntime-web 的執行環境。 */
 export type ExecutionProvider = 'webgpu' | 'wasm';
@@ -57,6 +57,8 @@ export type Message =
   | { type: 'offscreen:translate'; input: TranslateInput; fake?: FakeTranslatorConfig }
   /** SW → offscreen：整理一個 Page 的 Series Notes（ADR 0005 的 ②）。回應 ProposeNotesResponse。 */
   | { type: 'offscreen:proposeNotes'; input: NotesInput; fake?: FakeTranslatorConfig }
+  /** SW → offscreen：從頁面標題猜作品原名（#186）。回應 GuessSeriesResponse。 */
+  | { type: 'offscreen:guessSeries'; input: TitleSignals; fake?: FakeTranslatorConfig }
   /** side panel → SW → offscreen：「測試連線」。回應 TestConnectionResponse。 */
   | { type: 'panel:testConnection' }
   | { type: 'offscreen:testConnection' }
@@ -83,6 +85,8 @@ export type Message =
   | { type: 'panel:getSeries'; tabId: number }
   /** side panel → SW：選了一部 Series（非 Provisional 才記住網址模式）；之後的快取查詢與翻譯改用它。 */
   | { type: 'panel:selectSeries'; tabId: number; seriesId: string }
+  /** side panel → SW：作品卡的「是」（#186）：確認目前的 Series（拿掉 provisional、記住網址模式）。 */
+  | { type: 'panel:confirmSeries'; tabId: number }
   /** side panel → SW：「新增 Series…」並選它。 */
   | { type: 'panel:createSeries'; tabId: number; name: string }
   /** side panel → SW：目前的 Series 改名（Provisional 改名＝歸類，ID 不變）。 */
@@ -154,6 +158,8 @@ export type TranslateResponse = { output: TranslateOutput } | { error: string; n
 
 export type ProposeNotesResponse = { output: NotesOutput } | { error: string };
 
+export type GuessSeriesResponse = { output: SeriesGuessOutput } | { error: string };
+
 export type TestConnectionResponse = { ok: true; model: string } | { ok: false; error: string };
 
 export interface StatusResponse {
@@ -170,6 +176,10 @@ export interface SeriesResponse {
   current: string | undefined;
   /** 已排好：最近用過的在最上面。 */
   options: SeriesOption[];
+  /** 目前 Series 的 Series Notes 條目數（作品卡的「N 個條目」）。 */
+  notesCount?: number;
+  /** 為什麼歸到目前這部（#186，作品卡的「為什麼歸到這部」）；manual＝讀者在 side panel 選的。 */
+  assignment?: { by: 'urlPattern' | 'title' | 'created' | 'unnamed' | 'manual'; originalTitle?: string };
 }
 
 /** 沒啟動（沒有 Series）時 seriesId 是 undefined、列表是空的。 */

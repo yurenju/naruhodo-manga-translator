@@ -88,7 +88,7 @@ function overallStatus(pages: PageView[], mode: TranslationMode): OverallStatus 
   const models = [...new Set(infos.map((i) => i.model))].join('、');
   const latency = infos.reduce((sum, i) => sum + i.latencyMs, 0);
   const cost = infos.reduce((sum, i) => sum + i.usage.costUsd, 0);
-  const prefix = `${notesUpdated ? 'Series Notes 已更新 · ' : ''}已翻譯 ${infos.length} 頁`;
+  const prefix = `${notesUpdated ? '角色與用語已更新 · ' : ''}已翻譯 ${infos.length} 頁`;
   const text = mode === 'hosted' ? `${prefix} · ${seconds(latency)}` : `${prefix} · ${models} · ${seconds(latency)} · ${dollars(cost)}`;
   return { kind: 'summary', text };
 }

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { TitleGuess } from '../shared/series.ts';
+import type { TitleSignals } from '../shared/translator.ts';
 import { createActivation, type ActivationDeps, type TabState } from './activation.ts';
 
 const EPISODE = 'https://manga.example/episode/123';
@@ -13,6 +15,14 @@ function fakeChrome(urls: Record<number, string>) {
   /** 網址模式：網址 → Series ID。 */
   const patterns = new Map<string, string>();
   const seriesChanges: [number, string][] = [];
+  /** 每個 tab 頁面上的標題（document.title）；沒有就讀不到訊號。 */
+  const titles: Record<number, string> = {};
+  /** 每次送去猜的標題。 */
+  const guesses: string[] = [];
+  /** 設了就卡住猜測，直到呼叫 release()（模擬 Haiku 還沒回來）。 */
+  let gate: Promise<void> | undefined;
+  let release = () => {};
+  const assigned: number[] = [];
   const deps: ActivationDeps = {
     store: {
       get: async (tabId) => states.get(tabId),
@@ -27,18 +37,52 @@ function fakeChrome(urls: Record<number, string>) {
     },
     stopContentScript: async (tabId) => void calls.stopped.push(tabId),
     onStatusChanged: (tabId, active) => void statusEvents.push([tabId, active]),
-    seriesForUrl: async (url) => {
+    seriesForUrl: async (url, guess) => {
       const remembered = patterns.get(url);
-      if (remembered) return remembered;
+      if (remembered) return { seriesId: remembered, by: 'urlPattern' };
+      const guessed = await guess();
+      if (guessed) return { seriesId: `title:${guessed.原名}`, by: 'created', originalTitle: guessed.原名 };
       const id = `provisional-${createdSeries.length + 1}`;
       createdSeries.push(url);
-      return id;
+      return { seriesId: id, by: 'unnamed' };
+    },
+    seriesForGuess: async (guess) => ({ seriesId: `title:${guess.原名}`, by: 'title', originalTitle: guess.原名 }),
+    readTitleSignals: async (tabId): Promise<TitleSignals | undefined> =>
+      titles[tabId] === undefined ? undefined : { title: titles[tabId]!, ogTitle: '', headings: [] },
+    async guessSeries(signals): Promise<TitleGuess | undefined> {
+      guesses.push(signals.title);
+      await gate;
+      return signals.title ? { 原名: signals.title, 中文譯名: '' } : undefined;
     },
     rememberedSeries: async (url) => patterns.get(url),
     onSeriesChanged: (tabId, seriesId) => void seriesChanges.push([tabId, seriesId]),
+    onSeriesAssigned: (tabId) => void assigned.push(tabId),
   };
-  return { deps, calls, statusEvents, failInjectionFor, urls, createdSeries, patterns, seriesChanges };
+  return {
+    deps,
+    calls,
+    statusEvents,
+    failInjectionFor,
+    urls,
+    createdSeries,
+    patterns,
+    seriesChanges,
+    titles,
+    guesses,
+    assigned,
+    /** 之後的猜測卡住，直到呼叫回傳的函式。 */
+    holdGuesses() {
+      gate = new Promise((r) => (release = r));
+      return () => {
+        gate = undefined;
+        release();
+      };
+    },
+  };
 }
+
+/** 讓已經排好的 promise 都跑完（不等計時器）。 */
+const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe('activate', () => {
   it('啟動後 tab 為已啟動、打開 side panel、注入 content script', async () => {
@@ -293,6 +337,7 @@ describe('同分頁換作品（#145）', () => {
     await activation.activate(1);
 
     await activation.handleTabUpdated(1, { status: 'loading', url: NEXT_EPISODE });
+    await activation.handleTabUpdated(1, { status: 'complete' });
 
     expect(await activation.getSeriesId(1)).toBe('series-a');
     expect(chrome.createdSeries).toEqual([]);
@@ -332,5 +377,145 @@ describe('同分頁換作品（#145）', () => {
     await activation.handleTabUpdated(1, { status: 'loading', url: 'https://example.com/' });
 
     expect(chrome.seriesChanges).toEqual([]);
+  });
+});
+
+describe('依頁面標題自動歸類（#186）', () => {
+  const NEXT_EPISODE = 'https://manga.example/episode/124';
+
+  it('啟動時不等猜原名：先開始擷取，Series 等猜完才決定', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    const release = chrome.holdGuesses();
+    const activation = createActivation(chrome.deps);
+
+    const activating = activation.activate(1);
+    await settle();
+
+    // 已經通知啟動（SW 收到就開始擷取、OCR），猜測還沒回來
+    expect(chrome.statusEvents).toEqual([[1, true]]);
+    expect(await activation.isActive(1)).toBe(true);
+    expect(activation.isSeriesPending(1)).toBe(true);
+    const seriesId = activation.getSeriesId(1);
+    release();
+    await activating;
+
+    expect(await seriesId).toBe('title:範例作品');
+    expect(activation.isSeriesPending(1)).toBe(false);
+    // side panel 可能在猜完之前就讀過一次，決定後要叫它重讀
+    expect(chrome.assigned).toEqual([1]);
+  });
+
+  it('猜完、狀態還在寫入時來問的，也拿得到這次的 Series', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    const set = chrome.deps.store.set;
+    // 像 IndexedDB 一樣，寫入要過一會兒才完成
+    chrome.deps.store.set = (tabId, state) => new Promise((r) => setTimeout(r, 20)).then(() => set(tabId, state));
+    const release = chrome.holdGuesses();
+    const activation = createActivation(chrome.deps);
+    const activating = activation.activate(1);
+    await settle();
+
+    const seriesId = activation.getSeriesId(1);
+    release();
+
+    expect(await seriesId).toBe('title:範例作品');
+    await activating;
+  });
+
+  it('網址模式命中時不猜原名', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    chrome.patterns.set(EPISODE, 'series-a');
+    const activation = createActivation(chrome.deps);
+
+    await activation.activate(1);
+
+    expect(await activation.getSeriesId(1)).toBe('series-a');
+    expect(chrome.guesses).toEqual([]);
+  });
+
+  it('猜原名期間按停止：猜完也不算啟動', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    const release = chrome.holdGuesses();
+    const activation = createActivation(chrome.deps);
+    const activating = activation.activate(1);
+    await settle();
+
+    await activation.stop(1);
+    release();
+    await activating;
+
+    expect(await activation.isActive(1)).toBe(false);
+    expect(await activation.getSeriesId(1)).toBeUndefined();
+  });
+
+  it('同分頁換網址、標題跟上次一樣：不再猜，沿用目前的 Series', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    const activation = createActivation(chrome.deps);
+    await activation.activate(1);
+
+    await activation.handleTabUpdated(1, { status: 'loading', url: NEXT_EPISODE });
+    await activation.handleTabUpdated(1, { status: 'complete' });
+
+    expect(chrome.guesses).toEqual(['範例作品']);
+    expect(await activation.getSeriesId(1)).toBe('title:範例作品');
+  });
+
+  it('同分頁換網址、標題不同：載入完成後重猜；猜到另一部就換過去，Series 決定之前翻譯先等', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    const activation = createActivation(chrome.deps);
+    await activation.activate(1);
+
+    chrome.titles[1] = '別的作品';
+    await activation.handleTabUpdated(1, { status: 'loading', url: NEXT_EPISODE });
+    expect(activation.isSeriesPending(1)).toBe(true);
+    const seriesId = activation.getSeriesId(1);
+    await activation.handleTabUpdated(1, { status: 'complete' });
+
+    expect(await seriesId).toBe('title:別的作品');
+    expect(chrome.guesses).toEqual(['範例作品', '別的作品']);
+    // 新頁面是等 Series 決定後才擷取、翻譯的，不必忘掉重來；只通知 side panel
+    expect(chrome.seriesChanges).toEqual([]);
+    expect(chrome.assigned).toContain(1);
+  });
+
+  it('同分頁換網址、猜不出來：沿用目前的 Series', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    const activation = createActivation(chrome.deps);
+    await activation.activate(1);
+
+    chrome.titles[1] = '';
+    await activation.handleTabUpdated(1, { status: 'loading', url: NEXT_EPISODE });
+    await activation.handleTabUpdated(1, { status: 'complete' });
+
+    expect(await activation.getSeriesId(1)).toBe('title:範例作品');
+  });
+
+  it('不重新載入的換網址（SPA）：馬上重猜', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    const activation = createActivation(chrome.deps);
+    await activation.activate(1);
+
+    chrome.titles[1] = '別的作品';
+    await activation.handleTabUpdated(1, { url: NEXT_EPISODE });
+
+    expect(await activation.getSeriesId(1)).toBe('title:別的作品');
+  });
+
+  it('記下這次歸類的理由與猜到的原名（side panel 顯示「為什麼歸到這部」、讀者選別部時記原名）', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    const activation = createActivation(chrome.deps);
+
+    await activation.activate(1);
+
+    expect(await activation.getTab(1)).toMatchObject({ seriesId: 'title:範例作品', by: 'created', originalTitle: '範例作品' });
   });
 });

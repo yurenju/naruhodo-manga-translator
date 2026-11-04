@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CLAUDE_MODEL, notesRequest, parseNotesResponse, parseTranslateResponse, translateRequest } from './claude-request.ts';
-import type { NotesInput, TranslateInput } from './translator.ts';
+import { CLAUDE_MODEL, notesRequest, parseNotesResponse, parseSeriesGuessResponse, parseTranslateResponse, seriesGuessRequest, translateRequest } from './claude-request.ts';
+import type { NotesInput, TitleSignals, TranslateInput } from './translator.ts';
 
 const input: TranslateInput = {
   seriesNotes: [{ seriesId: 's1', 原文: '霧島湊', 讀音: 'きりしまみなと', 譯文: '霧島湊', 類別: '人名', locked: true }],
@@ -135,5 +135,41 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
     expect(() => parseTranslateResponse(apiResponse({ items: [] }, 'max_tokens'))).toThrow('stop_reason: max_tokens');
     expect(() => parseNotesResponse(apiResponse({ items: [] }))).toThrow('不符合 schema');
     expect(() => parseTranslateResponse(apiResponse({ items: [{ id: 'b1', reading: '', zh: '', unreadable: false }] }))).toThrow('不符合 schema');
+  });
+});
+
+describe('從頁面標題猜作品原名（#186）', () => {
+  const signals: TitleSignals = { title: '[第12話]星降る町の郵便屋 - 作者名 | 漫畫網站', ogTitle: '', headings: ['第12話', '星降る町の郵便屋'] };
+
+  it('request 只送頁面文字：標題、og:title、標題列，不送網址；回答固定是 JSON schema', () => {
+    const body = seriesGuessRequest(signals);
+
+    expect(body.model).toBe('claude-haiku-5-5');
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.output_config.format.schema).toMatchObject({ required: ['status', 'original_title', 'zh_title'] });
+    expect(JSON.parse(body.messages[0]!.content[0]!.text)).toEqual({
+      title: '[第12話]星降る町の郵便屋 - 作者名 | 漫畫網站',
+      og_title: '',
+      headings: ['第12話', '星降る町の郵便屋'],
+    });
+  });
+
+  it('指示寫明要去掉集數、話數、レーベル、作者、網站名、特典標記，保留副標題、外傳與續作名稱；首頁與列表回 unknown', () => {
+    const instructions = seriesGuessRequest(signals).system.map((b) => b.text).join('\n');
+
+    for (const word of ['集數', '話數', 'レーベル', '作者', '網站名', '特典', '副標題', '外傳', '續作', '首頁', '列表', '搜尋', '登入', '雜誌合集', 'unknown']) {
+      expect(instructions).toContain(word);
+    }
+  });
+
+  it('解析回應：原名、中文譯名與用量', () => {
+    const parsed = parseSeriesGuessResponse(apiResponse({ status: 'work', original_title: '星降る町の郵便屋', zh_title: '星落小鎮的郵差' }));
+
+    expect(parsed).toMatchObject({ status: 'work', 原名: '星降る町の郵便屋', 中文譯名: '星落小鎮的郵差', model: CLAUDE_MODEL });
+    expect(parsed.usage.outputTokens).toBe(200);
+  });
+
+  it('status 不是 work／unknown 時丟錯', () => {
+    expect(() => parseSeriesGuessResponse(apiResponse({ status: 'maybe', original_title: '', zh_title: '' }))).toThrow('schema');
   });
 });

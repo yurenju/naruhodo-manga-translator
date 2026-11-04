@@ -15,10 +15,10 @@ test.use({ viewport: null, fakeTranslator: true, fakeNotes: [[パン, 霧島湊]
 
 const statusLine = (panel: Page) => panel.getByRole('status', { name: '翻譯狀態' });
 const staleHint = (panel: Page) => panel.getByRole('group', { name: '過時提示' });
-const notesSection = (panel: Page) => panel.getByRole('region', { name: 'Series Notes' });
+const notesSection = (panel: Page) => panel.getByRole('region', { name: '角色與用語' });
 
 async function openNotes(panel: Page): Promise<void> {
-  await chooseFromPanelMenu(panel, 'Series Notes');
+  await chooseFromPanelMenu(panel, '角色與用語');
   await expect(notesSection(panel)).toBeVisible();
 }
 
@@ -93,8 +93,8 @@ test('在別頁改了某頁用到的條目，翻回那頁（快取）出現過�
 
   await page.bringToFront();
   await page.keyboard.press('ArrowRight');
-  await expect(staleHint(panel)).toContainText('Series Notes 已更新');
-  await expect(panel.getByRole('contentinfo', { name: '狀態列' })).toContainText('Series Notes 已更新');
+  await expect(staleHint(panel)).toContainText('角色與用語已更新');
+  await expect(panel.getByRole('contentinfo', { name: '狀態列' })).toContainText('角色與用語已更新');
 });
 
 test('匯出 JSON 真的下載得到檔案，在乾淨的 profile 選檔匯入後 Notes 與快取都在', async ({ context, sw, extensionId, mockSite }) => {

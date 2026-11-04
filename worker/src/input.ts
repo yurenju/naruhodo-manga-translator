@@ -3,7 +3,7 @@
  * Notes 條目裡多出來的 key）一律丟掉：Notes 條目會原樣序列化進 system prompt，不能讓 client 塞任意欄位（ADR 0006）。
  * 格式不對回 undefined（Worker 回 400）。
  */
-import type { NotesEntry, NotesInput, PriorPage, TranslatedLine, TranslateInput } from '../../src/shared/translator.ts';
+import type { NotesEntry, NotesInput, PriorPage, TitleSignals, TranslatedLine, TranslateInput } from '../../src/shared/translator.ts';
 
 type Item = TranslateInput['items'][number];
 
@@ -81,4 +81,18 @@ export function parseNotesInput(body: unknown): NotesInput | undefined {
   // 歸屬哪一頁只影響用量紀錄，不對就當作沒帶，Notes 照常整理
   const page = body.pageUsageRecordId;
   return { seriesNotes, items, ...(Number.isSafeInteger(page) ? { pageUsageRecordId: page as number } : {}) };
+}
+
+/** 頁面標題的每一段文字最長幾個字、最多幾個標題列（#186）：作品名不會比這長，超過的不是標題。 */
+const MAX_TITLE_TEXT = 500;
+const MAX_HEADINGS = 5;
+
+const titleText = (v: unknown): v is string => isString(v) && v.length <= MAX_TITLE_TEXT;
+
+/** 猜作品原名的輸入：只取 title、ogTitle、headings（client 多送的網址之類一律丟掉）。 */
+export function parseTitleSignals(body: unknown): TitleSignals | undefined {
+  if (!isObject(body) || !titleText(body.title) || !titleText(body.ogTitle)) return undefined;
+  const { headings } = body;
+  if (!Array.isArray(headings) || headings.length > MAX_HEADINGS || !headings.every(titleText)) return undefined;
+  return { title: body.title, ogTitle: body.ogTitle, headings: [...headings] };
 }

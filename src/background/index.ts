@@ -10,6 +10,7 @@ import type {
   CropResponse,
   ExecutionProvider,
   FakeTranslatorConfig,
+  GuessSeriesResponse,
   ImportResponse,
   Message,
   ModelStatus,
@@ -31,7 +32,9 @@ import { onboardingUrl, saveInstallState, saveOnboarding } from '../shared/onboa
 import { loadPendingPayment, savePendingPayment, showSubscribedNotice } from '../shared/payment-return.ts';
 import { createTrace } from '../shared/trace.ts';
 import { isTranslationModeSet, loadTranslationMode, saveTranslationMode, watchTranslationMode } from '../shared/translation-mode.ts';
-import type { NotesInput, TranslateInput, Translator } from '../shared/translator.ts';
+import type { TitleGuess } from '../shared/series.ts';
+import { readTitleSignals } from '../shared/title-signals.ts';
+import type { NotesInput, TitleSignals, TranslateInput, Translator } from '../shared/translator.ts';
 import { createActivation } from './activation.ts';
 import { BACKUP_KEYS, createBackup } from './backup.ts';
 import { indexedDbPageCache } from './cache-store.ts';
@@ -151,6 +154,16 @@ const offscreenTranslator: Translator = {
     if ('error' in response) throw new Error(response.error);
     return response.output;
   },
+  async guessSeries(input) {
+    await ensureOffscreenDocument();
+    const response = await chrome.runtime.sendMessage<Message, GuessSeriesResponse>({
+      type: 'offscreen:guessSeries',
+      input,
+      ...(__E2E__ && fakeTranslator ? { fake: fakeTranslator } : {}),
+    });
+    if ('error' in response) throw new Error(response.error);
+    return response.output;
+  },
 };
 
 /**
@@ -198,6 +211,39 @@ async function getTranslator(): Promise<Translator | undefined> {
   return (await apiKeys.has()) ? offscreenTranslator : undefined;
 }
 
+/** 猜作品原名最多等這麼久（#186）：Haiku 平均約 1.3 秒；翻譯呼叫會等它，等不到就當作猜不出來。 */
+const SERIES_GUESS_TIMEOUT_MS = 5000;
+
+/**
+ * 從頁面標題猜作品原名（#186、ADR 0010）：跟翻譯一樣要同意、要能翻（getTranslator），不然不送。
+ * 猜不出來（unknown）、失敗或逾時都是 undefined（歸到未命名的 Provisional Series，或沿用目前的）。
+ */
+async function guessSeries(signals: TitleSignals): Promise<TitleGuess | undefined> {
+  const translator = await getTranslator();
+  if (!translator) return undefined;
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(undefined);
+    }, SERIES_GUESS_TIMEOUT_MS);
+  });
+  try {
+    const output = await Promise.race([translator.guessSeries(signals, controller.signal), timeout]);
+    // 頁面標題（真實網站的作品名）不進 trace，只記結果的形狀
+    trace('seriesGuess', { ms: Date.now() - startedAt, status: output?.status ?? 'timeout', costUsd: output?.usage.costUsd });
+    const 原名 = output?.status === 'work' ? output.原名.trim() : '';
+    return 原名 ? { 原名, 中文譯名: output!.中文譯名.trim() } : undefined;
+  } catch (e) {
+    trace('seriesGuess', { ms: Date.now() - startedAt, error: e });
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** 目前會用來翻譯的模型與 prompt 版本（過時提示比對用）；沒有 key 時不比。 */
 async function translatorVersion(): Promise<TranslatorVersion | undefined> {
   if (!(await getTranslator())) return undefined;
@@ -221,6 +267,7 @@ const transcriber = createTranscriber({
   getTranslator,
   translatorVersion,
   getSeriesId: (tabId) => activation.getSeriesId(tabId),
+  isSeriesPending: (tabId) => activation.isSeriesPending(tabId),
   getSeries: (seriesId) => seriesRepo.getSeries(seriesId),
   cache: indexedDbPageCache(),
   notes: {
@@ -341,19 +388,32 @@ async function changeNotes(tabId: number, action: string, detail: Record<string,
 const seriesCatalog = createSeriesCatalog({ repo: seriesRepo, now: () => new Date(), newId: () => crypto.randomUUID() });
 
 async function seriesResponse(tabId: number): Promise<SeriesResponse> {
-  const [current, options] = await Promise.all([activation.getSeriesId(tabId), seriesCatalog.menu()]);
-  return { current, options };
+  // 先等這個 tab 的 Series 決定（可能正在猜、剛新建），再讀清單，清單裡才一定有它
+  const tab = await activation.getTab(tabId);
+  const options = await seriesCatalog.menu();
+  if (!tab) return { current: undefined, options };
+  const notes = await notesStore.list(tab.seriesId);
+  return {
+    current: tab.seriesId,
+    options,
+    notesCount: notes.length,
+    ...(tab.by ? { assignment: { by: tab.by, ...(tab.originalTitle ? { originalTitle: tab.originalTitle } : {}) } } : {}),
+  };
 }
 
-/** 這個 tab 的 Series 操作（#36）共用的部分：算出新的 Series ID、記下來、通知 panel。回傳新的 ID；沒變（或沒啟動）是 undefined。 */
+/**
+ * 這個 tab 的 Series 操作（#36）共用的部分：算出新的 Series ID、記下來、通知 panel。回傳新的 ID；沒變（或沒啟動）是 undefined。
+ * change 拿到這次猜到的原名（#186）：選別部、新增、合併時記到目標上。
+ */
 async function applySeriesChange(
   tabId: number,
   action: string,
-  change: (url: string, current: string) => Promise<string>,
+  change: (url: string, current: string, originalTitle: string | undefined) => Promise<string>,
 ): Promise<string | undefined> {
-  const [url, current] = await Promise.all([chrome.tabs.get(tabId).then((t) => t.url), activation.getSeriesId(tabId)]);
-  if (url === undefined || current === undefined) return undefined;
-  const next = await change(url, current);
+  const [url, tab] = await Promise.all([chrome.tabs.get(tabId).then((t) => t.url), activation.getTab(tabId)]);
+  if (url === undefined || tab === undefined) return undefined;
+  const current = tab.seriesId;
+  const next = await change(url, current, tab.originalTitle);
   // 記住了哪個網址模式記在 series:remember，合併搬了什麼記在 series:merge
   trace(action, { tabId, from: current, seriesId: next });
   await activation.setSeriesId(tabId, next);
@@ -365,7 +425,7 @@ async function applySeriesChange(
  * 選一部（或新增）Series：換成另一個 ID 就重新擷取，快取查詢與翻譯改用新的 ID。
  * #34 的 transcriber 以 pageHash 記住看過的 Page；不先忘掉的話重新擷取會沿用舊 ID 的結果。
  */
-async function switchSeries(tabId: number, action: string, choose: (url: string) => Promise<string>): Promise<void> {
+async function switchSeries(tabId: number, action: string, choose: (url: string, current: string, originalTitle: string | undefined) => Promise<string>): Promise<void> {
   if ((await applySeriesChange(tabId, action, choose)) === undefined) return;
   transcriber.resetPages(tabId);
   scan(tabId);
@@ -379,7 +439,14 @@ async function updateSeries(tabId: number, action: string, change: (url: string,
 
 const activation = createActivation({
   store,
-  seriesForUrl: (url) => seriesCatalog.seriesForUrl(url),
+  seriesForUrl: (url, guess) => seriesCatalog.seriesForUrl(url, guess),
+  seriesForGuess: (guess) => seriesCatalog.seriesForGuess(guess),
+  async readTitleSignals(tabId) {
+    const [result] = await chrome.scripting.executeScript({ target: { tabId }, func: readTitleSignals });
+    return result?.result as TitleSignals | undefined;
+  },
+  guessSeries,
+  onSeriesAssigned: (tabId) => notifyPanel({ type: 'series:changed', tabId }),
   rememberedSeries: (url) => seriesCatalog.rememberedSeries(url),
   onSeriesChanged(tabId) {
     // 跟 side panel 切換 Series 一樣：忘掉畫面上的 Page 重新擷取；Prior Pages 在 Series 換了時自己清空
@@ -624,12 +691,20 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
       return true;
     case 'panel:selectSeries': {
       const { seriesId } = message;
-      switchSeries(message.tabId, 'panel:selectSeries', (url) => seriesCatalog.select(seriesId, url).then(() => seriesId)).then(() => sendResponse());
+      switchSeries(message.tabId, 'panel:selectSeries', (url, _current, originalTitle) => seriesCatalog.select(seriesId, url, originalTitle).then(() => seriesId)).then(
+        () => sendResponse(),
+      );
       return true;
     }
+    case 'panel:confirmSeries':
+      // 「是」（#186）：Series 不變，只是確認；不重新擷取
+      updateSeries(message.tabId, 'panel:confirmSeries', (url, current) => seriesCatalog.confirm(current, url).then(() => current)).then(() => sendResponse());
+      return true;
     case 'panel:createSeries': {
       const { name } = message;
-      switchSeries(message.tabId, 'panel:createSeries', async (url) => (await seriesCatalog.create(name, url)).id).then(() => sendResponse());
+      switchSeries(message.tabId, 'panel:createSeries', async (url, _current, originalTitle) => (await seriesCatalog.create(name, url, originalTitle)).id).then(() =>
+        sendResponse(),
+      );
       return true;
     }
     case 'panel:renameSeries': {

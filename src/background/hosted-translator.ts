@@ -8,8 +8,8 @@
  * 402 是額度用完：丟出 QuotaExhaustedError，pipeline 把這頁當成沒翻譯（顯示原文與讀音），不當成失敗。
  * 翻譯成功（扣了一頁）與額度用完都呼叫 onQuotaChanged，side panel 重新讀剩餘頁數。
  */
-import { bearerHeader, NOTES_PATH, readHostedError, TRANSLATE_PATH, type HostedErrorReason } from '../shared/hosted-api.ts';
-import type { NotesInput, NotesOutput, TranslateInput, TranslateOutput, Translator } from '../shared/translator.ts';
+import { bearerHeader, NOTES_PATH, readHostedError, SERIES_GUESS_PATH, TRANSLATE_PATH, type HostedErrorReason } from '../shared/hosted-api.ts';
+import type { NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, TranslateInput, TranslateOutput, Translator } from '../shared/translator.ts';
 
 const MAX_RETRIES = 3;
 
@@ -76,5 +76,7 @@ export function createHostedTranslator(deps: HostedDeps): Translator {
   return {
     translatePage,
     proposeNotes: (input: NotesInput, signal?: AbortSignal) => call<NotesOutput>(NOTES_PATH, input, signal),
+    // 不扣頁，所以不通知額度變了
+    guessSeries: (input: TitleSignals, signal?: AbortSignal) => call<SeriesGuessOutput>(SERIES_GUESS_PATH, input, signal),
   };
 }

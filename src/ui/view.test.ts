@@ -115,10 +115,10 @@ describe('底部的整體狀態列', () => {
     });
   });
 
-  it('有一頁的 Series Notes 過時：開頭加「Series Notes 已更新」', () => {
+  it('有一頁的 Series Notes 過時：開頭加「角色與用語已更新」（UI 名稱，#186）', () => {
     expect(overall([{ ...translated({ latencyMs: 1000, costUsd: 0.001 }), stale: 'notes' }])).toEqual({
       kind: 'summary',
-      text: 'Series Notes 已更新 · 已翻譯 1 頁 · claude-x · 1.0 秒 · $0.00100',
+      text: '角色與用語已更新 · 已翻譯 1 頁 · claude-x · 1.0 秒 · $0.00100',
     });
   });
 

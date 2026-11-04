@@ -62,7 +62,7 @@ interface TranscriptSync {
 }
 
 const STALE_TEXT: Record<StaleReason, string> = {
-  notes: 'Series Notes 已更新，這頁是用舊筆記翻的',
+  notes: '角色與用語已更新，這頁是更新前翻的',
   version: '翻譯模型或 prompt 已更新，這頁是用舊版翻的',
 };
 
@@ -353,7 +353,7 @@ function PanelMenu({
               {autoTranslate && <div class="panel-menu__switch">{autoTranslate}</div>}
               {/* 翻頁會自動偵測（#34）；這項給偵測漏掉時手動補一次。 */}
               <MenuItem label="重新擷取頁面" description="翻頁沒被偵測到時用" onClick={choose(onScan)} />
-              {sections.notes && <MenuItem label="Series Notes" onClick={choose(() => onOpen('notes'))} />}
+              {sections.notes && <MenuItem label="角色與用語" onClick={choose(() => onOpen('notes'))} />}
             </>
           )}
           {sections.settings && <MenuItem label="設定" onClick={choose(() => onOpen('settings'))} />}
@@ -410,7 +410,7 @@ export interface SidePanelProps {
   /** 以下是只有外掛 container 才有的區塊（會讀寫 store、送 chrome 訊息）；沒給就不顯示，⚙ 選單也沒有那一項。 */
   /** ⚙ 選單裡的自動翻譯開關。 */
   autoTranslate?: ComponentChildren;
-  /** 底部列的系列。 */
+  /** Transcript 上方的作品卡（#186）。 */
   series?: ComponentChildren;
   /** 「設定」頁的內容（標題列由 SidePanel 畫）；openDeleteAccount 換到「刪除帳號」那一頁。 */
   renderSettings?: (close: () => void, openDeleteAccount: () => void) => ComponentChildren;
@@ -436,7 +436,7 @@ function FinishSetup({ logoSrc, onFinishSetup }: { logoSrc: string; onFinishSetu
   );
 }
 
-const PAGE_TITLES: Record<PanelPage, string> = { settings: '設定', notes: 'Series Notes', deleteAccount: '刪除帳號' };
+const PAGE_TITLES: Record<PanelPage, string> = { settings: '設定', notes: '角色與用語', deleteAccount: '刪除帳號' };
 
 /** ⚙ 選單打得開的頁。 */
 type MenuPage = Exclude<PanelPage, 'deleteAccount'>;
@@ -553,6 +553,7 @@ export function SidePanel(props: SidePanelProps) {
         {quota.exhausted && <QuotaExhaustedCallout exhausted={quota.exhausted} onSubscribe={props.onSubscribe} onUseOwnKey={useOwnKey} />}
         {props.paymentFailed && <PaymentUnavailable />}
         {subscribedNotice}
+        {props.series}
         {done.length > 0 && <DisplaySwitch display={display} onLevel={setLevel} onFurigana={setFurigana} />}
         <ul aria-label="Page">
           {view.pages.map((entry) => (
@@ -567,9 +568,8 @@ export function SidePanel(props: SidePanelProps) {
           ))}
         </ul>
       </main>
-      {/* 底部固定列；放在 main 外面才是 contentinfo landmark。系列一行、內建翻譯的剩餘頁數一行、整體翻譯狀態＋按鈕一行（#77、#92） */}
+      {/* 底部固定列；放在 main 外面才是 contentinfo landmark。內建翻譯的剩餘頁數一行、整體翻譯狀態＋按鈕一行（#77、#92）；作品在 Transcript 上方的作品卡（#186） */}
       <footer aria-label="狀態列">
-        {props.series}
         {quota.line && <QuotaLine line={quota.line} onSubscribe={props.onSubscribe} />}
         <div class="status-row">
           <StatusText status={view.status} />

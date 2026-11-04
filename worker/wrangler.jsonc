@@ -28,7 +28,8 @@
     { "name": "SEND_CODE_BY_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
     { "name": "SEND_CODE_BY_EMAIL", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } },
     { "name": "VERIFY_CODE_BY_IP", "namespace_id": "1003", "simple": { "limit": 30, "period": 60 } },
-    { "name": "VERIFY_CODE_BY_EMAIL", "namespace_id": "1004", "simple": { "limit": 20, "period": 60 } }
+    { "name": "VERIFY_CODE_BY_EMAIL", "namespace_id": "1004", "simple": { "limit": 20, "period": 60 } },
+    { "name": "SERIES_GUESS_BY_ACCOUNT", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } }
   ],
   "vars": {
     "MONTHLY_PAGE_LIMIT": "800",
@@ -53,7 +54,8 @@
         { "name": "SEND_CODE_BY_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
         { "name": "SEND_CODE_BY_EMAIL", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } },
         { "name": "VERIFY_CODE_BY_IP", "namespace_id": "1003", "simple": { "limit": 30, "period": 60 } },
-        { "name": "VERIFY_CODE_BY_EMAIL", "namespace_id": "1004", "simple": { "limit": 20, "period": 60 } }
+        { "name": "VERIFY_CODE_BY_EMAIL", "namespace_id": "1004", "simple": { "limit": 20, "period": 60 } },
+        { "name": "SERIES_GUESS_BY_ACCOUNT", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } }
       ],
       "define": { "__FAKE_ANTHROPIC__": "false", "__FAKE_PADDLE__": "false" }
     },
@@ -70,7 +72,8 @@
         { "name": "SEND_CODE_BY_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
         { "name": "SEND_CODE_BY_EMAIL", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } },
         { "name": "VERIFY_CODE_BY_IP", "namespace_id": "1003", "simple": { "limit": 30, "period": 60 } },
-        { "name": "VERIFY_CODE_BY_EMAIL", "namespace_id": "1004", "simple": { "limit": 20, "period": 60 } }
+        { "name": "VERIFY_CODE_BY_EMAIL", "namespace_id": "1004", "simple": { "limit": 20, "period": 60 } },
+        { "name": "SERIES_GUESS_BY_ACCOUNT", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } }
       ],
       "define": { "__FAKE_ANTHROPIC__": "true", "__FAKE_PADDLE__": "true" }
     }
