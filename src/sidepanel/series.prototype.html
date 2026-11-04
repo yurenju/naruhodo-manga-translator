@@ -1,0 +1,288 @@
+<!doctype html>
+<!--
+  PROTOTYPE（#186 自動歸類 Series，用完即丟，不合回 main）。
+  問題：自動歸類之後，side panel 要怎麼顯示「這次歸到哪部作品」（原名＋猜的中文譯名），讀者又怎麼改。
+  三個結構不同的版本：?variant=A|B|C（或底部切換列、← → 鍵）；?state= 選歸類結果。
+  直接用瀏覽器打開即可，不需要建置、沒有網路請求。作品名稱全部是虛構的。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Series 歸類 — prototype</title>
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="../ui/components.css">
+<link rel="stylesheet" href="../ui/side-panel.css">
+<style>
+  /* prototype 外框：深色，跟被評估的設計分開 */
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--naru-font-sans); background: #3b3a37; color: #eee; }
+  .pt-states { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 16px; background: #1d1c1a; font-size: 12px; }
+  .pt-states span { color: #aaa; align-self: center; margin-right: 4px; }
+  .pt-states button { border: 1px solid #555; background: #2a2926; color: #ddd; border-radius: 999px; padding: 3px 10px; font: inherit; cursor: pointer; }
+  .pt-states button[aria-pressed='true'] { background: #f2c94c; color: #1d1c1a; border-color: #f2c94c; font-weight: 700; }
+  .pt-note { padding: 6px 16px; font-size: 12px; color: #f2c94c; background: #2a2926; }
+  .pt-dump { padding: 6px 16px; font-family: var(--naru-font-mono); font-size: 11px; color: #9c9; background: #222; white-space: pre-wrap; }
+  .pt-stage { display: flex; justify-content: center; padding: 20px 16px 96px; }
+  .pt-sidepanel { width: 380px; height: 640px; display: flex; flex-direction: column; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  .pt-sidepanel__chrome { flex: none; display: flex; align-items: center; height: 34px; padding: 0 10px; background: #dfe3ea; color: #333; font-size: 13px; }
+  .pt-sidepanel__body { flex: 1 1 auto; overflow: auto; position: relative; display: flex; flex-direction: column; }
+  .pt-sidepanel__body > .naru-side-panel { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .pt-sidepanel__body > .naru-side-panel > main { flex: 1 1 auto; }
+  .pt-switcher { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 4px; padding: 6px; background: #111; color: #fff; border-radius: 999px; box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 14px; }
+  .pt-switcher button { width: 36px; height: 36px; border: 0; border-radius: 999px; background: #333; color: #fff; font-size: 18px; cursor: pointer; }
+  .pt-switcher span { min-width: 260px; text-align: center; font-weight: 700; }
+
+  /* ===== 被評估的設計（只用 tokens） ===== */
+  .fake-line { padding: var(--naru-space-2) 0; border-bottom: 1px solid var(--naru-line); }
+  .fake-line .ja { font-family: var(--naru-font-ja); color: var(--naru-ink-2); font-size: var(--naru-text-caption); }
+  .tag { display: inline-block; padding: 0 6px; border-radius: 999px; font-size: var(--naru-text-small); background: var(--naru-surface-2); color: var(--naru-ink-3); border: 1px solid var(--naru-line); white-space: nowrap; }
+  .tag--auto { color: var(--naru-accent); border-color: var(--naru-accent); background: transparent; }
+  .ja-sub { font-family: var(--naru-font-ja); font-size: var(--naru-text-small); color: var(--naru-ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .linkish { border: 0; background: none; padding: 0; color: var(--naru-accent); font: inherit; cursor: pointer; text-decoration: underline; }
+  .toast { margin: var(--naru-space-1) 0; padding: var(--naru-space-1) var(--naru-space-2); border-radius: var(--naru-radius-md); background: var(--naru-surface-2); color: var(--naru-ink-2); font-size: var(--naru-text-caption); }
+
+  /* 作品清單（三個版本共用的列表項目長相不同，各自定義） */
+  .s-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .s-item { display: flex; align-items: center; gap: var(--naru-space-2); width: 100%; padding: var(--naru-space-2); border: 1px solid transparent; border-radius: var(--naru-radius-md); background: none; text-align: left; font: inherit; color: var(--naru-ink); cursor: pointer; }
+  .s-item:hover { background: var(--naru-surface-2); }
+  .s-item[aria-current='true'] { border-color: var(--naru-accent); }
+  .s-item__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .s-item__zh { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .s-item__meta { flex: none; font-size: var(--naru-text-small); color: var(--naru-ink-3); text-align: right; }
+
+  /* A：底部列兩行 */
+  .a-row { display: flex; align-items: center; gap: var(--naru-space-2); min-width: 0; }
+  .a-row__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+  .a-row__zh { font-size: var(--naru-text-label); font-weight: 500; color: var(--naru-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .a-editor { display: flex; flex-direction: column; gap: var(--naru-space-2); max-height: 300px; overflow: auto; padding: var(--naru-space-2) 0; }
+
+  /* B：頂部作品卡 */
+  .b-card { display: flex; flex-direction: column; gap: 2px; padding: var(--naru-space-2) var(--naru-space-3); margin: 0 0 var(--naru-space-2); border-radius: var(--naru-radius-md); background: var(--naru-surface-2); }
+  .b-card__zh { font-size: var(--naru-text-body); font-weight: 700; color: var(--naru-ink); }
+  .b-card__top { display: flex; align-items: flex-start; gap: var(--naru-space-2); }
+  .b-card__names { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .b-card__info { font-size: var(--naru-text-small); color: var(--naru-ink-3); }
+  .b-ask { display: flex; align-items: center; gap: var(--naru-space-2); margin-top: var(--naru-space-2); padding-top: var(--naru-space-2); border-top: 1px solid var(--naru-line); }
+  .b-ask__q { flex: 1 1 auto; min-width: 0; font-size: var(--naru-text-caption); color: var(--naru-ink); font-weight: 500; }
+  .b-sheet { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; background: rgba(0,0,0,.25); }
+  .b-sheet__panel { margin-top: auto; max-height: 85%; overflow: auto; padding: var(--naru-space-3); background: var(--naru-surface); border-radius: 12px 12px 0 0; display: flex; flex-direction: column; gap: var(--naru-space-2); }
+  .b-sheet__panel h2 { margin: 0; font-size: var(--naru-text-body); }
+
+  /* C：作品頁 */
+  .c-back { margin: var(--naru-space-3) 0 var(--naru-space-2); }
+  .c-current { padding: var(--naru-space-2); border-radius: var(--naru-radius-md); border: 1px solid var(--naru-line); margin-bottom: var(--naru-space-3); }
+  .c-current h2, .c-section h2 { margin: 0 0 var(--naru-space-1); font-size: var(--naru-text-caption); color: var(--naru-ink-3); font-weight: 500; }
+  .c-why { font-size: var(--naru-text-small); color: var(--naru-ink-3); margin-top: var(--naru-space-1); }
+  .menu-pop { position: absolute; right: var(--naru-space-3); top: 48px; z-index: 10; width: 220px; padding: 6px; background: var(--naru-surface); border: 1px solid var(--naru-line); border-radius: var(--naru-radius-md); box-shadow: 0 6px 18px rgba(0,0,0,.15); display: flex; flex-direction: column; gap: 2px; }
+  .menu-pop button { text-align: left; padding: 6px 8px; border: 0; border-radius: 6px; background: none; font: inherit; color: var(--naru-ink); cursor: pointer; }
+  .menu-pop button:hover { background: var(--naru-surface-2); }
+</style>
+</head>
+<body>
+<div class="pt-states" id="states"></div>
+<div class="pt-note" id="note"></div>
+<div class="pt-stage">
+  <div class="pt-sidepanel">
+    <div class="pt-sidepanel__chrome">Naruhodo</div>
+    <div class="pt-sidepanel__body" id="panel"></div>
+  </div>
+</div>
+<div class="pt-dump" id="dump"></div>
+<div class="pt-switcher" role="group" aria-label="切換版本">
+  <button type="button" id="prev" aria-label="上一個版本">←</button>
+  <span id="variant-label"></span>
+  <button type="button" id="next" aria-label="下一個版本">→</button>
+</div>
+
+<script>
+// ========================= 假資料（全部虛構） =========================
+const SERIES = [
+  { id: 's1', ja: '星降る町の郵便屋', zh: '星落小鎮的郵差', provisional: false, notes: 23, lastUsed: '昨天' },
+  { id: 's2', ja: '鉄の庭', zh: '鐵之庭', provisional: true, notes: 9, lastUsed: '3 天前' },
+  { id: 's3', ja: '星降る町の郵便屋～冬の章～', zh: '星落小鎮的郵差～冬之章～', provisional: true, notes: 4, lastUsed: '上週' },
+  { id: 's4', ja: null, zh: null, unnamed: '未命名・reader.example・10/28', provisional: true, notes: 2, lastUsed: '10/28' },
+];
+// 每個 state＝這次啟動自動歸類的結果
+const STATES = {
+  matched: { label: '命中既有（讀者確認過）', current: 's1', why: '頁面標題猜到原名「星降る町の郵便屋」，跟這部作品相同' },
+  matchedAuto: { label: '命中既有（也是自動建的）', current: 's2', why: '頁面標題猜到原名「鉄の庭」，跟上次自動建的作品相同' },
+  created: { label: '新作品（猜到原名）', current: 'new', why: '頁面標題猜到原名「海辺のアトリエ」，還沒有這部作品，所以新建一部' },
+  unknown: { label: '猜不出來', current: 'new-unnamed', why: '頁面上看不出作品名稱，所以新建一部未命名作品' },
+};
+const NEW = {
+  new: { id: 'new', ja: '海辺のアトリエ', zh: '海邊的畫室', provisional: true, notes: 0, lastUsed: '現在' },
+  'new-unnamed': { id: 'new-unnamed', ja: null, zh: null, unnamed: '未命名・reader.example・11/4', provisional: true, notes: 0, lastUsed: '現在' },
+};
+const VARIANTS = { A: '底部列兩行', B: '頂部作品卡', C: '藏在作品頁' };
+
+const params = new URLSearchParams(location.search);
+const S = { variant: params.get('variant') ?? 'A', state: params.get('state') ?? 'matched', open: false, page: 'main', menu: false, toast: '', override: null };
+
+function all() { const extra = NEW[STATES[S.state].current]; return extra ? [extra, ...SERIES] : SERIES; }
+function current() { return all().find((s) => s.id === (S.override ?? STATES[S.state].current)); }
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const zhOf = (s) => s.zh ?? s.unnamed;
+const autoTag = (s) => (s.provisional ? '<span class="tag tag--auto">自動</span>' : '');
+const jaSub = (s) => (s.ja ? `<span class="ja-sub" lang="ja">${esc(s.ja)}</span>` : '');
+
+function choose(id) {
+  const from = current();
+  S.override = id; S.open = false; S.page = 'main';
+  const to = current();
+  S.toast = from.ja ? `已改到「${zhOf(to)}」。之後猜到「${from.ja}」也會歸到這裡。` : `已改到「${zhOf(to)}」。`;
+  render();
+}
+
+// ========================= 共用片段 =========================
+const header = (extra = '') => `
+  <div class="panel-header">
+    <h1 class="title"><img src="../icons/naruhodo.svg" width="20" height="20" alt="">Naruhodo</h1>
+    <span class="naru-badge">已啟動</span>
+    <span class="panel-header__spacer"></span>
+    <button class="naru-btn naru-btn--ghost">停止</button>
+    <button class="naru-btn naru-btn--icon" aria-label="設定" data-act="menu">⚙</button>
+  </div>${extra}`;
+const transcript = `
+  <ul aria-label="Page" style="list-style:none;padding:0;margin:0">
+    ${['郵便です！', 'また手紙？', 'ドン'].map((ja, i) => `<li class="fake-line"><div>${['送信來了！', '又是信？', '咚'][i]}</div><div class="ja" lang="ja">${ja}</div></li>`).join('')}
+  </ul>`;
+const status = `<div class="status-row"><span>已翻譯 3 頁</span><button class="naru-btn naru-btn--secondary">重新翻譯</button></div>`;
+const toast = () => (S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : '');
+function list(itemExtra) {
+  const cur = current();
+  return `<ul class="s-list">${all().map((s) => `
+    <li><button class="s-item" data-pick="${s.id}" aria-current="${s.id === cur.id}">
+      <span class="s-item__text"><span class="s-item__zh">${esc(zhOf(s))}</span>${jaSub(s)}</span>
+      <span class="s-item__meta">${autoTag(s)}<br>${itemExtra(s)}</span>
+    </button></li>`).join('')}</ul>`;
+}
+
+// ========================= A：底部列兩行（現況延伸） =========================
+function variantA() {
+  const s = current();
+  return `<div class="naru-side-panel">
+    <main>${header()}${transcript}</main>
+    <footer aria-label="狀態列">
+      ${toast()}
+      <div class="a-row" role="group" aria-label="系列">
+        <span class="series-row__label">作品</span>
+        <span class="a-row__text"><span class="a-row__zh" title="${esc(zhOf(s))}">${esc(zhOf(s))}</span>${jaSub(s)}</span>
+        ${autoTag(s)}
+        <button class="naru-btn naru-btn--icon" aria-label="改作品" aria-expanded="${S.open}" data-act="toggle">✎</button>
+      </div>
+      ${S.open ? `<section class="a-editor" aria-label="改作品">
+        <div style="color:var(--naru-ink-3)">${esc(STATES[S.state].why)}</div>
+        ${list((x) => `${x.notes} 個條目`)}
+        <div class="naru-row" style="display:flex;gap:6px"><button class="naru-btn naru-btn--ghost">改名…</button><button class="naru-btn naru-btn--ghost">新增作品…</button></div>
+      </section>` : ''}
+      ${status}
+    </footer>
+  </div>`;
+}
+
+// ========================= B：頂部作品卡 =========================
+function variantB() {
+  const s = current();
+  // 資訊＝純文字（灰、無外框）；按鈕＝naru-btn。自動歸類的才有問句列。
+  const info = [s.provisional ? '自動判斷' : '已確認', `${s.notes} 個條目`].join(' · ');
+  const ask = s.provisional
+    ? `<div class="b-ask">
+        <span class="b-ask__q">${s.ja ? '這是正確的作品嗎？' : '看不出是哪部作品'}</span>
+        <button class="naru-btn naru-btn--primary" data-act="confirm">${s.ja ? '是' : '取名字'}</button>
+        <button class="naru-btn naru-btn--secondary" data-act="toggle">${s.ja ? '換一部' : '選一部'}</button>
+      </div>`
+    : '';
+  const card = `<section class="b-card" aria-label="作品">
+      <div class="b-card__top">
+        <div class="b-card__names"><span class="b-card__zh">${esc(zhOf(s))}</span>${jaSub(s)}</div>
+        ${s.provisional ? '' : '<button class="naru-btn naru-btn--ghost" data-act="toggle">更改</button>'}
+      </div>
+      <span class="b-card__info">${info}</span>
+      ${ask}
+    </section>`;
+  const sheet = S.open ? `<div class="b-sheet" data-act="close"><div class="b-sheet__panel" data-stop>
+      <h2>這頁是哪部作品？</h2>
+      <div style="font-size:var(--naru-text-caption);color:var(--naru-ink-3)">${esc(STATES[S.state].why)}</div>
+      <input placeholder="搜尋作品…" style="width:100%">
+      ${list((x) => x.lastUsed)}
+      <button class="naru-btn naru-btn--ghost">＋ 新增作品…</button>
+    </div></div>` : '';
+  return `<div class="naru-side-panel" style="position:relative">
+    <main>${header()}${card}${toast()}${transcript}</main>
+    <footer aria-label="狀態列">${status}</footer>
+    ${sheet}
+  </div>`;
+}
+
+// ========================= C：藏在作品頁（主畫面完全不顯示） =========================
+function variantC() {
+  const s = current();
+  if (S.page === 'series') {
+    return `<div class="naru-side-panel">
+      <main>
+        <button class="naru-btn naru-btn--ghost c-back" data-act="back">← 返回</button>
+        <section class="c-current">
+          <h2>這個分頁正在用</h2>
+          <div class="s-item__zh" style="font-size:var(--naru-text-body)">${esc(zhOf(s))} ${autoTag(s)}</div>${jaSub(s)}
+          <div class="c-why">${esc(STATES[S.state].why)}</div>
+          <div style="display:flex;gap:6px;margin-top:6px"><button class="naru-btn naru-btn--ghost">改名…</button><button class="naru-btn naru-btn--ghost">作品筆記</button></div>
+        </section>
+        <section class="c-section"><h2>改成別的作品</h2>${list((x) => `${x.notes} 個條目 · ${x.lastUsed}`)}
+          <button class="naru-btn naru-btn--ghost" style="margin-top:6px">＋ 新增作品…</button></section>
+      </main>
+    </div>`;
+  }
+  const menu = S.menu ? `<div class="menu-pop" role="group" aria-label="設定選單">
+      <button data-act="series">作品：${esc(zhOf(s))}</button>
+      <button>作品筆記</button><button>設定</button></div>` : '';
+  return `<div class="naru-side-panel" style="position:relative">
+    <main>${header()}${toast()}${transcript}</main>
+    <footer aria-label="狀態列">${status}</footer>
+    ${menu}
+  </div>`;
+}
+
+// ========================= 外框 =========================
+function render() {
+  document.getElementById('states').innerHTML = '<span>歸類結果：</span>' + Object.entries(STATES).map(([k, v]) => `<button data-state="${k}" aria-pressed="${k === S.state}">${v.label}</button>`).join('');
+  document.getElementById('note').textContent = {
+    A: 'A：沿用現在的底部列，作品一行變兩行（中文譯名＋原名），✎ 展開清單直接點別的作品。',
+    B: 'B：作品放在頂部、Transcript 上面當成「正在讀什麼」；「不是這部？」從下方拉出清單（可搜尋）。',
+    C: 'C：主畫面完全不提作品，最不打擾；要看、要改都從 ⚙ 選單進作品頁。',
+  }[S.variant];
+  document.getElementById('panel').innerHTML = { A: variantA, B: variantB, C: variantC }[S.variant]();
+  document.getElementById('variant-label').textContent = `${S.variant}（${VARIANTS[S.variant]}）`;
+  const c = current();
+  document.getElementById('dump').textContent = JSON.stringify({ variant: S.variant, state: S.state, tabSeries: c.id, 原名: c.ja, 譯名: c.zh, provisional: c.provisional }, null, 0);
+  const url = new URL(location.href); url.searchParams.set('variant', S.variant); url.searchParams.set('state', S.state); history.replaceState(null, '', url);
+}
+function cycle(d) { const keys = Object.keys(VARIANTS); S.variant = keys[(keys.indexOf(S.variant) + d + keys.length) % keys.length]; S.open = S.menu = false; S.page = 'main'; render(); }
+document.getElementById('prev').onclick = () => cycle(-1);
+document.getElementById('next').onclick = () => cycle(1);
+addEventListener('keydown', (e) => { if (e.target.closest('input,textarea,[contenteditable]')) return; if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1); });
+document.addEventListener('click', (e) => {
+  const st = e.target.closest('[data-state]');
+  if (st) { S.state = st.dataset.state; S.override = null; S.toast = ''; S.open = S.menu = false; S.page = 'main'; return render(); }
+  const pick = e.target.closest('[data-pick]');
+  if (pick) return choose(pick.dataset.pick);
+  if (e.target.closest('[data-stop]') && !e.target.closest('[data-act]')) return;
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'toggle') S.open = !S.open;
+  else if (act === 'close') S.open = false;
+  else if (act === 'confirm') {
+    const s = current();
+    if (!s.ja) { const name = prompt('這部作品叫什麼？'); if (!name) return; s.zh = name; }
+    s.provisional = false;
+    S.toast = `已確認是「${zhOf(s)}」。`;
+  }
+  else if (act === 'menu') S.menu = !S.menu;
+  else if (act === 'series') { S.page = 'series'; S.menu = false; }
+  else if (act === 'back') S.page = 'main';
+  else return;
+  render();
+});
+render();
+</script>
+</body>
+</html>
