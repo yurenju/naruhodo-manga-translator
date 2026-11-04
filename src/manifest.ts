@@ -17,7 +17,9 @@ const icons = Object.fromEntries(ICON_SIZES.map((size) => [String(size), `icons/
 export function buildManifest({ e2e, debug = false }: { e2e: boolean; debug?: boolean }): chrome.runtime.ManifestV3 {
   return {
     manifest_version: 3,
-    name: e2e ? 'Naruhodo (e2e)' : debug ? 'Naruhodo (debug)' : 'Naruhodo',
+    // 名稱帶上用途，在 Web Store 搜尋結果裡跟同名的外掛分得開；空間小的地方用 short_name
+    name: e2e ? 'Naruhodo (e2e)' : debug ? 'Naruhodo (debug)' : 'Naruhodo 日文漫畫翻譯',
+    short_name: 'Naruhodo',
     version: pkg.version,
     // 也是 Web Store 的摘要（最多 132 字），見 docs/webstore/listing.md
     description: '把畫面上的日文漫畫原地翻成繁體中文，並列出原文、讀音與譯文，邊看邊學日文',

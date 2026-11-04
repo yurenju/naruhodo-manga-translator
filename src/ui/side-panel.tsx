@@ -270,7 +270,7 @@ function PageModeSwitch({ mode, choose }: { mode: PageMode; choose: (mode: PageM
   return <SegmentedControl label="頁面模式" size="lg" options={PAGE_MODES} value={mode} onChange={choose} />;
 }
 
-/** 標題：logo（跟外掛 icon 同一份 SVG 母檔）＋名稱。 */
+/** 標題：logo（外掛 icon 的小尺寸母檔）＋名稱。 */
 function Title({ logoSrc }: { logoSrc: string }) {
   return (
     <h1 class="title">
@@ -375,7 +375,7 @@ export interface SidePanelProps {
   pageMode: PageMode;
   /** 頁面上滑鼠所在的那句（逐字稿那行高亮）。 */
   hovered: LineRef | undefined;
-  /** 標題旁的 logo（外掛是 icons/naruhodo.svg）。 */
+  /** 標題旁的 logo（外掛是 icons/naruhodo-small.svg）。 */
   logoSrc: string;
   onPageModeChange: (mode: PageMode) => void;
   onStop: () => void;
