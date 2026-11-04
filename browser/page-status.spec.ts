@@ -12,7 +12,6 @@ import { shownTranslations } from './overlay-helpers.ts';
 test.use({ viewport: null, fakeTranslator: true, fakeOcrDelayMs: 1500 });
 
 const chip = (page: Page) => page.locator('[data-naruhodo-overlay] .st-chip');
-const bar = (page: Page) => page.locator('[data-naruhodo-overlay] .st-bar');
 
 const firstCanvasRect = (page: Page) =>
   page.evaluate(() => {
@@ -20,7 +19,7 @@ const firstCanvasRect = (page: Page) =>
     return { x, y, width, height };
   });
 
-test('翻譯中 Page 上出現細進度條與小標籤，翻完就拿掉；網站版面不動、點得到 Page', async ({ context, sw, extensionId, mockSite }) => {
+test('翻譯中 Page 上出現小標籤，翻完就拿掉；網站版面不動、點得到 Page', async ({ context, sw, extensionId, mockSite }) => {
   let before: Awaited<ReturnType<typeof firstCanvasRect>> | undefined;
   const { page } = await activateOnMockSite({
     context,
@@ -31,7 +30,6 @@ test('翻譯中 Page 上出現細進度條與小標籤，翻完就拿掉；網�
   });
 
   await expect(chip(page).first()).toHaveText('辨識文字…');
-  await expect(bar(page).first()).toBeVisible();
   expect(await firstCanvasRect(page)).toEqual(before);
   // 狀態層 pointer-events: none：小標籤底下點到的是 Page 本身。截圖時狀態層會藏一下，所以在頁面裡一次量完、等到看得見的那一刻
   await expect
@@ -47,6 +45,5 @@ test('翻譯中 Page 上出現細進度條與小標籤，翻完就拿掉；網�
 
   await expect(shownTranslations(page).first()).toBeVisible();
   await expect(chip(page)).toHaveCount(0);
-  await expect(bar(page)).toHaveCount(0);
   expect(await firstCanvasRect(page)).toEqual(before);
 });

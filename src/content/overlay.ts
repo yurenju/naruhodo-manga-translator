@@ -11,7 +11,7 @@
  * Page Mode（#73）只決定擦字＋譯文那一層要不要顯示：學習時藏起來、保留日文原稿；hover hit-test、tooltip、
  * 高亮框兩種模式都照常運作。
  *
- * Page 上的狀態（#185）也在同一個 host 裡：蓋在 anchor 上、不縮放的一層，頂端細進度條＋右上角小標籤，翻完就拿掉。
+ * Page 上的狀態（#185）也在同一個 host 裡：蓋在 anchor 上、不縮放的一層，右上角小標籤（轉圈圈＋階段），翻完就拿掉。
  * 只有出問題時的紅色小標籤可以點；截圖時一律藏起來（不能被 OCR 讀到、也不能改變 Page hash）。
  */
 import type { LineRef, Rect } from '../shared/messages.ts';
@@ -84,10 +84,6 @@ const STYLE = `${TOKENS}
 :host([data-capturing]) .tip, :host([data-capturing]) .hl { visibility: hidden; }
 /* Page 上的狀態（#185）：跟 anchor 一樣大、不縮放，不擋點擊；只有紅色小標籤可以點 */
 .st { position: absolute; overflow: hidden; pointer-events: none; z-index: 3; font-family: var(--naru-font-sans); }
-.st-bar { position: absolute; left: 0; right: 0; top: 0; height: 3px; overflow: hidden; background: rgba(255, 255, 255, 0.25); }
-.st-bar > i { display: block; height: 100%; background: var(--naru-highlight); transition: width 0.3s; }
-.st-bar.indet > i { width: 35%; animation: naru-indet 1.1s infinite ease-in-out; }
-@keyframes naru-indet { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
 .st-chip { position: absolute; top: 8px; right: 8px; display: flex; align-items: center; gap: 6px; margin: 0; padding: 3px 9px;
   border: 0; border-radius: 999px; font: 500 12px/1.4 var(--naru-font-sans); white-space: nowrap;
   background: rgba(20, 20, 20, 0.75); color: #fff; }
@@ -315,23 +311,18 @@ export function createOverlay({ loadFont, onHover, onStatusAction }: { loadFont:
     }
   }
 
-  /** 一個 anchor 上的狀態：翻譯中是細進度條＋小標籤，出問題是可以點的紅色小標籤。 */
+  /** 一個 anchor 上的狀態：翻譯中是轉圈圈的小標籤（模型下載的百分比在文字裡），出問題是可以點的紅色小標籤。 */
   function renderStatus(entry: Entry, { working, problem }: StatusOnAnchor['status']): void {
     const element = entry.status ?? document.createElement('div');
     element.className = 'st';
     element.replaceChildren();
     if (working) {
-      const bar = document.createElement('div');
-      bar.className = working.progress === undefined ? 'st-bar indet' : 'st-bar';
-      const fill = document.createElement('i');
-      if (working.progress !== undefined) fill.style.width = `${Math.round(working.progress * 100)}%`;
-      bar.append(fill);
       const chip = document.createElement('span');
       chip.className = 'st-chip';
       const spin = document.createElement('span');
       spin.className = 'st-spin';
       chip.append(spin, working.text);
-      element.append(bar, chip);
+      element.append(chip);
     } else if (problem) {
       const chip = document.createElement('button');
       chip.type = 'button';
