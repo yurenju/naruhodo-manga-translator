@@ -17,12 +17,13 @@ const statusLine = (panel: Page) => panel.getByRole('status', { name: '翻譯狀
 const staleHint = (panel: Page) => panel.getByRole('group', { name: '過時提示' });
 const notesSection = (panel: Page) => panel.getByRole('region', { name: '角色與用語' });
 
+/** 角色與用語在作品頁裡（#191）：點作品卡打開。 */
 async function openNotes(panel: Page): Promise<void> {
-  await chooseFromPanelMenu(panel, '角色與用語');
+  await panel.getByRole('region', { name: '作品' }).getByRole('button', { name: /^作品：/ }).click();
   await expect(notesSection(panel)).toBeVisible();
 }
 
-/** Series Notes 是整頁（#93）：按「←」回到逐字稿。 */
+/** 作品頁是整頁（#93、#191）：按「←」回到逐字稿。 */
 async function backToTranscript(panel: Page): Promise<void> {
   await panel.getByRole('button', { name: '返回' }).click();
   await expect(notesSection(panel)).toHaveCount(0);

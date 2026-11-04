@@ -27,10 +27,10 @@ import { dismissSubscribedNotice, openPayment, watchSubscribedNotice } from '../
 import { saveTranslationMode, watchTranslationMode, type TranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, RadioCard, Switch } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
-import { SidePanel } from '../ui/side-panel.tsx';
+import { SidePanel, type SeriesPage } from '../ui/side-panel.tsx';
 import { PaymentUnavailable, SubscribeButton } from '../ui/subscribe-button.tsx';
-import { accountPlanView } from '../ui/view.ts';
-import { SeriesNotesSection } from './series-notes.tsx';
+import { accountPlanView, seriesActions } from '../ui/view.ts';
+import { ClearCache, SeriesNotesSection } from './series-notes.tsx';
 
 /**
  * 點圖示啟動時，SW 用 sidepanel.html?tabId=N 打開這個 tab 專屬的 side panel。
@@ -472,7 +472,7 @@ function NameForm({ label, submit, initial = '', onDone }: { label: string; subm
   const [name, setName] = useState(initial);
   return (
     <form
-      class="series-sheet__form"
+      class="series-form"
       onSubmit={(e) => {
         e.preventDefault();
         if (name.trim()) onDone(name.trim());
@@ -512,19 +512,9 @@ const matchesQuery = (option: SeriesOption, query: string) => {
   return q === '' || [option.label, option.title, ...(option.originalTitles ?? [])].some((t) => t.normalize('NFKC').toLowerCase().includes(q));
 };
 
-/**
- * Transcript 上方的作品卡（#186，prototype B）：中文譯名（大）＋原名（小）＋「自動判斷 · N 個條目」（純文字，不能點）。
- * 讀者還沒確認的作品下面有問句列：猜到原名是「這是正確的作品嗎？［是］［換一部］」，猜不出來是「看不出是哪部作品［取名字］［選一部］」；
- * 確認過的只有右上角的「更改」。「換一部」從下方拉出可搜尋的作品清單，並顯示為什麼歸到這部。
- */
-function SeriesCard({ tabId }: { tabId: number }) {
+/** 這個 tab 目前的 Series 與作品清單；作品歸類、狀態或條目數變了就重讀。作品卡與作品頁各自訂閱。 */
+function useSeries(tabId: number): SeriesResponse | undefined {
   const [series, setSeries] = useState<SeriesResponse | undefined>(undefined);
-  const [sheet, setSheet] = useState(false);
-  /** 清單裡打開的表單：new＝新增作品；rename＝取名字／改名。 */
-  const [form, setForm] = useState<'new' | 'rename' | undefined>(undefined);
-  const [query, setQuery] = useState('');
-  const [mergeTarget, setMergeTarget] = useState('');
-
   useEffect(() => {
     const refresh = () => void send<SeriesResponse>({ type: 'panel:getSeries', tabId }).then(setSeries);
     const onMessage = (message: Message) => {
@@ -536,160 +526,221 @@ function SeriesCard({ tabId }: { tabId: number }) {
     refresh();
     return () => chrome.runtime.onMessage.removeListener(onMessage);
   }, [tabId]);
+  return series;
+}
 
-  if (!series?.current) return null;
-  const current = series.options.find((o) => o.id === series.current);
-  if (!current) return null;
-  const close = () => {
-    setSheet(false);
-    setForm(undefined);
-    setQuery('');
-  };
-  const open = (withForm?: 'rename') => {
-    setSheet(true);
-    setForm(withForm);
-  };
-  const guessed = (current.originalTitles?.length ?? 0) > 0;
+const currentOption = (series: SeriesResponse | undefined) => series?.options.find((o) => o.id === series.current);
+
+/** 從作品卡打開作品頁或換一部作品；rename＝打開作品頁時直接顯示改名（取名字）表單。 */
+type OpenSeries = (page: SeriesPage, opts?: { rename?: boolean }) => void;
+
+/** Provisional Series 的問句列（#186），作品卡與作品頁都有：猜到原名是［是］［換一部］，猜不出來是［取名字］［選一部］。 */
+function AskRow({ tabId, ask, onRename, onPick }: { tabId: number; ask: 'confirm' | 'name'; onRename: () => void; onPick: () => void }) {
+  return (
+    <div class="series-card__ask" role="group" aria-label="確認作品">
+      <span class="series-card__question">{ask === 'confirm' ? '這是正確的作品嗎？' : '看不出是哪部作品'}</span>
+      {ask === 'confirm' ? (
+        <Button variant="primary" onClick={() => void send({ type: 'panel:confirmSeries', tabId })}>
+          是
+        </Button>
+      ) : (
+        <Button variant="primary" onClick={onRename}>
+          取名字
+        </Button>
+      )}
+      <Button onClick={onPick}>{ask === 'confirm' ? '換一部' : '選一部'}</Button>
+    </div>
+  );
+}
+
+/**
+ * Transcript 上方的作品卡（#186；#191 定案為 prototype C3）：只有中文譯名（大）＋原名（小）兩行，整張可以點、打開作品頁。
+ * 讀者還沒確認的作品下面有問句列（不在可點的範圍裡）。
+ */
+function SeriesCard({ tabId, onOpen }: { tabId: number; onOpen: OpenSeries }) {
+  const series = useSeries(tabId);
+  const current = currentOption(series);
+  if (!series || !current) return null;
+  const { ask } = seriesActions(current, series.options);
+  return (
+    <section aria-label="作品" class="series-card">
+      <button type="button" class="series-card__open" aria-label={`作品：${current.title}`} onClick={() => onOpen('series')}>
+        <span class="series-card__names">
+          <span class="series-card__title">{current.title}</span>
+          {current.subtitle && (
+            <span class="series-card__original" lang="ja">
+              {current.subtitle}
+            </span>
+          )}
+        </span>
+        <span class="series-card__chevron" aria-hidden="true">
+          ›
+        </span>
+      </button>
+      {ask && <AskRow tabId={tabId} ask={ask} onRename={() => onOpen('series', { rename: true })} onPick={() => onOpen('seriesPick')} />}
+    </section>
+  );
+}
+
+/**
+ * 作品頁（#191）：作品身分（名稱與改名、原名、問句列或「不是這部作品？」）→ 角色與用語 → 最底部清除快取。
+ * 從作品卡打開，整個取代 side panel。
+ */
+function SeriesPageView({
+  tabId,
+  navigate,
+  renameOnOpen,
+  onRenameOpened,
+}: {
+  tabId: number;
+  navigate: (page: SeriesPage | undefined) => void;
+  /** 作品卡的「取名字」：一打開就顯示取名字表單。 */
+  renameOnOpen: boolean;
+  /** 表單顯示過了：container 清掉 renameOnOpen，之後不管從哪裡回到作品頁都不會再自動打開。 */
+  onRenameOpened: () => void;
+}) {
+  const series = useSeries(tabId);
+  const [renaming, setRenaming] = useState(renameOnOpen);
+  useEffect(() => {
+    if (renameOnOpen) onRenameOpened();
+  }, []);
+  const current = currentOption(series);
+  if (!series || !current) return null;
+  const actions = seriesActions(current, series.options);
   const info = [current.provisional ? '自動判斷' : '已確認', `${series.notesCount ?? 0} 個條目`].join(' · ');
-  const targets = series.options.filter((o) => !o.provisional && o.id !== current.id);
-  const reason = assignmentReason(series.assignment);
   return (
     <>
-      <section aria-label="作品" class="series-card">
-        <div class="series-card__top">
-          <div class="series-card__names">
-            <span class="series-card__title">{current.title}</span>
-            {current.subtitle && (
-              <span class="series-card__original" lang="ja">
-                {current.subtitle}
-              </span>
-            )}
-          </div>
-          {!current.provisional && (
-            <Button variant="ghost" onClick={() => open()}>
-              更改
+      <section aria-label="作品身分" class="series-identity">
+        {renaming ? (
+          <NameForm
+            label="作品名稱"
+            submit="儲存"
+            initial={actions.rename === '取名字' ? '' : current.title}
+            onDone={(name) => {
+              setRenaming(false);
+              if (name) void send({ type: 'panel:renameSeries', tabId, name });
+            }}
+          />
+        ) : (
+          <div class="series-identity__row">
+            <h2 class="series-identity__name">{current.title}</h2>
+            <Button variant="ghost" onClick={() => setRenaming(true)}>
+              {actions.rename}
             </Button>
-          )}
-        </div>
-        <span class="series-card__info">{info}</span>
-        {current.provisional && (
-          <div class="series-card__ask" role="group" aria-label="確認作品">
-            <span class="series-card__question">{guessed ? '這是正確的作品嗎？' : '看不出是哪部作品'}</span>
-            {guessed ? (
-              <Button variant="primary" onClick={() => void send({ type: 'panel:confirmSeries', tabId })}>
-                是
-              </Button>
-            ) : (
-              <Button variant="primary" onClick={() => open('rename')}>
-                取名字
-              </Button>
-            )}
-            <Button onClick={() => open()}>{guessed ? '換一部' : '選一部'}</Button>
           </div>
         )}
+        {current.subtitle && (
+          <span class="series-card__original" lang="ja">
+            {current.subtitle}
+          </span>
+        )}
+        <span class="series-card__info">{info}</span>
+        {actions.ask && <AskRow tabId={tabId} ask={actions.ask} onRename={() => setRenaming(true)} onPick={() => navigate('seriesPick')} />}
+        {!actions.ask && (
+          <Button variant="link" class="series-identity__pick" onClick={() => navigate('seriesPick')}>
+            不是這部作品？
+          </Button>
+        )}
       </section>
-      {sheet && (
-        <div class="series-sheet" onClick={(e) => e.target === e.currentTarget && close()}>
-          <div role="dialog" aria-label="這頁是哪部作品？" class="series-sheet__panel">
-            <div class="series-sheet__head">
-              <h2>這頁是哪部作品？</h2>
-              <Button variant="icon" aria-label="關閉" onClick={close}>
-                ×
-              </Button>
-            </div>
-            {reason && <p class="series-sheet__why">{reason}</p>}
-            {form === 'rename' ? (
-              <NameForm
-                label="作品名稱"
-                submit="儲存"
-                initial={current.provisional && !guessed ? '' : current.title}
-                onDone={(name) => {
-                  close();
-                  if (name) void send({ type: 'panel:renameSeries', tabId, name });
-                }}
-              />
-            ) : (
-              <>
-                <input aria-label="搜尋作品" placeholder="搜尋作品…" value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
-                <ul aria-label="作品清單" class="series-sheet__list">
-                  {series.options
-                    .filter((o) => matchesQuery(o, query))
-                    .map((o) => (
-                      <li key={o.id}>
-                        <button
-                          type="button"
-                          class="series-item"
-                          aria-current={o.id === current.id}
-                          onClick={() => {
-                            close();
-                            if (o.id !== current.id) void send({ type: 'panel:selectSeries', tabId, seriesId: o.id });
-                          }}
-                        >
-                          <span class="series-item__text">
-                            <span class="series-item__title">{o.title}</span>
-                            {o.subtitle && (
-                              <span class="series-item__original" lang="ja">
-                                {o.subtitle}
-                              </span>
-                            )}
-                          </span>
-                          {o.provisional && <span class="series-item__meta">自動</span>}
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-                {form === 'new' ? (
-                  <NameForm
-                    label="新作品名稱"
-                    submit="建立"
-                    onDone={(name) => {
-                      close();
-                      if (name) void send({ type: 'panel:createSeries', tabId, name });
-                    }}
-                  />
-                ) : (
-                  <div class="naru-row">
-                    <Button variant="ghost" onClick={() => setForm('new')}>
-                      ＋ 新增作品…
-                    </Button>
-                    <Button variant="ghost" onClick={() => setForm('rename')}>
-                      {current.provisional && !guessed ? '取名字…' : '改名…'}
-                    </Button>
-                  </div>
-                )}
-                {current.provisional && targets.length > 0 && (
-                  <form
-                    class="series-sheet__form"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      if (!mergeTarget) return;
-                      close();
-                      void send({ type: 'panel:mergeSeries', tabId, targetId: mergeTarget });
-                    }}
-                  >
-                    <select aria-label="合併進" value={mergeTarget} onChange={(e) => setMergeTarget(e.currentTarget.value)}>
-                      <option value="">合併進…</option>
-                      {targets.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.title}
-                        </option>
-                      ))}
-                    </select>
-                    <Button type="submit">合併</Button>
-                  </form>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <SeriesNotesSection tabId={tabId} />
+      <div class="series-danger">
+        <ClearCache tabId={tabId} />
+      </div>
     </>
   );
 }
 
 /**
+ * 換一部作品（#191，作品頁再進去的一頁）：為什麼歸到這部、可搜尋的作品清單、新增作品；Provisional 才有「合併進…」。
+ * 選好、建好或合併完就回到作品頁（下面的角色與用語換成那一部的）。
+ */
+function SeriesPickView({ tabId, navigate }: { tabId: number; navigate: (page: SeriesPage | undefined) => void }) {
+  const series = useSeries(tabId);
+  const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
+  const [mergeTarget, setMergeTarget] = useState('');
+  const current = currentOption(series);
+  if (!series || !current) return null;
+  const { mergeTargets } = seriesActions(current, series.options);
+  const reason = assignmentReason(series.assignment);
+  const done = () => navigate('series');
+  return (
+    <section aria-label="換一部作品" class="series-pick">
+      {reason && <p class="series-pick__why">{reason}</p>}
+      <input aria-label="搜尋作品" placeholder="搜尋作品…" value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
+      <ul aria-label="作品清單" class="series-pick__list">
+        {series.options
+          .filter((o) => matchesQuery(o, query))
+          .map((o) => (
+            <li key={o.id}>
+              <button
+                type="button"
+                class="series-item"
+                aria-current={o.id === current.id}
+                onClick={() => {
+                  if (o.id !== current.id) void send({ type: 'panel:selectSeries', tabId, seriesId: o.id });
+                  done();
+                }}
+              >
+                <span class="series-item__text">
+                  <span class="series-item__title">{o.title}</span>
+                  {o.subtitle && (
+                    <span class="series-item__original" lang="ja">
+                      {o.subtitle}
+                    </span>
+                  )}
+                </span>
+                {o.provisional && <span class="series-item__meta">自動</span>}
+              </button>
+            </li>
+          ))}
+      </ul>
+      {creating ? (
+        <NameForm
+          label="新作品名稱"
+          submit="建立"
+          onDone={(name) => {
+            setCreating(false);
+            if (!name) return;
+            void send({ type: 'panel:createSeries', tabId, name });
+            done();
+          }}
+        />
+      ) : (
+        <div class="naru-row">
+          <Button variant="ghost" onClick={() => setCreating(true)}>
+            ＋ 新增作品…
+          </Button>
+        </div>
+      )}
+      {mergeTargets.length > 0 && (
+        <form
+          class="series-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!mergeTarget) return;
+            void send({ type: 'panel:mergeSeries', tabId, targetId: mergeTarget });
+            done();
+          }}
+        >
+          <select aria-label="合併進" value={mergeTarget} onChange={(e) => setMergeTarget(e.currentTarget.value)}>
+            <option value="">合併進…</option>
+            {mergeTargets.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.title}
+              </option>
+            ))}
+          </select>
+          <Button type="submit">合併</Button>
+        </form>
+      )}
+    </section>
+  );
+}
+
+/**
  * 外掛的 container（#108）：接 chrome 訊息、API key、同意狀態與 Page Mode 的 store，把資料交給純畫面的 SidePanel。
- * 會讀寫 store 的區塊（設定頁、角色與用語頁、作品卡、自動翻譯開關）也在這裡，以 slot 交給 SidePanel。
+ * 會讀寫 store 的區塊（設定頁、作品卡、作品頁與換一部作品、自動翻譯開關）也在這裡，以 slot／render prop 交給 SidePanel。
  * 沒做完 onboarding（#93）時 SidePanel 只顯示「完成設定」；「登入」「完成設定」用新分頁打開 onboarding。
  */
 function App({ tabId }: { tabId: number | undefined }) {
@@ -708,6 +759,8 @@ function App({ tabId }: { tabId: number | undefined }) {
   const hostedHint = useHostedHint();
   const subscribedNotice = useSubscribedNotice();
   const [paymentFailed, runPayment] = usePaymentAction();
+  /** 作品卡的「取名字」：打開作品頁時直接顯示取名字表單（#191）。 */
+  const [renameOnOpen, setRenameOnOpen] = useState(false);
 
   useEffect(() => {
     void apiKeys.get().then((key) => setHasKey(Boolean(key)));
@@ -763,12 +816,26 @@ function App({ tabId }: { tabId: number | undefined }) {
       subscribedNotice={subscribedNotice}
       onDismissSubscribedNotice={() => void dismissSubscribedNotice()}
       autoTranslate={running && <AutoTranslateToggle tabId={tabId} />}
-      series={running && <SeriesCard tabId={tabId} />}
+      renderSeriesCard={(open) =>
+        running && (
+          <SeriesCard
+            tabId={tabId}
+            onOpen={(page, opts) => {
+              setRenameOnOpen(opts?.rename ?? false);
+              open(page);
+            }}
+          />
+        )
+      }
       renderSettings={(_close, openDeleteAccount) => (
         <Settings mode={translationMode} session={session} quota={quota} onKeyChanged={setHasKey} onDeleteAccount={openDeleteAccount} />
       )}
       renderDeleteAccount={(back) => <DeleteAccountPage session={session} onDone={back} />}
-      renderNotes={() => tabId !== undefined && <SeriesNotesSection tabId={tabId} />}
+      renderSeries={(page, navigate) => {
+        if (tabId === undefined) return null;
+        if (page === 'seriesPick') return <SeriesPickView tabId={tabId} navigate={navigate} />;
+        return <SeriesPageView tabId={tabId} navigate={navigate} renameOnOpen={renameOnOpen} onRenameOpened={() => setRenameOnOpen(false)} />;
+      }}
     />
   );
 }

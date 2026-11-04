@@ -70,13 +70,13 @@ function SuggestionItem({ suggestion, current, tabId }: { suggestion: NotesSugge
   );
 }
 
-/** 手動清除這部 Series 的快取（spec 第 4.3 節：不自動清除）。先問一次。 */
-function ClearCache({ tabId }: { tabId: number }) {
+/** 手動清除這部 Series 的快取（spec 第 4.3 節：不自動清除）。先問一次。放在作品頁最底部（#191）。 */
+export function ClearCache({ tabId }: { tabId: number }) {
   const [state, setState] = useState<'idle' | 'confirm' | 'done'>('idle');
   if (state === 'confirm')
     return (
       <Callout tone="warn">
-        確定清除這部 Series 的翻譯快取？之後的頁會重新翻譯（要花費用）。
+        確定清除這部作品的翻譯快取？角色與用語會保留，之後的頁會重新翻譯（要花費用）。
         <Button variant="primary" onClick={() => void send({ type: 'panel:clearCache', tabId }).then(() => setState('done'))}>
           清除
         </Button>
@@ -85,13 +85,13 @@ function ClearCache({ tabId }: { tabId: number }) {
     );
   return (
     <p>
-      <Button onClick={() => setState('confirm')}>清除這部 Series 的快取</Button>
+      <Button onClick={() => setState('confirm')}>清除這部作品的翻譯快取</Button>
       {state === 'done' && <span role="status"> 已清除快取</span>}
     </p>
   );
 }
 
-/** 從 ⚙ 選單打開（#77）；打開時才讀 Notes。 */
+/** 作品頁裡、作品身分下面的一段（#191；以前從 ⚙ 選單打開，#77）；打開時才讀 Notes。 */
 export function SeriesNotesSection({ tabId }: { tabId: number }) {
   const [notes, setNotes] = useState<NotesResponse | undefined>(undefined);
   const [editing, setEditing] = useState<string | undefined>(undefined);
@@ -116,9 +116,10 @@ export function SeriesNotesSection({ tabId }: { tabId: number }) {
   if (!notes) return null;
   return (
     <section aria-label="角色與用語" class="notes">
+      <h2>角色與用語</h2>
       {notes.suggestions.length > 0 && (
         <>
-          <h2>建議修改</h2>
+          <h3>建議修改</h3>
           <ul aria-label="建議修改">
             {notes.suggestions.map((s) => (
               <SuggestionItem key={`${s.原文}/${s.建議譯文}`} suggestion={s} current={translationOf(s.原文)} tabId={tabId} />
@@ -163,7 +164,6 @@ export function SeriesNotesSection({ tabId }: { tabId: number }) {
         </table>
       )}
       <p class="hint">改過的條目會鎖定（🔒），之後 LLM 只能提建議修改。用到改過條目的頁會提示過時，按「重新翻譯」才重翻。</p>
-      <ClearCache tabId={tabId} />
     </section>
   );
 }
