@@ -1,0 +1,73 @@
+/*
+ * PROTOTYPE（prototype/brand-yellow，#187）：網站才有的品牌版位。token 的覆寫在 src/shared/brand-prototype.css。
+ * A2／B2：hero 整塊黃底；hero 裡的主要按鈕改成墨底白字（黃按鈕在黃底上看不見）。
+ * A／B：推薦方案不用黃框（白卡上只有 1.8:1），改成頂端黃色色帶＋「推薦」。C 的推薦方案是墨色框（--naru-accent）。
+ */
+
+[data-variant="A2"] .hero,
+[data-variant="B2"] .hero { background: #F2B705; }
+/* --naru-ink-2 在黃底上只有約 3.9:1，hero 裡的次要文字一律改墨色 */
+[data-variant="A2"] .hero .lead,
+[data-variant="B2"] .hero .lead,
+[data-variant="A2"] .hero .demo-caption,
+[data-variant="B2"] .hero .demo-caption { color: var(--naru-ink); }
+[data-variant="A2"] .hero .btn-primary,
+[data-variant="B2"] .hero .btn-primary { background: var(--naru-ink); color: #FFFFFF; }
+[data-variant="A2"] .hero .btn-ghost,
+[data-variant="B2"] .hero .btn-ghost { border-color: var(--naru-ink); color: var(--naru-ink); }
+
+[data-variant^="A"] .plan.featured,
+[data-variant^="B"] .plan.featured {
+  position: relative;
+  overflow: hidden;
+  padding-top: calc(var(--naru-space-6) + 32px);
+  border: 1px solid var(--naru-line);
+}
+[data-variant^="A"] .plan.featured::before,
+[data-variant^="B"] .plan.featured::before {
+  content: '推薦';
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  font-size: var(--naru-text-label);
+  font-weight: 700;
+  color: var(--naru-ink);
+  background: #F2B705;
+}
+html[data-locale="en"][data-variant] .plan.featured::before { content: 'Recommended'; }
+
+/* 切換器本身：深色膠囊，一看就不是設計的一部分 */
+.proto-switcher {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  transform: translateX(-50%);
+  font: 600 13px/1 system-ui, sans-serif;
+  color: #FFFFFF;
+  background: #111111;
+  border: 2px solid #FF00AA;
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.proto-switcher button {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.proto-switcher button:hover { background: #333333; }
+.proto-switcher button[aria-pressed="true"] { color: #111111; background: #FFFFFF; }
+.proto-switcher__label { padding: 0 8px; white-space: nowrap; opacity: 0.8; }

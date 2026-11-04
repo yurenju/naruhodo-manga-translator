@@ -46,7 +46,7 @@ html[data-locale="zh-tw"] [data-l="en"] { display: none; }
   border-radius: var(--naru-radius-md);
   cursor: pointer;
 }
-.btn-primary { background: var(--naru-accent); color: var(--naru-on-accent); }
+.btn-primary { background: var(--naru-fill); color: var(--naru-on-fill); }
 .btn-ghost { background: var(--naru-surface); color: var(--naru-accent); border-color: var(--naru-line-strong); }
 .btn-small {padding: var(--naru-space-1) var(--naru-space-3); font-size: var(--naru-text-label); }
 
@@ -57,11 +57,11 @@ html[data-locale="zh-tw"] [data-l="en"] { display: none; }
 .nav { margin-left: auto; display: flex; align-items: center; gap: var(--naru-space-4); font-size: var(--naru-text-label); }
 .nav a { white-space: nowrap; }
 .nav a:not(.btn) { color: var(--naru-ink-2); text-decoration: none; }
-.nav a.btn-primary { color: var(--naru-on-accent); }
+.nav a.btn-primary { color: var(--naru-on-fill); }
 .lang-toggle { display: inline-flex; overflow: hidden; font-size: var(--naru-text-caption); border: 1px solid var(--naru-line-strong); border-radius: var(--naru-radius-pill); }
 .nav .lang-toggle a { padding: var(--naru-space-1) var(--naru-space-3); }
 html[data-locale="zh-tw"] .lang-toggle [data-set-locale="zh-tw"],
-html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--naru-accent); color: var(--naru-on-accent); }
+html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--naru-fill); color: var(--naru-on-fill); }
 
 /* 頁尾 */
 .site-footer { margin-top: var(--naru-space-8); padding: var(--naru-space-5) 0; font-size: var(--naru-text-small); color: var(--naru-ink-2); background: var(--naru-surface); border-top: 1px solid var(--naru-line); }
@@ -91,7 +91,7 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
   height: 30px;
   margin-bottom: var(--naru-space-3);
   font-weight: 800;
-  color: var(--naru-accent);
+  color: var(--naru-on-weak);
   background: var(--naru-accent-weak);
   border-radius: var(--naru-radius-pill);
 }
@@ -115,11 +115,11 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
 /* 法律文件 */
 .legal-tabs { display: flex; flex-wrap: wrap; gap: var(--naru-space-2); margin-top: var(--naru-space-5); }
 .legal-tabs a { padding: var(--naru-space-1) var(--naru-space-4); font-size: var(--naru-text-label); color: var(--naru-ink-2); text-decoration: none; background: var(--naru-surface); border: 1px solid var(--naru-line-strong); border-radius: var(--naru-radius-pill); }
-.legal-tabs a[aria-current="page"] { color: var(--naru-on-accent); background: var(--naru-accent); border-color: var(--naru-accent); }
+.legal-tabs a[aria-current="page"] { color: var(--naru-on-fill); background: var(--naru-fill); border-color: var(--naru-fill); }
 .legal-page { margin-top: var(--naru-space-4); padding: var(--naru-space-6) var(--naru-space-7); background: var(--naru-surface); border: 1px solid var(--naru-line); border-radius: var(--naru-radius-md); }
 .legal-page h1 { margin-top: 0; }
 .legal-page h2 { margin-top: var(--naru-space-6); font-size: var(--naru-text-lead); }
-.english-only { display: block; margin-bottom: var(--naru-space-5); padding: var(--naru-space-3) var(--naru-space-4); font-size: var(--naru-text-label); color: var(--naru-accent); background: var(--naru-accent-weak); border-radius: var(--naru-radius-sm); }
+.english-only { display: block; margin-bottom: var(--naru-space-5); padding: var(--naru-space-3) var(--naru-space-4); font-size: var(--naru-text-label); color: var(--naru-on-weak); background: var(--naru-accent-weak); border-radius: var(--naru-radius-sm); }
 /* TERMS.md、REFUND.md 裡還沒寫的條款：Markdown 的引言區塊 */
 .legal-page blockquote { margin: var(--naru-space-4) 0; padding: var(--naru-space-4); color: var(--naru-warn); background: var(--naru-warn-bg); border: 2px dashed var(--naru-warn); border-radius: var(--naru-radius-sm); }
 .legal-page blockquote p { margin: 0; }

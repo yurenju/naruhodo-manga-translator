@@ -7,6 +7,7 @@ import '../../../src/shared/tokens.css';
 import '../styles/site.css';
 import logo from '../../../src/icons/naruhodo-small.svg';
 import L from '../components/L.astro';
+import PrototypeSwitcher from '../components/PrototypeSwitcher.astro';
 import { copy } from '../copy.ts';
 import { CONTACT_EMAIL, LEGAL_DOCS, INSTALL_URL, REPO_URL, legalHref } from '../links.ts';
 import { type Locale, LOCALES, byLocale, languageTag } from '../locale.ts';
@@ -38,6 +39,8 @@ const home = locale === 'auto' ? '/' : `/${locale}/`;
     <link rel="icon" href={logo.src} type="image/svg+xml" />
   </head>
   <body>
+    <!-- PROTOTYPE（#187）-->
+    <PrototypeSwitcher />
     <header class="site-header">
       <div class="wrap">
         {bare ? (

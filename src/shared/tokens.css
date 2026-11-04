@@ -22,6 +22,16 @@
   --naru-accent: #2F4B7C;
   --naru-accent-weak: #E7ECF5;
 
+  /*
+   * PROTOTYPE（prototype/brand-yellow，#187）：主色拆成兩個角色。
+   * --naru-accent 只剩「白底上的互動色」（連結、focus、強調框）；按鈕等「填色＋上面的字」改用 --naru-fill／--naru-on-fill。
+   * 這裡是現況的值，各版本在 brand-prototype.css 覆寫。
+   */
+  --naru-fill: #2F4B7C;
+  --naru-on-fill: #FFFFFF;
+  --naru-on-weak: #2F4B7C;
+  --naru-mark: #2F4B7C;
+
   /* 頁面上的高亮框 */
   --naru-highlight: #2F6FDB;
   --naru-highlight-fill: rgba(47, 111, 219, 0.12);

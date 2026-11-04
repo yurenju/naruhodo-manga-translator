@@ -1,0 +1,43 @@
+/*
+ * PROTOTYPE（prototype/brand-yellow，#187）：配合黃底 logo 的主色比較，用完就丟，不合回 main。
+ * 版本用 data-variant 切換（沒有 data-variant＝現況的藍染）：
+ *   A（A1／A2）：黃按鈕＋墨字，互動色墨色，淡色底淡黃
+ *   B（B1／B2）：黃按鈕＋墨字，互動色維持藍染，淡色底淡黃
+ *   C        ：墨按鈕＋白字，互動色墨色，淡色底暖灰；黃色只在 logo 與選取指示線
+ * 1／2 只差網站 hero 白底或黃底（brand-prototype-site.css）。
+ * shadow root 裡用 brand-prototype.ts 轉成 :host-context() 的版本。
+ */
+
+[data-variant^="A"],
+[data-variant^="B"],
+[data-variant^="C"] {
+  --naru-tooltip-chip-on-bg: #3A362E;
+  --naru-tooltip-chip-on-line: #5C564B;
+}
+
+[data-variant^="A"] {
+  --naru-accent: #1F1D1A;
+  --naru-accent-weak: #FDF3CC;
+  --naru-fill: #F2B705;
+  --naru-on-fill: #1F1D1A;
+  --naru-on-weak: #1F1D1A;
+  --naru-mark: #1F1D1A;
+}
+
+[data-variant^="B"] {
+  --naru-accent: #2F4B7C;
+  --naru-accent-weak: #FDF3CC;
+  --naru-fill: #F2B705;
+  --naru-on-fill: #1F1D1A;
+  --naru-on-weak: #2F4B7C;
+  --naru-mark: #2F4B7C;
+}
+
+[data-variant^="C"] {
+  --naru-accent: #1F1D1A;
+  --naru-accent-weak: #F2F0EC;
+  --naru-fill: #1F1D1A;
+  --naru-on-fill: #FFFFFF;
+  --naru-on-weak: #1F1D1A;
+  --naru-mark: #F2B705;
+}

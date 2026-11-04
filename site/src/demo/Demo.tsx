@@ -13,6 +13,7 @@ import logoSrc from '../../../src/icons/naruhodo-small.svg?url';
 import type { LineRef } from '../../../src/shared/messages.ts';
 import type { PageMode } from '../../../src/shared/page-mode.ts';
 import TOKENS from '../../../src/shared/tokens.css';
+import { BRAND_PROTOTYPE_SHADOW } from '../../../src/shared/brand-prototype.ts';
 import COMPONENTS from '../../../src/ui/components.css';
 import SIDE_PANEL from '../../../src/ui/side-panel.css';
 import { SidePanel } from '../../../src/ui/index.ts';
@@ -36,7 +37,7 @@ const fontUrl = (file: string) => {
  * shadow root 裡的樣式：host 不繼承網站的字型與顏色（all: initial），side panel 的 tokens 與元件樣式跟外掛同一份。
  * host 本身是 side panel 的捲動區（外掛裡是整個 side panel 視窗）。
  */
-const PANEL_STYLE = `${TOKENS}${COMPONENTS}${SIDE_PANEL}
+const PANEL_STYLE = `${TOKENS}${BRAND_PROTOTYPE_SHADOW}${COMPONENTS}${SIDE_PANEL}
 :host { all: initial; display: block; overflow-y: auto; background: var(--naru-surface); }`;
 
 const noop = () => {};

@@ -17,6 +17,7 @@ import type { PageMode } from '../shared/page-mode.ts';
 import { overlaidTexts, type PageText, type RatioRect } from '../shared/page-text.ts';
 import { rubyDisplay } from '../shared/ruby.ts';
 import TOKENS from '../shared/tokens.css';
+import { BRAND_PROTOTYPE_SHADOW } from '../shared/brand-prototype.ts';
 import { createTrace } from '../shared/trace.ts';
 import { headingToward, HOVER_DWELL_MS, type Point } from './hover-intent.ts';
 import { eraseFill, estimateFontPx, estimateOriginalLines, fitText, isVertical, layerTransform, layoutText, looseTextRegions, minLayerFontPx, pageSize, ratioToBox, separateRegions, textRegions, verticalize, type Box } from './overlay-layout.ts';
@@ -40,7 +41,8 @@ const LINE_HEIGHT = 1.15;
 const LOOSE_STROKE_EM = 0.25;
 
 /** tooltip 與高亮框的顏色、字型取自 design tokens（跟 side panel 同一份，#71）；擦字與譯文的顏色跟著原稿算。 */
-const STYLE = `${TOKENS}
+// PROTOTYPE（#187）：export 給 site 的比較頁畫 tooltip 樣本；BRAND_PROTOTYPE_SHADOW 跟著 data-variant 換主色
+export const STYLE = `${TOKENS}${BRAND_PROTOTYPE_SHADOW}
 :host { all: initial; }
 .pl { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }
 .er { position: absolute; border-radius: 3px; }

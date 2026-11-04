@@ -1,0 +1,65 @@
+---
+/**
+ * PROTOTYPE（prototype/brand-yellow，#187）：右下的主色版本切換器，只在 dev server 出現。
+ * ?v=A1 之類的參數決定 <html data-variant>；站內連結點下去會帶著同一個 ?v=，換頁也維持同一版。← → 鍵切換。
+ */
+import '../../../src/shared/brand-prototype.css';
+import '../styles/brand-prototype-site.css';
+---
+{import.meta.env.DEV && (
+  <>
+    <script is:inline>
+      // 先設好 data-variant 再畫頁面，避免閃一下現況的藍色
+      (() => {
+        const v = new URLSearchParams(location.search).get('v');
+        if (v && v !== 'now') document.documentElement.dataset.variant = v;
+      })();
+    </script>
+    <div class="proto-switcher" role="group" aria-label="主色版本（prototype）">
+      <button type="button" data-step="-1" aria-label="上一版">←</button>
+      <span class="proto-switcher__label">PROTOTYPE</span>
+      {['now', 'A1', 'A2', 'B1', 'B2', 'C'].map((v) => (
+        <button type="button" data-v={v}>{v === 'now' ? '現況' : v}</button>
+      ))}
+      <button type="button" data-step="1" aria-label="下一版">→</button>
+    </div>
+    <script>
+      const VARIANTS = ['now', 'A1', 'A2', 'B1', 'B2', 'C'];
+      const current = () => document.documentElement.dataset.variant ?? 'now';
+
+      function apply(v: string) {
+        if (v === 'now') delete document.documentElement.dataset.variant;
+        else document.documentElement.dataset.variant = v;
+        const url = new URL(location.href);
+        if (v === 'now') url.searchParams.delete('v');
+        else url.searchParams.set('v', v);
+        history.replaceState(null, '', url);
+        for (const b of document.querySelectorAll<HTMLElement>('.proto-switcher [data-v]')) {
+          b.setAttribute('aria-pressed', String(b.dataset.v === v));
+        }
+      }
+      const step = (d: number) => apply(VARIANTS[(VARIANTS.indexOf(current()) + d + VARIANTS.length) % VARIANTS.length]);
+
+      apply(current());
+      document.querySelector('.proto-switcher')!.addEventListener('click', (event) => {
+        const b = (event.target as Element).closest<HTMLElement>('button');
+        if (b?.dataset.v) apply(b.dataset.v);
+        else if (b?.dataset.step) step(Number(b.dataset.step));
+      });
+      document.addEventListener('keydown', (event) => {
+        const t = event.target as HTMLElement;
+        if (t.closest('input, textarea, select, [contenteditable]')) return;
+        if (event.key === 'ArrowLeft') step(-1);
+        if (event.key === 'ArrowRight') step(1);
+      });
+      // 站內連結帶著 ?v=，換頁也維持同一版
+      document.addEventListener('click', (event) => {
+        const a = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
+        if (!a || a.origin !== location.origin || current() === 'now') return;
+        const url = new URL(a.href);
+        url.searchParams.set('v', current());
+        a.href = url.href;
+      }, true);
+    </script>
+  </>
+)}

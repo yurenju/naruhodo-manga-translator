@@ -1,0 +1,32 @@
+---
+/**
+ * PROTOTYPE（prototype/brand-yellow，#187）：外掛畫面的主色四欄比較。不用 Base（網站的 site.css 不該影響外掛畫面）。
+ * 網站本身的比較用頁面右下的切換器（?v=A1 等）。
+ */
+---
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>主色比較（外掛）PROTOTYPE</title>
+    <style is:global>
+      body { margin: 0; padding: 16px; background: #E9E9E9; font: 14px/1.5 system-ui, sans-serif; color: #111; }
+      h1 { margin: 0 0 4px; font-size: 18px; }
+      .intro { margin: 0 0 16px; color: #444; }
+      .grid { display: grid; grid-template-columns: repeat(4, minmax(300px, 1fr)); gap: 12px 16px; align-items: start; }
+      .head { position: sticky; top: 0; z-index: 1; display: flex; flex-direction: column; padding: 8px 10px; background: #111; color: #fff; border-radius: 8px; }
+      .head strong { font-size: 16px; }
+      .head span { font-size: 12px; opacity: 0.8; }
+      .row-title { grid-column: 1 / -1; margin: 16px 0 0; font-size: 14px; color: #333; border-bottom: 1px solid #BBB; }
+    </style>
+  </head>
+  <body>
+    <h1>主色比較：外掛畫面（PROTOTYPE，#187）</h1>
+    <p class="intro">同一份元件、只換 token。網站的比較請開首頁，用右下切換器（現況／A1／A2／B1／B2／C）。</p>
+    <div data-compare></div>
+    <script>
+      import '../../prototype/mount.tsx';
+    </script>
+  </body>
+</html>

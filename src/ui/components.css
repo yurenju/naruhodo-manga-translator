@@ -10,7 +10,7 @@
 }
 .naru-btn:focus-visible { outline: 2px solid var(--naru-accent); outline-offset: 2px; }
 .naru-btn:disabled { opacity: 0.5; cursor: default; }
-.naru-btn--primary { background: var(--naru-accent); border-color: var(--naru-accent); color: var(--naru-on-accent); }
+.naru-btn--primary { background: var(--naru-fill); border-color: var(--naru-fill); color: var(--naru-on-fill); }
 .naru-btn--secondary { background: var(--naru-surface); border-color: var(--naru-line-strong); }
 .naru-btn--secondary:hover:not(:disabled) { background: var(--naru-surface-2); }
 .naru-btn--ghost { border-color: var(--naru-line); }
@@ -108,7 +108,7 @@
 .naru-reveal--on { border-style: solid; border-color: var(--naru-accent-weak); background: var(--naru-accent-weak); }
 .naru-reveal__tag {
   flex: none; padding: 0 6px; border-radius: 4px;
-  font-size: 11px; font-weight: 700; line-height: 1.6; color: var(--naru-on-accent); background: var(--naru-accent);
+  font-size: 11px; font-weight: 700; line-height: 1.6; color: var(--naru-on-fill); background: var(--naru-fill);
 }
 /* Progress：還在跑的一行（辨識中、翻譯中），圓點閃爍表示進行中 */
 .naru-progress {

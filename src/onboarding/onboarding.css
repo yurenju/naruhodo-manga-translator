@@ -25,7 +25,7 @@ html, body { margin: 0; background: var(--naru-surface-2); }
   font-size: var(--naru-text-caption); font-weight: 700;
 }
 .ob-dots li.cur { color: var(--naru-ink); font-weight: 700; }
-.ob-dots li.cur span { background: var(--naru-accent); color: var(--naru-on-accent); }
+.ob-dots li.cur span { background: var(--naru-fill); color: var(--naru-on-fill); }
 .ob-dots li.done span { background: var(--naru-ok-bg); color: var(--naru-ok); }
 
 /* 置中、寬 600px 的白色卡片，一次一步 */
