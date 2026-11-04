@@ -582,8 +582,11 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   void activation.handleTabUpdated(tabId, changeInfo);
 });
 
-/** 圖示的右鍵選單（#185）：勾選「啟動時打開側邊欄」，以及臨時「打開側邊欄」。選單 Chrome 會記住，安裝與更新時重建。 */
-chrome.runtime.onInstalled.addListener(() => {
+/**
+ * 圖示的右鍵選單（#185）：勾選「啟動時打開側邊欄」，以及臨時「打開側邊欄」。
+ * SW 每次啟動都重建，不只在 onInstalled：開發時重新載入 unpacked 外掛、或 Chrome 開機時載入改過的外掛，不一定有安裝事件。
+ */
+const createMenus = () =>
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: MENU_PANEL_ON_ACTIVATION,
@@ -594,7 +597,7 @@ chrome.runtime.onInstalled.addListener(() => {
     });
     chrome.contextMenus.create({ id: MENU_OPEN_PANEL, title: '打開側邊欄', contexts: ['action'] });
   });
-});
+createMenus();
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === MENU_PANEL_ON_ACTIVATION) void saveSidePanelOnActivation(info.checked === true);
