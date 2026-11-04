@@ -10,8 +10,12 @@
  *
  * Page Mode（#73）只決定擦字＋譯文那一層要不要顯示：學習時藏起來、保留日文原稿；hover hit-test、tooltip、
  * 高亮框兩種模式都照常運作。
+ *
+ * Page 上的狀態（#185）也在同一個 host 裡：蓋在 anchor 上、不縮放的一層，右上角小標籤（轉圈圈＋階段），翻完就拿掉。
+ * 只有出問題時的紅色小標籤可以點；截圖時一律藏起來（不能被 OCR 讀到、也不能改變 Page hash）。
  */
 import type { LineRef, Rect } from '../shared/messages.ts';
+import type { AnchorStatus, StatusAction } from '../shared/page-status.ts';
 import { findSamePage } from '../shared/page-hash.ts';
 import type { PageMode } from '../shared/page-mode.ts';
 import { overlaidTexts, type PageText, type RatioRect } from '../shared/page-text.ts';
@@ -78,6 +82,17 @@ const STYLE = `${TOKENS}
 .hl.on { display: block; }
 /* 長 Page 截圖時擦除與譯文不藏，tooltip 與高亮框藏（hideForCapture） */
 :host([data-capturing]) .tip, :host([data-capturing]) .hl { visibility: hidden; }
+/* Page 上的狀態（#185）：跟 anchor 一樣大、不縮放，不擋點擊；只有紅色小標籤可以點 */
+.st { position: absolute; overflow: hidden; pointer-events: none; z-index: 3; font-family: var(--naru-font-sans); }
+.st-chip { position: absolute; top: 8px; right: 8px; display: flex; align-items: center; gap: 6px; margin: 0; padding: 3px 9px;
+  border: 0; border-radius: 999px; font: 500 12px/1.4 var(--naru-font-sans); white-space: nowrap;
+  background: rgba(20, 20, 20, 0.75); color: #fff; }
+.st-chip.warn { background: #C0392B; pointer-events: auto; cursor: pointer; }
+.st-chip.warn:hover { background: #A93226; }
+.st-spin { width: 10px; height: 10px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; animation: naru-rot 0.8s linear infinite; }
+@keyframes naru-rot { to { transform: rotate(360deg); } }
+:host([data-capturing]) .st, :host([data-status-hidden]) .st { display: none; }
 `;
 
 const WHOLE_PAGE: RatioRect = { x: 0, y: 0, w: 1, h: 1 };
@@ -124,7 +139,18 @@ interface Entry {
   host: HTMLElement;
   root: ShadowRoot;
   layers: Map<string, PageLayer>;
+  /** Page 上的狀態（#185）；沒有＝這個 anchor 沒在翻、也沒出問題。 */
+  status?: HTMLElement;
 }
+
+/** Page 上的狀態要畫在哪個 anchor 上。 */
+export interface StatusOnAnchor {
+  anchor: HTMLElement;
+  status: Omit<AnchorStatus, 'anchorId'>;
+}
+
+/** 紅色小標籤被點了。 */
+export type OnStatusAction = (action: StatusAction, pageHash: string) => void;
 
 const subKey = (sub: RatioRect) => `${sub.x},${sub.y},${sub.w},${sub.h}`;
 
@@ -174,7 +200,7 @@ export type OnHover = (line: LineRef | null) => void;
 
 const trace = createTrace('content');
 
-export function createOverlay({ loadFont, onHover }: { loadFont: LoadFont; onHover?: OnHover }) {
+export function createOverlay({ loadFont, onHover, onStatusAction }: { loadFont: LoadFont; onHover?: OnHover; onStatusAction?: OnStatusAction }) {
   const entries = new Map<HTMLElement, Entry>();
   /** 被我們從 static 改成 relative 的父元素 → 原本的 inline position，停止時還原。 */
   const changedParents = new Map<HTMLElement, string>();
@@ -183,6 +209,8 @@ export function createOverlay({ loadFont, onHover }: { loadFont: LoadFont; onHov
   /** 截圖中也不藏的 anchor（長 Page）。 */
   let keptDuringCapture: ReadonlySet<Element> = new Set();
   let hiddenAt: number | undefined;
+  /** 截圖中：Page 上的狀態藏著（截圖途中才建的 host 也要藏）。 */
+  let statusHidden = false;
   let stopped = false;
 
   const resizeObserver = new ResizeObserver((records) => {
@@ -276,6 +304,56 @@ export function createOverlay({ loadFont, onHover }: { loadFont: LoadFont; onHov
       const t = layerTransform(entry.anchor, layer.sub, layer.size);
       layer.element.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scaleX}, ${t.scaleY})`;
     }
+    if (entry.status) {
+      // 不縮放：跟 anchor 一樣大的框，小標籤的字級是畫面 px
+      const t = layerTransform(entry.anchor, WHOLE_PAGE, { width: 1, height: 1 });
+      Object.assign(entry.status.style, { left: `${t.x}px`, top: `${t.y}px`, width: `${t.scaleX}px`, height: `${t.scaleY}px` });
+    }
+  }
+
+  /** 一個 anchor 上的狀態：翻譯中是轉圈圈的小標籤（模型下載的百分比在文字裡），出問題是可以點的紅色小標籤。 */
+  function renderStatus(entry: Entry, { working, problem }: StatusOnAnchor['status']): void {
+    const element = entry.status ?? document.createElement('div');
+    element.className = 'st';
+    element.replaceChildren();
+    if (working) {
+      const chip = document.createElement('span');
+      chip.className = 'st-chip';
+      const spin = document.createElement('span');
+      spin.className = 'st-spin';
+      chip.append(spin, working.text);
+      element.append(chip);
+    } else if (problem) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'st-chip warn';
+      chip.textContent = problem.text;
+      chip.addEventListener('click', (event) => {
+        // 不讓網站收到這次點擊（點畫面翻頁的閱讀器）
+        event.stopPropagation();
+        event.preventDefault();
+        onStatusAction?.(problem.action, problem.pageHash);
+      });
+      element.append(chip);
+    }
+    if (!entry.status) {
+      entry.status = element;
+      entry.root.append(element);
+    }
+    place(entry);
+  }
+
+  /** 換掉所有 anchor 上的狀態（#185）；沒列到的 anchor 拿掉狀態。 */
+  function setStatuses(statuses: StatusOnAnchor[]): void {
+    if (stopped) return;
+    const next = new Map(statuses.map((s) => [s.anchor, s.status]));
+    for (const entry of entries.values()) {
+      if (entry.status && !next.has(entry.anchor)) {
+        entry.status.remove();
+        entry.status = undefined;
+      }
+    }
+    for (const [anchor, status] of next) renderStatus(entryFor(anchor), status);
   }
 
   function entryFor(anchor: HTMLElement): Entry {
@@ -284,6 +362,7 @@ export function createOverlay({ loadFont, onHover }: { loadFont: LoadFont; onHov
     const host = document.createElement('div');
     host.setAttribute(HOST_ATTRIBUTE, '');
     host.dataset.pageMode = pageMode;
+    if (statusHidden) host.dataset.statusHidden = '';
     host.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;overflow:visible;pointer-events:none;margin:0;padding:0;border:0;';
     const root = host.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
@@ -654,11 +733,26 @@ export function createOverlay({ loadFont, onHover }: { loadFont: LoadFont; onHov
     await untilRepainted();
   }
 
+  /** 截圖前藏起 Page 上的狀態（不管覆蓋層藏不藏）；回傳有沒有藏到東西（要等重繪）。 */
+  function hideStatusForCapture(): boolean {
+    statusHidden = true;
+    let hid = false;
+    for (const entry of entries.values()) {
+      entry.host.dataset.statusHidden = '';
+      hid ||= entry.status !== undefined && entry.host.style.visibility !== 'hidden';
+    }
+    return hid;
+  }
+
   /** 截完立刻還原；回傳覆蓋層被藏了多久（ms），沒藏就是 undefined。 */
   function restoreAfterCapture(): number | undefined {
     capturing = false;
+    statusHidden = false;
     keptDuringCapture = new Set();
-    for (const entry of entries.values()) delete entry.host.dataset.capturing;
+    for (const entry of entries.values()) {
+      delete entry.host.dataset.capturing;
+      delete entry.host.dataset.statusHidden;
+    }
     entries.forEach(applyVisibility);
     const ms = hiddenAt === undefined ? undefined : performance.now() - hiddenAt;
     hiddenAt = undefined;
@@ -703,7 +797,7 @@ export function createOverlay({ loadFont, onHover }: { loadFont: LoadFont; onHov
     return changedParents.has(element as HTMLElement);
   }
 
-  return { show, highlight, setPageMode, hideForCapture, restoreAfterCapture, shownPages, coveredRects, clear, ownsStyleOf };
+  return { show, highlight, setPageMode, setStatuses, hideForCapture, hideStatusForCapture, restoreAfterCapture, shownPages, coveredRects, clear, ownsStyleOf };
 }
 
 export type Overlay = ReturnType<typeof createOverlay>;

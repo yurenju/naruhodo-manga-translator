@@ -3,10 +3,13 @@
  * SW 在安裝／更新時寫（background/install.ts），onboarding 頁每走一步寫，side panel 讀：
  * 沒做完就只顯示「完成設定」，按了打開 onboarding、回到停下來的那一步。
  */
+import type { RequestedStep } from './onboarding-step.ts';
 import { watchLocal } from './watch-local.ts';
 
-/** onboarding 的步驟（第 1–4 步）；ownKey＝頁尾「使用自備金鑰」換成的畫面（不在步驟裡）。 */
-export type OnboardingStep = 'intro' | 'signIn' | 'plan' | 'tutorial' | 'ownKey';
+/**
+ * onboarding 的步驟（第 1–4 步）；ownKey＝頁尾「使用自備金鑰」換成的畫面，return＝點圖示時卡住、解決後的「回到漫畫」（都不在步驟裡）。
+ */
+export type OnboardingStep = 'intro' | 'signIn' | 'plan' | 'tutorial' | 'ownKey' | 'return';
 
 /**
  * 進度：停在哪一步，done＝設定完成（選了方案或存了自己的 key；第 4 步只是教學）。
@@ -22,16 +25,37 @@ const PROGRESS: readonly OnboardingProgress[] = ['intro', 'signIn', 'plan', 'don
 
 const parseProgress = (value: unknown): OnboardingProgress => (PROGRESS.includes(value as OnboardingProgress) ? (value as OnboardingProgress) : 'done');
 
-/** onboarding 頁從哪一步開始：side panel 要的是「登入」就從第 2 步；已登入的話第 2 步直接跳到第 3 步。 */
-export function startStep(progress: OnboardingProgress, signedIn: boolean, requested?: 'signIn'): OnboardingStep {
+export type { RequestedStep };
+
+const REQUESTED: readonly RequestedStep[] = ['signIn', 'plan', 'ownKey'];
+
+/** onboarding 頁從哪一步開始：要的是「登入」或「選擇方案」就從第 2 步；已登入（而且同意了）的話第 2 步直接跳到第 3 步。 */
+export function startStep(progress: OnboardingProgress, signedIn: boolean, requested?: RequestedStep): OnboardingStep {
+  if (requested === 'ownKey') return 'ownKey';
   const step = requested ?? (progress === 'done' ? 'intro' : progress);
   if (step === 'intro') return 'intro';
   return signedIn ? 'plan' : 'signIn';
 }
 
-/** 外掛自己的 onboarding 頁；step＝signIn 從第 2 步開始（side panel 的「登入」「改用內建翻譯」）。 */
-export function onboardingUrl(step?: 'signIn'): string {
-  return chrome.runtime.getURL(step ? `onboarding.html?step=${step}` : 'onboarding.html');
+/** 網址的 query：step＝從哪一步開始，from＝點圖示的那個漫畫分頁（完成後「回到漫畫」切回去）。 */
+export function onboardingQuery(step?: RequestedStep, from?: number): string {
+  const params = new URLSearchParams();
+  if (step) params.set('step', step);
+  if (from !== undefined) params.set('from', String(from));
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+export function onboardingRequest(search: string): { step?: RequestedStep; from?: number } {
+  const params = new URLSearchParams(search);
+  const step = params.get('step') as RequestedStep | null;
+  const from = Number(params.get('from') ?? NaN);
+  return { ...(step && REQUESTED.includes(step) ? { step } : {}), ...(Number.isInteger(from) ? { from } : {}) };
+}
+
+/** 外掛自己的 onboarding 頁。 */
+export function onboardingUrl(step?: RequestedStep, from?: number): string {
+  return chrome.runtime.getURL(`onboarding.html${onboardingQuery(step, from)}`);
 }
 
 export async function loadOnboarding(): Promise<OnboardingProgress> {

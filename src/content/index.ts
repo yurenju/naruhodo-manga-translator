@@ -113,6 +113,11 @@ if (!globalThis.__naruhodo) {
     onHover(line) {
       void send({ type: 'content:hover', line });
     },
+    // Page 上的紅色小標籤（#185）：看方案、登入、重試由 SW 處理
+    onStatusAction(action, pageHash) {
+      trace('status:action', { action, pageHash });
+      void send({ type: 'content:statusAction', action, pageHash });
+    },
   });
 
   // Page Mode 是全域設定，content script 自己讀、自己聽變更（side panel 切換時立刻跟著變）。
@@ -164,6 +169,15 @@ if (!globalThis.__naruhodo) {
             .then(() => send({ type: 'content:overlayShown' }))
             .catch((e: unknown) => console.warn('overlay failed', e));
         else trace('overlay:skip', { anchorId: message.anchorId, pageHash: message.pageHash, reason: 'anchor 不在最近一次量到的 Page 裡' });
+        return false;
+      }
+      case 'content:pageStatus': {
+        // anchor 不在最近一次量到的 Page 裡（已經捲走或換頁）就不畫
+        const statuses = message.anchors.flatMap(({ anchorId, ...status }) => {
+          const anchor = anchors.get(anchorId);
+          return anchor instanceof HTMLElement ? [{ anchor, status }] : [];
+        });
+        overlay.setStatuses(statuses);
         return false;
       }
       case 'content:prepareCapture':

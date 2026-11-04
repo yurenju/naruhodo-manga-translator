@@ -156,8 +156,9 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
       trace('translate:done', { pageHash, ms: Date.now() - startedAt, model: output.model, usage: output.usage, priorPages: priorPages.length, continues, usageRecordId: output.usageRecordId });
     } catch (e) {
       trace('translate:error', { pageHash, ms: Date.now() - startedAt, error: e });
-      // 額度用完不是失敗：跟沒有 Translator 一樣只顯示原文與讀音，用完的提示在 side panel 頂端
-      if (e instanceof QuotaExhaustedError) return { state: 'done', text: whole(text), translated: false };
+      // 額度用完不是失敗：跟沒有 Translator 一樣只顯示原文與讀音，用完的提示在 side panel 頂端與 Page 右上角（#185）
+      if (e instanceof QuotaExhaustedError)
+        return { state: 'done', text: whole(text), translated: false, quotaExhausted: e.reason === 'monthlyLimitReached' ? 'monthly' : 'free' };
       // 429／5xx 的重試在 Translator 裡（claude-translator.ts）；這裡是重試後仍失敗
       console.warn('translate failed', e);
       return { state: 'done', text: whole(text), translated: false, translateError: e instanceof Error ? e.message : String(e) };

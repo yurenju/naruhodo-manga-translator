@@ -1,14 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import type { TitleGuess } from '../shared/series.ts';
 import type { TitleSignals } from '../shared/translator.ts';
-import { createActivation, type ActivationDeps, type TabState } from './activation.ts';
+import { createActivation, type ActivationDeps, type BlockedStep, type TabState } from './activation.ts';
 
 const EPISODE = 'https://manga.example/episode/123';
 
 /** 用記憶體模擬 Chrome：tab 的網址、注入紀錄、side panel 紀錄。 */
 function fakeChrome(urls: Record<number, string>) {
   const states = new Map<number, TabState>();
-  const calls = { openedPanels: [] as number[], injected: [] as number[], stopped: [] as number[] };
+  const calls = {
+    openedPanels: [] as number[],
+    /** 設定還沒讀到時：只呼叫 open，讓 Chrome 依同步過去的 enabled 決定開不開。 */
+    openedIfEnabled: [] as number[],
+    closedPanels: [] as number[],
+    injected: [] as number[],
+    stopped: [] as number[],
+    onboardings: [] as [number, BlockedStep][],
+  };
+  /** Side Panel on Activation；undefined＝SW 剛醒來還沒讀到。 */
+  const settings: { panelOnActivation: boolean | undefined; blocked: BlockedStep | undefined } = { panelOnActivation: true, blocked: undefined };
   const statusEvents: [number, boolean][] = [];
   const failInjectionFor = new Set<number>();
   const createdSeries: string[] = [];
@@ -30,7 +40,11 @@ function fakeChrome(urls: Record<number, string>) {
       delete: async (tabId) => void states.delete(tabId),
     },
     getTabUrl: async (tabId) => urls[tabId],
-    openSidePanel: async (tabId) => void calls.openedPanels.push(tabId),
+    sidePanelOnActivation: () => settings.panelOnActivation,
+    openSidePanel: async (tabId, { onlyIfEnabled } = {}) => void (onlyIfEnabled ? calls.openedIfEnabled : calls.openedPanels).push(tabId),
+    closeSidePanel: async (tabId) => void calls.closedPanels.push(tabId),
+    blockedStep: async () => settings.blocked,
+    openOnboarding: async (tabId, step) => void calls.onboardings.push([tabId, step]),
     injectContentScript: async (tabId) => {
       if (failInjectionFor.has(tabId)) throw new Error('Cannot access contents of the page');
       calls.injected.push(tabId);
@@ -61,6 +75,7 @@ function fakeChrome(urls: Record<number, string>) {
   return {
     deps,
     calls,
+    settings,
     statusEvents,
     failInjectionFor,
     urls,
@@ -133,6 +148,130 @@ describe('activate', () => {
     await activation.activate(1);
 
     expect(chrome.statusEvents).toEqual([[1, true]]);
+  });
+});
+
+describe('toggle（點圖示、快捷鍵）', () => {
+  it('沒啟動時點一下就啟動；再點一下就停止、移除覆蓋層並關掉側邊欄', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    const activation = createActivation(chrome.deps);
+
+    await activation.toggle(1);
+    expect(await activation.isActive(1)).toBe(true);
+    await activation.toggle(1);
+
+    expect(await activation.isActive(1)).toBe(false);
+    expect(chrome.calls.stopped).toEqual([1]);
+    expect(chrome.calls.closedPanels).toEqual([1]);
+  });
+
+  it('Side Panel on Activation 關著：啟動但不打開側邊欄', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.settings.panelOnActivation = false;
+    const activation = createActivation(chrome.deps);
+
+    await activation.toggle(1);
+
+    expect(await activation.isActive(1)).toBe(true);
+    expect(chrome.calls.openedPanels).toEqual([]);
+    expect(chrome.calls.openedIfEnabled).toEqual([]);
+  });
+
+  it('設定開著：在任何 await 之前就同步打開側邊欄', () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    const activation = createActivation(chrome.deps);
+
+    void activation.toggle(1);
+
+    expect(chrome.calls.openedPanels).toEqual([1]);
+  });
+
+  it('SW 剛醒來還沒讀到設定：只同步呼叫 open，交給 Chrome 照同步過去的 enabled 決定', () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.settings.panelOnActivation = undefined;
+    const activation = createActivation(chrome.deps);
+
+    void activation.toggle(1);
+
+    expect(chrome.calls.openedIfEnabled).toEqual([1]);
+    expect(chrome.calls.openedPanels).toEqual([]);
+  });
+
+  it('知道已啟動的 tab 再點一下：不先打開側邊欄', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    const activation = createActivation(chrome.deps);
+    await activation.toggle(1);
+
+    await activation.toggle(1);
+
+    expect(chrome.calls.openedPanels).toEqual([1]);
+  });
+
+  it('啟動當下卡住（例如沒登入）：照常啟動，同時打開 onboarding 並帶入能解決問題的那一步', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.settings.blocked = 'signIn';
+    const activation = createActivation(chrome.deps);
+
+    await activation.toggle(1);
+
+    expect(await activation.isActive(1)).toBe(true);
+    expect(chrome.calls.onboardings).toEqual([[1, 'signIn']]);
+  });
+
+  it('能翻譯就不開 onboarding；停止也不開', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    const activation = createActivation(chrome.deps);
+    await activation.toggle(1);
+    chrome.settings.blocked = 'plan';
+
+    await activation.toggle(1);
+
+    expect(chrome.calls.onboardings).toEqual([]);
+  });
+
+  it('e2e 測試入口不開 onboarding（只有點圖示的當下才算）', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.settings.blocked = 'signIn';
+    const activation = createActivation(chrome.deps);
+
+    await activation.activate(1);
+
+    expect(chrome.calls.onboardings).toEqual([]);
+  });
+
+  it('側邊欄的「停止」不關側邊欄', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    const activation = createActivation(chrome.deps);
+    await activation.toggle(1);
+
+    await activation.stop(1);
+
+    expect(chrome.calls.closedPanels).toEqual([]);
+  });
+});
+
+describe('openPanel（圖示右鍵的「打開側邊欄」）', () => {
+  it('設定關著也打開側邊欄；還沒啟動就順便啟動', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.settings.panelOnActivation = false;
+    const activation = createActivation(chrome.deps);
+
+    await activation.openPanel(1);
+
+    expect(chrome.calls.openedPanels).toEqual([1]);
+    expect(await activation.isActive(1)).toBe(true);
+  });
+
+  it('已啟動就只打開側邊欄，不停止', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.settings.panelOnActivation = false;
+    const activation = createActivation(chrome.deps);
+    await activation.toggle(1);
+
+    await activation.openPanel(1);
+
+    expect(await activation.isActive(1)).toBe(true);
+    expect(chrome.calls.stopped).toEqual([]);
   });
 });
 

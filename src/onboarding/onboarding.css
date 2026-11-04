@@ -57,6 +57,11 @@ html, body { margin: 0; background: var(--naru-surface-2); }
 .ob-plan__name { font-weight: 700; }
 .ob-plan__price { font-size: 22px; font-weight: 700; }
 .ob-plan .naru-btn { margin-top: auto; }
+/* 第 4 步的「看漫畫／學日文」（#185）：整張卡片是按鈕 */
+.ob-choice { font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.ob-choice:hover, .ob-choice:focus-visible { border-color: var(--naru-accent); box-shadow: 0 0 0 1px var(--naru-accent); outline: none; }
+.ob-choice[aria-pressed='true'] { border-color: var(--naru-accent); box-shadow: 0 0 0 2px var(--naru-accent); background: var(--naru-accent-weak); }
+.ob-h3 { margin: var(--naru-space-3) 0 0; font-size: var(--naru-text-body); }
 
 /* 第 1 步「開始設定」上方的模型下載說明（#169） */
 .ob-notice { margin: 0 0 var(--naru-space-4); font-size: var(--naru-text-small); color: var(--naru-ink-2); }

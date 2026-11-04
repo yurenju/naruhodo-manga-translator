@@ -29,13 +29,15 @@ import type {
 import { acceptSuggestion, editEntry, ignoreSuggestion, pendingSuggestions, type SeriesNotes, type TranslatorVersion } from '../shared/series-notes.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { onboardingUrl, saveInstallState, saveOnboarding } from '../shared/onboarding.ts';
+import type { ActionBadge, StatusAction } from '../shared/page-status.ts';
+import { saveSidePanelOnActivation, watchSidePanelOnActivation } from '../shared/side-panel-setting.ts';
 import { loadPendingPayment, savePendingPayment, showSubscribedNotice } from '../shared/payment-return.ts';
 import { createTrace } from '../shared/trace.ts';
 import { isTranslationModeSet, loadTranslationMode, saveTranslationMode, watchTranslationMode } from '../shared/translation-mode.ts';
 import type { TitleGuess } from '../shared/series.ts';
 import { readTitleSignals } from '../shared/title-signals.ts';
 import type { NotesInput, TitleSignals, TranslateInput, Translator } from '../shared/translator.ts';
-import { createActivation } from './activation.ts';
+import { createActivation, type BlockedStep } from './activation.ts';
 import { BACKUP_KEYS, createBackup } from './backup.ts';
 import { indexedDbPageCache } from './cache-store.ts';
 import { createHostedTranslator } from './hosted-translator.ts';
@@ -45,6 +47,7 @@ import { isCached, MODEL_CACHE } from '../offscreen/models/model-store.ts';
 import { currentModelStatus } from './model-status.ts';
 import { ensureOffscreenDocument } from './offscreen.ts';
 import { createOverlaySync } from './overlay-sync.ts';
+import { createPageStatusSync } from './page-status-sync.ts';
 import { createPaymentReturn } from './payment-return.ts';
 import { createScanner } from './scan.ts';
 import { createSeriesCatalog } from './series-catalog.ts';
@@ -281,9 +284,11 @@ const transcriber = createTranscriber({
   publish(tabId, pages) {
     notifyPanel({ type: 'pages:updated', tabId, pages });
     overlaySync.publish(tabId, pages);
+    void pageStatus.pagesUpdated(tabId, pages);
   },
   onJobEvent(event) {
     trace('job', { ...event });
+    void pageStatus.jobEvent(event);
   },
 });
 
@@ -291,7 +296,10 @@ const transcriber = createTranscriber({
  * 能不能翻譯變了（同意、切換翻譯模式、登入，#93）：已啟動的分頁直接翻還沒翻譯的頁，不必再按「翻譯此頁」。
  * 同意與模式在 chrome.storage（onboarding 頁、side panel 都會寫）；登入存在 IndexedDB，由登入的一方廣播 session:changed。
  */
-const accessChanged = () => void transcriber.translateUntranslated().catch((e: unknown) => console.warn('translate after access change failed', e));
+const accessChanged = () => {
+  void transcriber.translateUntranslated().catch((e: unknown) => console.warn('translate after access change failed', e));
+  void pageStatus.accessChanged();
+};
 watchDataConsent(accessChanged);
 watchTranslationMode(accessChanged);
 
@@ -312,6 +320,32 @@ async function handleInstalled(reason: `${chrome.runtime.OnInstalledReason}`): P
 }
 
 if (!__E2E__) void installed.then(handleInstalled);
+
+/**
+ * 蓋在 Page 上的狀態與圖示 badge（#185）：沒開 side panel 的讀者也看得到翻譯中、模型下載中、出問題。
+ * 能不能翻譯跟 getTranslator 同一套判斷：內建翻譯沒登入或沒同意是「登入」，自備金鑰沒有 key 或沒同意是「設定」。
+ */
+const BADGES: Record<ActionBadge, { text: string; color: string }> = {
+  busy: { text: '…', color: '#2F6FDB' },
+  problem: { text: '!', color: '#C0392B' },
+  // 已啟動、沒事：一個小小的綠色標記
+  on: { text: ' ', color: '#2E8B57' },
+};
+
+const pageStatus = createPageStatusSync({
+  send(tabId, anchors) {
+    chrome.tabs.sendMessage(tabId, { type: 'content:pageStatus', anchors } satisfies Message).catch(() => {});
+  },
+  setBadge(tabId, badge) {
+    // 分頁已經關了也沒關係
+    chrome.action.setBadgeText({ tabId, text: badge ? BADGES[badge].text : '' }).catch(() => {});
+    if (badge) chrome.action.setBadgeBackgroundColor({ tabId, color: BADGES[badge].color }).catch(() => {});
+  },
+  async accessProblem() {
+    if (await getTranslator()) return undefined;
+    return (await loadTranslationMode()) === 'hosted' ? 'signIn' : 'ownKey';
+  },
+});
 
 const overlaySync = createOverlaySync({
   show({ tabId, anchorId, pageHash, subRect, text }) {
@@ -437,6 +471,39 @@ async function updateSeries(tabId: number, action: string, change: (url: string,
   if (next !== undefined) transcriber.reassignSeries(tabId, next);
 }
 
+/** 這個 tab 專屬的 side panel：帶 tabId，知道自己跟著哪個分頁。 */
+const panelPath = (tabId: number) => `sidepanel.html?tabId=${tabId}`;
+
+const MENU_PANEL_ON_ACTIVATION = 'sidePanelOnActivation';
+const MENU_OPEN_PANEL = 'openSidePanel';
+
+/**
+ * Side Panel on Activation（#185）：點圖示時要同步知道（sidePanel.open 要在第一個 await 之前），所以記在記憶體裡。
+ * SW 剛醒來還沒讀到時是 undefined；這時交給 Chrome：設定同步成全域 side panel 的 enabled，open 照它決定開不開。
+ */
+let sidePanelOnActivation: boolean | undefined;
+watchSidePanelOnActivation((open) => {
+  sidePanelOnActivation = open;
+  chrome.sidePanel.setOptions({ enabled: open }).catch((e: unknown) => console.warn('sidePanel.setOptions failed', e));
+  // 選單還沒建（安裝中）時會失敗：建立時就用這個值
+  chrome.contextMenus.update(MENU_PANEL_ON_ACTIVATION, { checked: open }, () => void chrome.runtime.lastError);
+});
+
+/**
+ * 點圖示的當下卡在哪（#185）：沒同意或沒登入是「同意並登入」，額度 0 是「選擇方案」，自備金鑰沒有 key 是「使用自備金鑰」。
+ * 讀不到額度（離線、Worker 出錯）就當作沒卡住，翻譯時再說。
+ */
+async function blockedStep(): Promise<BlockedStep | undefined> {
+  if (__E2E__ && fakeTranslator && !requireApiKey) return undefined;
+  const mode = await loadTranslationMode();
+  const consented = await hasDataConsent(mode);
+  if (mode === 'ownKey') return consented && (await apiKeys.has()) ? undefined : 'ownKey';
+  const token = await hostedSessionToken();
+  if (!consented || !token) return 'signIn';
+  const result = await hostedAccount.account(token);
+  return result.ok && result.account.quota.remaining === 0 ? 'plan' : undefined;
+}
+
 const activation = createActivation({
   store,
   seriesForUrl: (url, guess) => seriesCatalog.seriesForUrl(url, guess),
@@ -455,13 +522,27 @@ const activation = createActivation({
     scan(tabId);
   },
   getTabUrl: async (tabId) => (await chrome.tabs.get(tabId)).url,
-  openSidePanel(tabId) {
+  sidePanelOnActivation: () => sidePanelOnActivation,
+  openSidePanel(tabId, { onlyIfEnabled } = {}) {
+    const options = { tabId, path: panelPath(tabId), enabled: true };
+    // SW 剛醒來、還沒讀到設定：只呼叫 open，Chrome 照 SW 同步過去的全域 enabled（或這個 tab 自己的）決定開不開；
+    // 打開了才補上這個 tab 專屬的路徑（帶 tabId 的 side panel）
+    if (onlyIfEnabled) return chrome.sidePanel.open({ tabId }).then(() => chrome.sidePanel.setOptions(options));
     // 不 await setOptions：await 會讓 open() 離開 user gesture。兩個呼叫會依序送到瀏覽器。
     // 用 tab 專屬的路徑帶上 tabId；從 Chrome 內建選單打開的是沒有 tabId 的全域 side panel。
-    chrome.sidePanel
-      .setOptions({ tabId, path: `sidepanel.html?tabId=${tabId}`, enabled: true })
-      .catch((e: unknown) => console.warn('sidePanel.setOptions failed', e));
+    chrome.sidePanel.setOptions(options).catch((e: unknown) => console.warn('sidePanel.setOptions failed', e));
     return chrome.sidePanel.open({ tabId });
+  },
+  async closeSidePanel(tabId) {
+    // 沒開著會 reject：不要緊
+    await chrome.sidePanel.close({ tabId }).catch(() => {});
+    // 這個 tab 的 enabled 跟著設定：SW 剛醒來時點圖示，Chrome 才會照設定決定開不開（見 openSidePanel）
+    await chrome.sidePanel.setOptions({ tabId, enabled: sidePanelOnActivation ?? true });
+  },
+  blockedStep,
+  async openOnboarding(tabId, step) {
+    trace('activate:blocked', { tabId, step });
+    await chrome.tabs.create({ url: onboardingUrl(step, tabId) });
   },
   async injectContentScript(tabId) {
     await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
@@ -472,26 +553,56 @@ const activation = createActivation({
   onStatusChanged(tabId, active) {
     trace('status', { tabId, active });
     notifyPanel({ type: 'status:changed', tabId, active });
-    if (active) scan(tabId);
-    else {
+    if (active) {
+      void pageStatus.activated(tabId);
+      scan(tabId);
+    } else {
       scanner.clear(tabId);
       transcriber.clear(tabId);
+      pageStatus.clear(tabId);
     }
   },
 });
 
+// 圖示是開關（#185）：沒啟動就啟動，已啟動就停止
 chrome.action.onClicked.addListener((tab) => {
-  if (tab.id !== undefined) void activation.activate(tab.id);
+  if (tab.id !== undefined) void activation.toggle(tab.id);
 });
 
 chrome.commands.onCommand.addListener((command, tab) => {
-  if (command === 'activate' && tab?.id !== undefined) void activation.activate(tab.id);
+  if (command === 'activate' && tab?.id !== undefined) void activation.toggle(tab.id);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  // 重新整理或換頁：anchor 都換了，重新查快取（同 origin 會重新注入、繼續啟動）
-  if (changeInfo.status === 'loading') transcriber.resetPages(tabId);
+  // 重新整理或換頁：anchor 都換了，重新查快取（同 origin 會重新注入、繼續啟動）；content script 與 badge 都是新的
+  if (changeInfo.status === 'loading') {
+    transcriber.resetPages(tabId);
+    pageStatus.reset(tabId);
+  }
   void activation.handleTabUpdated(tabId, changeInfo);
+});
+
+/**
+ * 圖示的右鍵選單（#185）：勾選「啟動時打開側邊欄」，以及臨時「打開側邊欄」。
+ * SW 每次啟動都重建，不只在 onInstalled：開發時重新載入 unpacked 外掛、或 Chrome 開機時載入改過的外掛，不一定有安裝事件。
+ */
+const createMenus = () =>
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: MENU_PANEL_ON_ACTIVATION,
+      title: '啟動時打開側邊欄',
+      type: 'checkbox',
+      checked: sidePanelOnActivation ?? true,
+      contexts: ['action'],
+    });
+    chrome.contextMenus.create({ id: MENU_OPEN_PANEL, title: '打開側邊欄', contexts: ['action'] });
+  });
+createMenus();
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === MENU_PANEL_ON_ACTIVATION) void saveSidePanelOnActivation(info.checked === true);
+  // 在 user gesture 裡：openPanel 同步打開 side panel
+  else if (info.menuItemId === MENU_OPEN_PANEL && tab?.id !== undefined) void activation.openPanel(tab.id);
 });
 
 /**
@@ -524,6 +635,8 @@ const paymentReturn = createPaymentReturn({
   onConfirmed(from) {
     trace('payment:confirmed', { from });
     notifyPanel({ type: 'quota:changed' });
+    // 訂閱了就能翻：額度用完而沒翻的頁接著翻（#185 的「回到漫畫」）
+    accessChanged();
     // onboarding 分頁可能已經關了：付款完成就算設定完成，跟 onboarding 頁自己寫的一樣
     if (from === 'onboarding') void saveTranslationMode('hosted').then(() => saveOnboarding('done'));
     else void showSubscribedNotice();
@@ -558,11 +671,37 @@ void chrome.tabs.query({ active: true }).then((tabs) => {
 });
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => paymentReturn.tabActivated(tabId, windowId));
 
+/** onboarding 的「回到漫畫」（#185）：切回那個分頁，接著翻畫面上還沒翻的頁（#93）。 */
+async function returnToManga(tabId: number): Promise<void> {
+  trace('onboarding:return', { tabId });
+  try {
+    const tab = await chrome.tabs.update(tabId, { active: true });
+    if (tab) await chrome.windows.update(tab.windowId, { focused: true });
+  } catch {
+    // 漫畫分頁已經關了
+  }
+  accessChanged();
+}
+
+/** Page 上的紅色小標籤被點了（#185）：看方案、登入、設定 key 都打開 onboarding 的那一步；重試只重翻這一頁。 */
+async function statusAction(tabId: number, action: StatusAction, pageHash: string): Promise<void> {
+  trace('content:statusAction', { tabId, action, pageHash });
+  if (action !== 'retry') {
+    await chrome.tabs.create({ url: onboardingUrl(action, tabId) });
+    return;
+  }
+  const page = transcriber.get(tabId).find((p) => p.pageHash === pageHash);
+  // 本機流水線失敗的頁不留，重新擷取就會重跑；翻譯失敗的用辨識好的原文重送
+  if (page?.transcript.state === 'error') scan(tabId);
+  else await transcriber.translate(tabId, pageHash);
+}
+
 chrome.tabs.onRemoved.addListener((tabId, { windowId }) => {
   void paymentReturn.tabRemoved(tabId, windowId);
   void activation.handleTabRemoved(tabId);
   scanner.clear(tabId);
   transcriber.clear(tabId);
+  pageStatus.clear(tabId);
 });
 
 chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) => {
@@ -575,7 +714,16 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
   switch (message.type) {
     case 'models:status':
       modelStatus = message.status;
+      void pageStatus.modelStatus(message.status);
       return false;
+    case 'onboarding:return':
+      void returnToManga(message.tabId);
+      return false;
+    case 'content:statusAction': {
+      const tabId = sender.tab?.id;
+      if (tabId !== undefined) void statusAction(tabId, message.action, message.pageHash);
+      return false;
+    }
     case 'session:changed':
       accessChanged();
       return false;

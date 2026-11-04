@@ -1,6 +1,7 @@
 import type { Stripe } from './long-page.ts';
 import type { PageText, RatioRect } from './page-text.ts';
 import type { EditableFields, NotesSuggestion, StaleReason, SuggestionRef } from './series-notes.ts';
+import type { AnchorStatus, StatusAction } from './page-status.ts';
 import type { SeriesOption } from './series.ts';
 import type { NotesChanges, NotesEntry, NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, TranslateInput, TranslateOutput } from './translator.ts';
 
@@ -116,6 +117,12 @@ export type Message =
   | { type: 'content:hover'; line: LineRef | null }
   /** side panel → content script（tabs.sendMessage）：滑過 panel 那行時高亮頁面上的那句；null＝取消。 */
   | { type: 'content:highlight'; line: LineRef | null }
+  /** onboarding → SW：點圖示時卡住、解決後按「回到漫畫」（#185）：切回那個分頁、接著翻還沒翻的頁。 */
+  | { type: 'onboarding:return'; tabId: number }
+  /** SW → content script：這個 tab 每個 anchor 上的狀態（#185），整份換掉；沒列到的 anchor 拿掉狀態。 */
+  | { type: 'content:pageStatus'; anchors: AnchorStatus[] }
+  /** content script → SW：Page 上的紅色小標籤被點了（#185）。 */
+  | { type: 'content:statusAction'; action: StatusAction; pageHash: string }
   /** e2e build 才有：等同點外掛圖示（spec #27 第 12 節）。 */
   | { type: 'test:activate'; tabId: number };
 
@@ -281,6 +288,8 @@ export interface PageView extends PageThumb {
         translating?: boolean;
         translation?: TranslationInfo;
         translateError?: string;
+        /** 內建翻譯的額度用完了（不算失敗，#185 的 Page 紅標籤分免費額度與本月額度）。 */
+        quotaExhausted?: 'free' | 'monthly';
         /** 快取的這頁過時了（#38）：只提示，按「重新翻譯」才重翻。 */
         stale?: StaleReason;
       }

@@ -7,6 +7,7 @@
  * 安裝時怎麼決定翻譯模式與 onboarding 在 src/background/install.test.ts。
  * 兩條路的譯文都來自同一份 ground truth，所以用 __translateCalls（只有走 offscreen 時才加）分辨走了哪一條。
  * 免費額度用完（#92）：Worker 回 402 → SW 的 Hosted Translator → side panel 重新向 Worker 讀額度，這串訊息與 API 契約只有這裡測得到；
+ * Page 上的紅標籤（#185）：402 → transcript 的 quotaExhausted → content script 的小標籤 → 點了 SW 打開 onboarding 的選擇方案；
  * 顯示規則（哪一行文字、警告色、按鈕）在 src/ui/view.test.ts。
  * 訂閱（#94、#176）：side panel 的「訂閱」向 Worker 建立 checkout、請 SW 用新分頁打開 checkout 頁 → Paddle 的 webhook 送到 Worker →
  * SW 查到訂閱中就關掉付款分頁、side panel 重讀額度、顯示本月額度。Worker 的 Paddle 是假的（env.test），webhook 由測試用 env.test 的 secret 簽好送出；
@@ -46,6 +47,11 @@ test.describe('全新安裝', () => {
     const email = freshEmail(testInfo.workerIndex);
     await signInWithEmail(onboarding, email);
     await onboarding.getByRole('button', { name: '先用免費的 50 頁' }).click();
+    // 第 4 步的「看漫畫／學日文」（#185）：一次寫好兩個獨立的設定
+    await onboarding.getByRole('group', { name: '使用方式' }).getByRole('button', { name: /^看漫畫/ }).click();
+    await expect
+      .poll(() => sw.evaluate(() => chrome.storage.local.get(['sidePanelOnActivation', 'pageMode'])))
+      .toEqual({ sidePanelOnActivation: false, pageMode: 'read' });
     // 第 4 步（#169）：用新分頁打開網站的試翻頁，onboarding 分頁留著。測試不連外：只看分頁要打開的網址
     // （外掛用 chrome.tabs.create 開的分頁攔不到 context.route，載入失敗時 tab.url 仍是要打開的網址）
     await onboarding.getByRole('button', { name: '到試翻頁試試看' }).click();
@@ -258,8 +264,13 @@ test('管理訂閱：Paddle 拒絕建立 customer portal 時，設定頁顯示�
   expect(context.pages()).toHaveLength(pagesBefore);
 });
 
-test('免費額度用完：Worker 回額度不足後，side panel 顯示用完的狀態，逐字稿仍有原文與讀音', async ({ context, sw, extensionId, mockSite }, testInfo) => {
-  const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
+test('免費額度用完：Worker 回額度不足後，side panel 顯示用完的狀態，逐字稿仍有原文與讀音；Page 上的紅標籤打開選擇方案', async ({
+  context,
+  sw,
+  extensionId,
+  mockSite,
+}, testInfo) => {
+  const { page, panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   // 關掉自動翻譯：登入後只有按「翻譯此頁」才會送到 Worker，額度與按鈕不會被背景的翻譯搶先改掉
   const email = freshEmail(testInfo.workerIndex);
   await signInOnPanel(panel, context, email);
@@ -281,6 +292,12 @@ test('免費額度用完：Worker 回額度不足後，side panel 顯示用完�
   await expect(panel.getByText(/翻譯失敗/)).toHaveCount(0);
   await expect(transcript.getByText('讀音為推測').first()).toBeVisible();
   await expect(transcript.getByText('未翻譯').first()).toBeVisible();
+
+  // 沒開側邊欄的讀者看的是 Page 右上角（#185）：紅標籤點了打開 onboarding 的選擇方案，完成後回到這個分頁
+  const opened = context.waitForEvent('page');
+  await page.locator('[data-naruhodo-overlay] .st-chip').getByText('免費額度用完了・查看方案').first().click();
+  const onboarding = await opened;
+  await expect.poll(() => onboarding.url()).toBe(`chrome-extension://${extensionId}/onboarding.html?step=plan&from=${tabId}`);
 });
 
 test('刪除帳號：設定頁的「刪除帳號」換到確認頁 → 確定刪除 → 回到設定頁是未登入，side panel 顯示「尚未登入」', async ({

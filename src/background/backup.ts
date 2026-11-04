@@ -50,7 +50,7 @@ function parse(data: unknown): BackupFile {
   return file as BackupFile;
 }
 
-/** Map.groupBy 要 Chrome 117，minimum_chrome_version 是 116。 */
+/** 沒有用 Map.groupBy（Chrome 117）：寫這段時 minimum_chrome_version 還是 116。 */
 function groupBySeries<T extends { seriesId: string }>(rows: readonly T[]): Map<string, T[]> {
   const groups = new Map<string, T[]>();
   for (const row of rows) groups.set(row.seriesId, [...(groups.get(row.seriesId) ?? []), row]);
