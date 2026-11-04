@@ -55,6 +55,9 @@ export interface SeriesCatalogDeps {
 
 const trace = createTrace('sw');
 
+/** 這部 Series 有沒有這個原名（正規化後比對）。 */
+const hasTitle = (series: Series, title: string) => series.originalTitles?.some((t) => normalizeTitle(t) === normalizeTitle(title)) ?? false;
+
 export function createSeriesCatalog(deps: SeriesCatalogDeps) {
   const { repo } = deps;
   /** 歸類後才記住網址模式；Provisional Series 不記。 */
@@ -76,8 +79,7 @@ export function createSeriesCatalog(deps: SeriesCatalogDeps) {
 
   /** 原名命中的 Series：確認過的優先，其次最新建的。 */
   async function seriesWithTitle(title: string): Promise<Series | undefined> {
-    const wanted = normalizeTitle(title);
-    const matches = (await repo.listSeries()).filter((s) => s.originalTitles?.some((t) => normalizeTitle(t) === wanted));
+    const matches = (await repo.listSeries()).filter((s) => hasTitle(s, title));
     return matches.sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.createdAt - a.createdAt)[0];
   }
 
@@ -96,13 +98,11 @@ export function createSeriesCatalog(deps: SeriesCatalogDeps) {
    */
   async function rememberTitle(seriesId: string, title: string | undefined): Promise<void> {
     if (!title) return;
-    const wanted = normalizeTitle(title);
-    const has = (s: Series) => s.originalTitles?.some((t) => normalizeTitle(t) === wanted) ?? false;
     for (const series of await repo.listSeries()) {
       if (series.id === seriesId) {
-        if (!has(series)) await repo.putSeries({ ...series, originalTitles: [...(series.originalTitles ?? []), title] });
-      } else if (series.provisional && has(series)) {
-        await repo.putSeries({ ...series, originalTitles: series.originalTitles!.filter((t) => normalizeTitle(t) !== wanted) });
+        if (!hasTitle(series, title)) await repo.putSeries({ ...series, originalTitles: [...(series.originalTitles ?? []), title] });
+      } else if (series.provisional && hasTitle(series, title)) {
+        await repo.putSeries({ ...series, originalTitles: series.originalTitles!.filter((t) => normalizeTitle(t) !== normalizeTitle(title)) });
       }
     }
     trace('series:rememberTitle', { seriesId, originalTitle: title });

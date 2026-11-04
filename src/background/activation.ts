@@ -69,7 +69,12 @@ export function createActivation(deps: ActivationDeps) {
 
   /** 新的啟動還在猜時先等它（同一個 tab 的事件與再點一次圖示都要看到它的結果）。 */
   async function currentState(tabId: number): Promise<TabState | undefined> {
-    await starting.get(tabId);
+    const pending = starting.get(tabId);
+    if (pending) {
+      const state = await pending;
+      // 猜完了、狀態還在寫進 store：直接用這次的結果（store 可能還讀不到）。期間按了停止就已經不在 starting 裡
+      if (starting.get(tabId) === pending) return state;
+    }
     return deps.store.get(tabId);
   }
 

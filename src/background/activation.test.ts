@@ -406,6 +406,24 @@ describe('依頁面標題自動歸類（#186）', () => {
     expect(chrome.assigned).toEqual([1]);
   });
 
+  it('猜完、狀態還在寫入時來問的，也拿得到這次的 Series', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.titles[1] = '範例作品';
+    const set = chrome.deps.store.set;
+    // 像 IndexedDB 一樣，寫入要過一會兒才完成
+    chrome.deps.store.set = (tabId, state) => new Promise((r) => setTimeout(r, 20)).then(() => set(tabId, state));
+    const release = chrome.holdGuesses();
+    const activation = createActivation(chrome.deps);
+    const activating = activation.activate(1);
+    await settle();
+
+    const seriesId = activation.getSeriesId(1);
+    release();
+
+    expect(await seriesId).toBe('title:範例作品');
+    await activating;
+  });
+
   it('網址模式命中時不猜原名', async () => {
     const chrome = fakeChrome({ 1: EPISODE });
     chrome.titles[1] = '範例作品';
