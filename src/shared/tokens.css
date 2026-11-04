@@ -18,9 +18,13 @@
   --naru-surface: #FFFFFF;
   --naru-surface-2: #F2F0EC;
 
-  /* 主色（藍染） */
-  --naru-accent: #2F4B7C;
-  --naru-accent-weak: #E7ECF5;
+  /* 主色（墨）：按鈕、連結、focus、選取。跟 logo 的線條同色（#187）；黃色不能當白底上的字或細框（約 1.8:1） */
+  --naru-accent: #1F1D1A;
+  /* 比 --naru-surface-2 深一點：選取狀態跟按鈕 hover 分得開 */
+  --naru-accent-weak: #EAE6DE;
+
+  /* 品牌黃：logo 的底色，只當點綴（逐字稿選取列的指示線）；上面要放字只能用墨色 */
+  --naru-brand: #F2B705;
 
   /* 頁面上的高亮框 */
   --naru-highlight: #2F6FDB;
@@ -46,12 +50,12 @@
   --naru-tooltip-ink-2: #E2DED6;
   --naru-tooltip-ink-3: #A8A29A;
   --naru-tooltip-ruby: #F2A488;
-  /* tooltip 裡的「譯」區塊（RevealChip 深色版）：未揭露是虛線框，揭露後偏藍的實線框 */
+  /* tooltip 裡的「譯」區塊（RevealChip 深色版）：未揭露是虛線框，揭露後是亮一點的暖灰實線框 */
   --naru-tooltip-chip-bg: #34312C;
   --naru-tooltip-chip-line: #6F6A61;
   --naru-tooltip-chip-hint: #C9C4BB;
-  --naru-tooltip-chip-on-bg: #3A3F4D;
-  --naru-tooltip-chip-on-line: #5A6175;
+  --naru-tooltip-chip-on-bg: #3A362E;
+  --naru-tooltip-chip-on-line: #5C564B;
 
   /* 字型：系統字型堆疊，不從網路載入 */
   --naru-font-sans: 'Noto Sans TC', 'Noto Sans JP', system-ui, -apple-system, 'Segoe UI', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
