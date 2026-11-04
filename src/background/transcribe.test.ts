@@ -95,10 +95,13 @@ function setup(overrides: Partial<TranscriberDeps> = {}) {
 
 const noChanges = (): NotesChanges => ({ added: [], filled: [], suggestions: [] });
 
-/** ② 什麼都不改。 */
-const noNotes: Pick<Translator, 'proposeNotes'> = {
+/** ② 什麼都不改；猜不出作品（transcriber 不猜作品，只是 Translator 要有這個方法）。 */
+const noNotes: Pick<Translator, 'proposeNotes' | 'guessSeries'> = {
   async proposeNotes() {
     return { notes_changes: noChanges(), usage: { inputTokens: 500, outputTokens: 80, cacheReadTokens: 0, costUsd: 0.0001 }, model: 'claude-haiku-5-5', latencyMs: 1500 };
+  },
+  async guessSeries() {
+    return { status: 'unknown', 原名: '', 中文譯名: '', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 }, model: 'claude-haiku-5-5', latencyMs: 0 };
   },
 };
 
@@ -858,6 +861,7 @@ const note = (原文: string, 譯文: string, more: Partial<NotesEntry> = {}): N
 function translatorWithNotes(changes: NotesChanges[], inputs: TranslateInput[] = [], notesInputs: NotesInput[] = []): Translator {
   let call = 0;
   return {
+    ...noNotes,
     translatePage: (input) => translatorReturning('譯', inputs).translatePage(input),
     async proposeNotes(input) {
       notesInputs.push(structuredClone(input));
@@ -869,6 +873,7 @@ function translatorWithNotes(changes: NotesChanges[], inputs: TranslateInput[] =
 /** ② 由測試一個一個回覆；sent 依 ② 送出順序。 */
 function gatedNotes(sent: { input: NotesInput; reply(changes: NotesChanges): void; fail(): void }[]): Translator {
   return {
+    ...noNotes,
     translatePage: (input) => translatorReturning('譯').translatePage(input),
     proposeNotes: (input) =>
       new Promise((resolve, reject) =>

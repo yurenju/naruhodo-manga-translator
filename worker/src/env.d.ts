@@ -12,6 +12,8 @@ declare namespace Cloudflare {
     /** 驗證驗證碼的頻率限制，key 分別是 IP 與 email（一小時內的驗證次數另外記在 D1，見 auth.ts）。 */
     VERIFY_CODE_BY_IP: RateLimit;
     VERIFY_CODE_BY_EMAIL: RateLimit;
+    /** 猜作品原名（#186）的頻率限制，key 是 Account id：大約每一話一次，正常閱讀遠低於上限。 */
+    SERIES_GUESS_BY_ACCOUNT: RateLimit;
     /** "true"：寄信用假的實作，並開放 DEV_OUTBOX_PATH（只有 env.dev／env.test 設）。 */
     FAKE_MAIL?: string;
     /** "true"：開放開發用的端點（DEV_FREE_PAGES_PATH）；只有 env.dev／env.test 設。 */

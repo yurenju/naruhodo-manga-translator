@@ -10,6 +10,7 @@ import type {
   CropResponse,
   ExecutionProvider,
   FakeTranslatorConfig,
+  GuessSeriesResponse,
   ImportResponse,
   Message,
   ModelStatus,
@@ -145,6 +146,16 @@ const offscreenTranslator: Translator = {
     await ensureOffscreenDocument();
     const response = await chrome.runtime.sendMessage<Message, ProposeNotesResponse>({
       type: 'offscreen:proposeNotes',
+      input,
+      ...(__E2E__ && fakeTranslator ? { fake: fakeTranslator } : {}),
+    });
+    if ('error' in response) throw new Error(response.error);
+    return response.output;
+  },
+  async guessSeries(input) {
+    await ensureOffscreenDocument();
+    const response = await chrome.runtime.sendMessage<Message, GuessSeriesResponse>({
+      type: 'offscreen:guessSeries',
       input,
       ...(__E2E__ && fakeTranslator ? { fake: fakeTranslator } : {}),
     });

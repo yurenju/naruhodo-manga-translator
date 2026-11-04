@@ -2,7 +2,7 @@ import type { Stripe } from './long-page.ts';
 import type { PageText, RatioRect } from './page-text.ts';
 import type { EditableFields, NotesSuggestion, StaleReason, SuggestionRef } from './series-notes.ts';
 import type { SeriesOption } from './series.ts';
-import type { NotesChanges, NotesEntry, NotesInput, NotesOutput, TranslateInput, TranslateOutput } from './translator.ts';
+import type { NotesChanges, NotesEntry, NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, TranslateInput, TranslateOutput } from './translator.ts';
 
 /** onnxruntime-web 的執行環境。 */
 export type ExecutionProvider = 'webgpu' | 'wasm';
@@ -57,6 +57,8 @@ export type Message =
   | { type: 'offscreen:translate'; input: TranslateInput; fake?: FakeTranslatorConfig }
   /** SW → offscreen：整理一個 Page 的 Series Notes（ADR 0005 的 ②）。回應 ProposeNotesResponse。 */
   | { type: 'offscreen:proposeNotes'; input: NotesInput; fake?: FakeTranslatorConfig }
+  /** SW → offscreen：從頁面標題猜作品原名（#186）。回應 GuessSeriesResponse。 */
+  | { type: 'offscreen:guessSeries'; input: TitleSignals; fake?: FakeTranslatorConfig }
   /** side panel → SW → offscreen：「測試連線」。回應 TestConnectionResponse。 */
   | { type: 'panel:testConnection' }
   | { type: 'offscreen:testConnection' }
@@ -153,6 +155,8 @@ export interface FakeTranslatorConfig {
 export type TranslateResponse = { output: TranslateOutput } | { error: string; noApiKey?: true };
 
 export type ProposeNotesResponse = { output: NotesOutput } | { error: string };
+
+export type GuessSeriesResponse = { output: SeriesGuessOutput } | { error: string };
 
 export type TestConnectionResponse = { ok: true; model: string } | { ok: false; error: string };
 

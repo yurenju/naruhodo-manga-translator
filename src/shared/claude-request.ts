@@ -7,6 +7,8 @@
  * ① translateRequest effort low、關 thinking、只回譯文，user message 先放 Prior Pages 再放這頁的原文；
  * ② notesRequest effort high、開 thinking、只回 notes_changes，輸入這頁的原文與 ① 的譯文（#64）。
  * 兩次都把 Series Notes 放在標了 cache_control 的 system（固定前綴）。
+ *
+ * 另外，啟動時從頁面標題猜作品原名（seriesGuessRequest，#186、ADR 0010），大約每一話一次。
  */
 import type {
   CallInfo,
@@ -14,6 +16,8 @@ import type {
   NotesEntry,
   NotesInput,
   NotesOutput,
+  SeriesGuessOutput,
+  TitleSignals,
   TranslatedLine,
   TranslateInput,
   TranslateOutput,
@@ -148,6 +152,27 @@ const NOTES_SCHEMA = obj({
   }),
 });
 
+const SERIES_GUESS_TEXT = `你幫漫畫網站與電子書閱讀器的讀者，從網頁上的文字判斷正在讀哪一部作品。
+
+使用者會給你一個 JSON：title 是網頁標題（document.title）、og_title 是 og:title、headings 是頁面上前幾個標題（h1～h3）。這些文字格式依網站而不同，可能夾雜話數、集數、作者、網站名稱等。
+
+請回傳：
+- status：看得出是哪一部作品的某一話或某一集就是 work；首頁、作品列表、搜尋結果、登入頁、雜誌合集（一本裡有很多部作品）、或看不出作品名時是 unknown。
+- original_title：作品的原名（照網頁上的原文，不要翻譯、不要改寫）。
+  - 要去掉：集數（第1巻、1巻、Vol.1、THE COMIC 1 後面的數字等）、話數（第12話、#12、[第12話]）、レーベル（括號裡的出版品牌）、作者、網站名、特典標記（【特典付き】、試し読み、無料等）。
+  - 要保留：作品名的一部分，例如副標題、外傳和續作的名稱（續作的「2」或「第二部」若是作品名的一部分也保留）。
+  - 集數一律去掉，即使緊接在副標題後面。
+  - status 是 unknown 時填空字串。
+- zh_title：原名的繁體中文（台灣）譯名；有官方中文譯名就用官方的。status 是 unknown 時填空字串。
+
+只輸出符合 schema 的 JSON。`;
+
+const SERIES_GUESS_SCHEMA = obj({
+  status: { type: 'string', enum: ['work', 'unknown'] },
+  original_title: str('作品原名，去掉集數、話數、作者、網站名'),
+  zh_title: str('繁體中文（台灣）譯名'),
+});
+
 const CACHED = { cache_control: { type: 'ephemeral' } } as const;
 
 interface TextBlock {
@@ -164,6 +189,22 @@ export interface MessagesRequest {
   messages: { role: 'user'; content: TextBlock[] }[];
   thinking?: { type: 'disabled' };
   output_config: { effort: 'low' | 'high'; format: { type: 'json_schema'; schema: unknown } };
+}
+
+/** 猜原名的回答很短：標題頂多幾十個字。 */
+const SERIES_GUESS_MAX_TOKENS = 1024;
+
+/** 從頁面標題猜作品原名的 request body（#186）。只送頁面文字，不送網址與 hostname，也不送讀者已有的作品清單（ADR 0010）。 */
+export function seriesGuessRequest(input: TitleSignals): MessagesRequest {
+  const page = { title: input.title, og_title: input.ogTitle, headings: input.headings };
+  return {
+    model: CLAUDE_MODEL,
+    max_tokens: SERIES_GUESS_MAX_TOKENS,
+    system: [{ type: 'text', text: SERIES_GUESS_TEXT }],
+    messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify(page) }] }],
+    thinking: { type: 'disabled' },
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: SERIES_GUESS_SCHEMA } },
+  };
 }
 
 /**
@@ -228,7 +269,19 @@ interface NotesAnswer {
   };
 }
 
+interface SeriesGuessAnswer {
+  status: 'work' | 'unknown';
+  original_title: string;
+  zh_title: string;
+}
+
 const isStr = (v: unknown): v is string => typeof v === 'string';
+
+function isSeriesGuessAnswer(v: unknown): v is SeriesGuessAnswer {
+  if (typeof v !== 'object' || v === null) return false;
+  const a = v as Partial<SeriesGuessAnswer>;
+  return (a.status === 'work' || a.status === 'unknown') && isStr(a.original_title) && isStr(a.zh_title);
+}
 const isNotesFields = (v: unknown): v is NotesFields =>
   typeof v === 'object' && v !== null && Object.keys(NOTES_FIELDS).every((k) => isStr((v as Record<string, unknown>)[k]));
 
@@ -311,4 +364,10 @@ export function parseTranslateResponse(json: ApiResponse): Omit<TranslateOutput,
 export function parseNotesResponse(json: ApiResponse): Omit<NotesOutput, 'latencyMs'> {
   const { answer, ...info } = parse(json, isNotesAnswer);
   return { notes_changes: toNotesChanges(answer), ...info };
+}
+
+/** 猜原名的回應 → 原名與中文譯名；不符合 schema 時丟錯。 */
+export function parseSeriesGuessResponse(json: ApiResponse): Omit<SeriesGuessOutput, 'latencyMs'> {
+  const { answer, ...info } = parse(json, isSeriesGuessAnswer);
+  return { status: answer.status, 原名: answer.original_title, 中文譯名: answer.zh_title, ...info };
 }

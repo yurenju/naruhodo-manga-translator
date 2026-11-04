@@ -34,7 +34,7 @@ export interface TranslatedLine {
 export type PriorPage = TranslatedLine[];
 
 export interface TranslateInput {
-  /** 讀者為 Series 取的名稱；Provisional Series 的名稱是自動產生的，不送。 */
+  /** 作品名：Series 的 Original Title（#186），沒有就是讀者取的名稱；未命名的 Provisional Series 不送。 */
   seriesName?: string;
   /** v1 整份送。 */
   seriesNotes: NotesEntry[];
@@ -100,9 +100,29 @@ export interface NotesOutput extends CallInfo {
   notes_changes: NotesChanges;
 }
 
+/**
+ * 頁面上看得到作品名的文字（#186）：document.title、og:title、前幾個 h1～h3。**不含網址與 hostname**
+ * （「不會送出網址」），也不含讀者已有的作品清單（ADR 0010）。
+ */
+export interface TitleSignals {
+  title: string;
+  ogTitle: string;
+  headings: string[];
+}
+
+/** 從 TitleSignals 猜出的作品：work＝猜得出原名；unknown（首頁、列表、登入頁、雜誌合集等）時原名與中文譯名是空字串。 */
+export interface SeriesGuessOutput extends CallInfo {
+  status: 'work' | 'unknown';
+  原名: string;
+  /** 只當顯示用的副標（同一部作品每次猜的譯名不一定一樣）。 */
+  中文譯名: string;
+}
+
 export interface Translator {
   /** ①：只回譯文。 */
   translatePage(input: TranslateInput, signal?: AbortSignal): Promise<TranslateOutput>;
   /** ②：只回 notes_changes；條目的譯名照抄這頁譯文裡用的。 */
   proposeNotes(input: NotesInput, signal?: AbortSignal): Promise<NotesOutput>;
+  /** 從頁面標題猜作品原名，自動歸類 Series（#186）。不算 Translated Page。 */
+  guessSeries(input: TitleSignals, signal?: AbortSignal): Promise<SeriesGuessOutput>;
 }

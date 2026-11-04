@@ -10,11 +10,13 @@ import {
   CLAUDE_MODEL,
   notesRequest,
   parseNotesResponse,
+  parseSeriesGuessResponse,
   parseTranslateResponse,
+  seriesGuessRequest,
   translateRequest,
   type ApiResponse,
 } from '../shared/claude-request.ts';
-import type { NotesInput, NotesOutput, TranslateInput, TranslateOutput, Translator } from '../shared/translator.ts';
+import type { NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, TranslateInput, TranslateOutput, Translator } from '../shared/translator.ts';
 
 export { CLAUDE_MODEL, PROMPT_VERSION, costUsd, type ApiUsage } from '../shared/claude-request.ts';
 
@@ -70,6 +72,10 @@ export function createClaudeTranslator(deps: ClaudeDeps): Translator & { testCon
 
     async proposeNotes(input: NotesInput, signal?: AbortSignal): Promise<NotesOutput> {
       return call(notesRequest(input), parseNotesResponse, signal);
+    },
+
+    async guessSeries(input: TitleSignals, signal?: AbortSignal): Promise<SeriesGuessOutput> {
+      return call(seriesGuessRequest(input), parseSeriesGuessResponse, signal);
     },
 
     /** side panel 的「測試連線」：同一個 endpoint 與 header，送最小的 request（費用約 $0.000002）。 */
