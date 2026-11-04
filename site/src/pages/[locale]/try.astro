@@ -22,7 +22,7 @@ const t = copy[locale].try;
 /** 步驟內文切成文字與 `{puzzle}`／`{shortcut}` 兩種記號。 */
 const parts = (body: string) => body.split(/(\{puzzle\}|\{shortcut\})/);
 ---
-<Base locale={locale} title={`Naruhodo — ${t.title}`} alternates={byLocale((l) => `/${l}/try/`)}>
+<Base locale={locale} title={`${copy[locale].brand} — ${t.title}`} alternates={byLocale((l) => `/${l}/try/`)}>
   <section class="try">
     <div class="guide">
       <h1>{t.title}</h1>

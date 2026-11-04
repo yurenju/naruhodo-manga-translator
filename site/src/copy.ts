@@ -7,6 +7,8 @@ import type { LegalDoc } from './links.ts';
  * 會當成還沒完成。數字仍是草案，量完真實成本再調。
  */
 export interface SiteCopy {
+  /** 頁面 <title> 開頭的產品全名（跟外掛的 manifest name 一致）；頁首與內文仍寫 Naruhodo */
+  brand: string;
   nav: { pricing: string; faq: string; install: string; languageLabel: string };
   hero: { title: string; lead: string; install: string; pricing: string };
   /** 首頁互動展示（#109）外框上的文字；展示裡面的外掛介面只有繁體中文 */
@@ -51,6 +53,7 @@ const PRICE = '$20';
 
 export const copy: Record<Locale, SiteCopy> = {
   'zh-tw': {
+    brand: 'Naruhodo 日文漫畫翻譯',
     nav: { pricing: '價格', faq: '常見問題', install: '安裝外掛', languageLabel: '語言' },
     hero: {
       title: '看日文漫畫，旁邊就有中文',
@@ -143,6 +146,7 @@ export const copy: Record<Locale, SiteCopy> = {
     },
   },
   en: {
+    brand: 'Naruhodo: Japanese Manga Translator',
     nav: { pricing: 'Pricing', faq: 'FAQ', install: 'Install', languageLabel: 'Language' },
     hero: {
       title: 'Read Japanese manga with Chinese right where the words are',

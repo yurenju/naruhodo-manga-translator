@@ -140,8 +140,8 @@ describe('正式 build', () => {
     }
   });
 
-  it('side panel 標題旁的 logo 用同一份 SVG 母檔', async () => {
-    expect(await readText(prodDir, 'icons/naruhodo.svg')).toBe(await readFile('src/icons/naruhodo.svg', 'utf8'));
+  it('side panel 標題旁的 logo 用小尺寸的 SVG 母檔', async () => {
+    expect(await readText(prodDir, 'icons/naruhodo-small.svg')).toBe(await readFile('src/icons/naruhodo-small.svg', 'utf8'));
   });
 
   it('CSP 只多開放編譯 wasm，不開放 eval 與外部 script', async () => {

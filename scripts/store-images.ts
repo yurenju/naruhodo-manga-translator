@@ -46,13 +46,13 @@ try {
     <style>
       html,body{margin:0}
       body{width:440px;height:280px;display:flex;align-items:center;gap:24px;padding:0 36px;box-sizing:border-box;
-        background:#f4f1ea;color:#1f2a44;font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif}
+        background:#f4f1ea;color:#1f1d1a;font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif}
       svg{width:112px;height:112px;flex:none}
       h1{margin:0;font-size:40px;font-weight:700}
       p{margin:8px 0 0;font-size:20px;line-height:1.4;opacity:.9}
     </style>
     ${svg}
-    <div><h1>Naruhodo</h1><p>日文漫畫原地翻成中文<br>邊看邊學日文</p></div>`);
+    <div><h1>Naruhodo</h1><p>日文漫畫翻譯<br>原地翻成中文，邊看邊學</p></div>`);
   await tile.screenshot({ path: out('promo-small.png') });
 } finally {
   await browser.close();

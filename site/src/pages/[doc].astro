@@ -19,7 +19,7 @@ export function getStaticPaths() {
 const doc = Astro.params.doc as LegalDoc;
 const Content = { terms: Terms, refund: Refund, privacy: Privacy }[doc];
 ---
-<Base locale="auto" title={`Naruhodo — ${copy.en.legal[doc]}`} alternates={byLocale((l) => `/${doc}?lang=${l}`)}>
+<Base locale="auto" title={`${copy.en.brand} — ${copy.en.legal[doc]}`} alternates={byLocale((l) => `/${doc}?lang=${l}`)}>
   <div class="wrap narrow">
     <nav class="legal-tabs">
       {LEGAL_DOCS.map((d) => (
