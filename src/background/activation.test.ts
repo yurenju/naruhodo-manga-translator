@@ -402,6 +402,8 @@ describe('依頁面標題自動歸類（#186）', () => {
 
     expect(await seriesId).toBe('title:範例作品');
     expect(activation.isSeriesPending(1)).toBe(false);
+    // side panel 可能在猜完之前就讀過一次，決定後要叫它重讀
+    expect(chrome.assigned).toEqual([1]);
   });
 
   it('網址模式命中時不猜原名', async () => {

@@ -114,6 +114,7 @@ export function createActivation(deps: ActivationDeps) {
     starting.delete(tabId);
     trace('activate', { tabId, seriesId: state?.seriesId, reused: false });
     if (!state) await markInactive(tabId);
+    else deps.onSeriesAssigned(tabId);
   }
 
   async function isActive(tabId: number): Promise<boolean> {

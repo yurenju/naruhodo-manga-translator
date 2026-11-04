@@ -227,14 +227,14 @@ export async function activateOnMockSite(
     mockSite: MockSite;
     /** 仿 canvas 網站的網址（預設 mockSite.canvasSiteUrl；翻頁版用 mockSite.canvasSitePagedUrl）。 */
     url?: string;
-    /** side panel 打開後、啟動前（例如在 panel 裡掛 listener）。 */
-    beforeActivate?: (panel: Page) => Promise<void>;
+    /** side panel 打開後、啟動前（例如在 panel 裡掛 listener、改頁面標題）。 */
+    beforeActivate?: (panel: Page, page: Page) => Promise<void>;
   },
 ): Promise<{ page: Page; panel: Page; tabId: number }> {
   const page = await openMockSite(context, mockSite, url);
   const tabId = await tabIdOf(sw, url);
   const panel = await openSidePanel(context, extensionId, tabId);
-  await beforeActivate?.(panel);
+  await beforeActivate?.(panel, page);
   await page.bringToFront();
   await testActivate(panel, tabId);
   await expect(panel.getByText('已啟動')).toBeVisible();

@@ -14,7 +14,7 @@
 
   ![切到「學習」時頁面保留日文，滑過旁白框顯示原文與振り仮名，譯文藏在「譯」區塊後面](docs/images/learning-mode.webp)
 - **跨頁（Spread）**：兩頁並排顯示時會自動切成兩個 Page 各自翻譯。
-- **作品筆記（Series Notes）**：翻譯後會在背景累積角色名字與專有名詞，讓同一部作品前後翻譯一致；角色的自稱與說話方式由你在 side panel 填寫，也可以檢視與修正其他條目。
+- **角色與用語（Series Notes）**：翻譯後會在背景累積角色名字與專有名詞，讓同一部作品前後翻譯一致；角色的自稱與說話方式由你在 side panel 填寫，也可以檢視與修正其他條目。
 - **快取**：翻過的 Page 會存起來，重看同一頁不會再花錢呼叫 API。
 - **匯出／匯入**：把作品、筆記與翻譯快取匯出成 JSON，在兩台電腦之間搬移（不含 API key）。
 
@@ -46,7 +46,7 @@
 
 下載最新版的 [naruhodo.zip](https://github.com/yurenju/naruhodo-manga-translator/releases/latest/download/naruhodo.zip)（各版本的更新內容見 [Releases](https://github.com/yurenju/naruhodo-manga-translator/releases)），解壓縮到一個固定的資料夾，例如 `文件/naruhodo`。
 
-這個資料夾之後不要搬動或刪除：Chrome 是直接從這裡載入外掛的，換了位置就會被當成另一個外掛，設定、作品筆記與翻譯快取都會看不到。
+這個資料夾之後不要搬動或刪除：Chrome 是直接從這裡載入外掛的，換了位置就會被當成另一個外掛，設定、角色與用語與翻譯快取都會看不到。
 
 ### 2. 在 Chrome 載入
 

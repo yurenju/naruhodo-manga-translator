@@ -24,7 +24,7 @@ export function DeleteAccount({ email, deleting, failed, onConfirm, onCancel }: 
         <li>剩下的頁數與用量紀錄都會刪除。</li>
         <li>有訂閱的話會一起取消，不會再扣款；已付的費用不會自動退還。</li>
         <li>之後用同一個 email 重新註冊，不會再有免費額度。</li>
-        <li>這台電腦上的翻譯快取、Series Notes 不受影響。</li>
+        <li>這台電腦上的翻譯快取、角色與用語不受影響。</li>
       </ul>
       {failed && (
         <Callout tone="danger" role="alert">

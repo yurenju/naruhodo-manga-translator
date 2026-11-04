@@ -115,7 +115,7 @@ export function SeriesNotesSection({ tabId }: { tabId: number }) {
   const translationOf = (原文: string) => notes?.entries.find((e) => e.原文 === 原文)?.譯文;
   if (!notes) return null;
   return (
-    <section aria-label="Series Notes" class="notes">
+    <section aria-label="角色與用語" class="notes">
       {notes.suggestions.length > 0 && (
         <>
           <h2>建議修改</h2>

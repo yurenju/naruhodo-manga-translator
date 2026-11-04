@@ -5,8 +5,12 @@ A single manga title, e.g. one ongoing work, regardless of which site it is read
 _Avoid_: book, comic, manga (when meaning one title)
 
 **Provisional Series** (臨時作品)
-A Series created automatically when translation starts with no Series chosen. It behaves like any other Series until the reader names it or merges it into an existing one.
+A Series the reader has not confirmed yet. Created automatically when translation starts and neither a URL Pattern nor an Original Title matches an existing Series; named after the Original Title guessed from the page, or "未命名・site・date" when none could be guessed. Automatic classification still matches it like any other Series. Only an explicit action confirms it: 「是」 on the Series card, naming or renaming it, choosing a confirmed Series instead, or merging it into one. Once confirmed it can no longer be the source of a merge.
 _Avoid_: unsorted, inbox
+
+**Original Title** (原名)
+The title of a Series in its original language, as guessed by the LLM from the page's title text (document title, og:title, first headings), without episode or volume numbers, label, author or site name; subtitles and the names of side stories and sequels are kept. Two pages whose Original Titles are equal after normalization (NFKC, collapsed spaces) belong to the same Series, even on different sites. A Series can have several, recorded when the reader chooses or merges into it. Also the series name sent to the translator. The Chinese translation guessed alongside it is only a display subtitle.
+_Avoid_: series name (that is what the reader sees), work ID
 
 **Episode** (話)
 One installment of a Series, as published.
@@ -49,7 +53,7 @@ Dialogue the author writes in non-standard spelling to give a character's voice:
 _Avoid_: broken text, garble
 
 **URL Pattern** (網址模式)
-A reading-page URL reduced to origin + path (query and hash ignored), remembered against a Series once the reader chooses a non-provisional Series for it. Only used to preselect that Series the next time the extension is activated on the same URL; never activates the extension by itself.
+A reading-page URL reduced to origin + path (query and hash ignored), remembered against a Series once the reader confirms a Series for it. Only used to preselect that Series the next time the extension is activated on the same URL; never activates the extension by itself. On sites where every Episode has its own URL it only matches when the reader re-reads the same Episode; the Original Title covers the next one.
 _Avoid_: site rule, domain mapping
 
 **Page Mode** (頁面模式)
@@ -60,9 +64,9 @@ _Avoid_: learning mode (that is the whole feature), overlay toggle
 Which parts of every Line the side panel transcript shows, switched once for all Pages. Under the 閱讀 Page Mode it is one of three levels: 只看譯文, 原文＋譯文, 加振り仮名 (the default). Under 學習 it is only a furigana on/off switch; the translation always stays hidden until revealed step by step.
 _Avoid_: mode, learning mode (that is the whole feature)
 
-**Series Notes** (作品筆記)
+**Series Notes** (角色與用語)
 The fixed translations a Series has settled on — names and terms, plus how each character refers to themself, speaks, and addresses others — used to keep translations consistent. The translator accumulates names and terms as it reads; how each character speaks comes only from the reader, since the text alone does not say who is speaking. The reader reviews it and occasionally corrects it. No plot progress. Belongs to the Series, shared across every site the Series is read on.
-_Avoid_: context, glossary (ambiguous with this file), dictionary
+_Avoid_: context, glossary (ambiguous with this file), dictionary, 作品筆記 (the UI name before #186)
 
 **Prior Pages** (前頁)
 The Pages the reader saw just before the one being translated, in the same tab, with their text and translations; sent along when a Page is translated so the translator can follow the conversation and keep its wording. Includes the Pages on screen that come earlier in reading order, such as the right Page of a Spread for its left Page, and the earlier part of a Page taller than the screen. Follows what the reader actually saw, so after a jump or a page back they are not the previous Pages of the Episode.

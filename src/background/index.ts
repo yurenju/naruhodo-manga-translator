@@ -388,7 +388,9 @@ async function changeNotes(tabId: number, action: string, detail: Record<string,
 const seriesCatalog = createSeriesCatalog({ repo: seriesRepo, now: () => new Date(), newId: () => crypto.randomUUID() });
 
 async function seriesResponse(tabId: number): Promise<SeriesResponse> {
-  const [tab, options] = await Promise.all([activation.getTab(tabId), seriesCatalog.menu()]);
+  // 先等這個 tab 的 Series 決定（可能正在猜、剛新建），再讀清單，清單裡才一定有它
+  const tab = await activation.getTab(tabId);
+  const options = await seriesCatalog.menu();
   if (!tab) return { current: undefined, options };
   const notes = await notesStore.list(tab.seriesId);
   return {
