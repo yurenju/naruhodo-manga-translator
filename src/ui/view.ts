@@ -1,5 +1,6 @@
 import { FREE_PAGES, type Quota } from '../shared/hosted-api.ts';
 import type { PageView } from '../shared/messages.ts';
+import type { SeriesOption } from '../shared/series.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { BadgeTone } from './components.tsx';
 
@@ -139,18 +140,44 @@ export function setupNotices({
 }
 
 /**
- * 整個取代 side panel 內容的一頁（頂部是「← 返回」＋標題，#93）：設定、Series Notes 從 ⚙ 選單打開；
+ * 整個取代 side panel 內容的一頁（頂部是「← 返回」＋標題，#93）：設定從 ⚙ 選單打開；
+ * 作品頁（作品身分＋Series Notes，#191）從作品卡打開，換一部作品從作品頁（或作品卡的「換一部」）打開；
  * 刪除帳號（#95）從設定頁打開，不用 dialog（side panel 裡的 dialog 只蓋得住 panel 自己）。
  */
-export type PanelPage = 'settings' | 'notes' | 'deleteAccount';
+export type PanelPage = 'settings' | 'series' | 'seriesPick' | 'deleteAccount';
+
+const PARENT_PAGES: Partial<Record<PanelPage, PanelPage>> = { deleteAccount: 'settings', seriesPick: 'series' };
 
 /** 這一頁的「←」回到哪一頁；undefined＝回到逐字稿。 */
-export const parentPage = (page: PanelPage): PanelPage | undefined => (page === 'deleteAccount' ? 'settings' : undefined);
+export const parentPage = (page: PanelPage): PanelPage | undefined => PARENT_PAGES[page];
 
 /** side panel 這時顯示哪一個畫面：沒做完 onboarding 時只有「完成設定」（沒有頂部的狀態與 ⚙）。 */
 export function sidePanelScreen({ setupComplete, page }: { setupComplete: boolean; page: PanelPage | undefined }): 'finishSetup' | 'transcript' | PanelPage {
   if (!setupComplete) return 'finishSetup';
   return page ?? 'transcript';
+}
+
+/** 作品頁與作品卡上，目前這部作品可以做的事（#191）。 */
+export interface SeriesActions {
+  /**
+   * Provisional Series 的問句列（作品卡與作品頁都有）：confirm＝猜到原名，「這是正確的作品嗎？［是］［換一部］」；
+   * name＝猜不出來，「看不出是哪部作品［取名字］［選一部］」；undefined＝確認過了，沒有問句列，作品頁改由「不是這部作品？」進換一部作品。
+   */
+  ask: 'confirm' | 'name' | undefined;
+  /** 名稱旁的按鈕：未命名的 Provisional Series 是「取名字」。 */
+  rename: '改名' | '取名字';
+  /** 「合併進…」的目標：只有 Provisional Series 能當合併的來源，目標是其他確認過的作品。 */
+  mergeTargets: SeriesOption[];
+}
+
+export function seriesActions(current: SeriesOption, options: SeriesOption[]): SeriesActions {
+  if (!current.provisional) return { ask: undefined, rename: '改名', mergeTargets: [] };
+  const guessed = (current.originalTitles?.length ?? 0) > 0;
+  return {
+    ask: guessed ? 'confirm' : 'name',
+    rename: guessed ? '改名' : '取名字',
+    mergeTargets: options.filter((o) => !o.provisional && o.id !== current.id),
+  };
 }
 
 /** 剩這麼多頁以下，底部那一行改用警告色（不另外跳 Callout）。 */

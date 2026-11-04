@@ -3,7 +3,8 @@ import type { Quota } from '../shared/hosted-api.ts';
 import type { PageView } from '../shared/messages.ts';
 import type { RatioRect } from '../shared/page-text.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
-import { accountPlanView, parentPage, quotaView, setupNotices, sidePanelScreen, sidePanelView } from './view.ts';
+import type { SeriesOption } from '../shared/series.ts';
+import { accountPlanView, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView } from './view.ts';
 
 type Transcript = PageView['transcript'];
 type Done = Extract<Transcript, { state: 'done' }>;
@@ -200,22 +201,55 @@ describe('side panel 顯示哪一個畫面', () => {
     expect(sidePanelScreen({ setupComplete: false, page: 'settings' })).toBe('finishSetup');
   });
 
-  it('設定完成：平常是逐字稿；從 ⚙ 選單打開設定或 Series Notes 時整個換成那一頁', () => {
+  it('設定完成：平常是逐字稿；從 ⚙ 選單打開設定、從作品卡打開作品頁時整個換成那一頁', () => {
     expect(sidePanelScreen({ setupComplete: true, page: undefined })).toBe('transcript');
     expect(sidePanelScreen({ setupComplete: true, page: 'settings' })).toBe('settings');
-    expect(sidePanelScreen({ setupComplete: true, page: 'notes' })).toBe('notes');
+    expect(sidePanelScreen({ setupComplete: true, page: 'series' })).toBe('series');
   });
 
-  it('刪除帳號是設定頁再進去的一頁：「←」與「取消」回到設定頁；設定、Series Notes 的「←」回到逐字稿', () => {
+  it('換一部作品是作品頁再進去的一頁（#191）：「←」回到作品頁，從作品卡的「換一部」直接打開也一樣', () => {
+    expect(sidePanelScreen({ setupComplete: true, page: 'seriesPick' })).toBe('seriesPick');
+    expect(parentPage('seriesPick')).toBe('series');
+  });
+
+  it('刪除帳號是設定頁再進去的一頁：「←」與「取消」回到設定頁；設定、作品頁的「←」回到逐字稿', () => {
     expect(sidePanelScreen({ setupComplete: true, page: 'deleteAccount' })).toBe('deleteAccount');
     expect(parentPage('deleteAccount')).toBe('settings');
     expect(parentPage('settings')).toBeUndefined();
-    expect(parentPage('notes')).toBeUndefined();
+    expect(parentPage('series')).toBeUndefined();
   });
 });
 
 const signedIn = { mode: 'hosted', signedIn: true } as const;
 const free = (remaining: number) => ({ plan: 'free', remaining }) as const;
+
+describe('作品頁與作品卡的操作（#191）', () => {
+  const option = (id: string, extra: Partial<SeriesOption> = {}): SeriesOption => ({
+    id, name: id, label: id, title: id, provisional: false, createdAt: 0, ...extra,
+  });
+  const confirmed = option('星落小鎮的郵差', { originalTitles: ['星降る町の郵便屋'] });
+  const other = option('鐵之庭');
+  const guessed = option('海辺のアトリエ', { provisional: true, originalTitles: ['海辺のアトリエ'] });
+  const unnamed = option('未命名・reader.example・11/4', { provisional: true });
+
+  it('確認過的作品：沒有問句列（作品頁改用「不是這部作品？」），名稱旁是「改名」，不能當合併的來源', () => {
+    expect(seriesActions(confirmed, [confirmed, other, guessed])).toEqual({
+      ask: undefined, rename: '改名', mergeTargets: [],
+    });
+  });
+
+  it('自動判斷、猜到原名：問「這是正確的作品嗎？」（是／換一部），可以合併進確認過的作品', () => {
+    expect(seriesActions(guessed, [confirmed, guessed, unnamed, other])).toEqual({
+      ask: 'confirm', rename: '改名', mergeTargets: [confirmed, other],
+    });
+  });
+
+  it('猜不出來：問「看不出是哪部作品」（取名字／選一部），改名叫「取名字」', () => {
+    expect(seriesActions(unnamed, [unnamed])).toEqual({
+      ask: 'name', rename: '取名字', mergeTargets: [],
+    });
+  });
+});
 
 describe('內建翻譯的額度（底部那一行）', () => {
   it('剩 37 頁：「免費額度剩 37 頁」，旁邊有「訂閱」連結，不用警告色', () => {

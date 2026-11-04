@@ -312,15 +312,16 @@ function MenuItem({ label, description, onClick }: { label: string; description?
 function PanelMenu({
   running,
   autoTranslate,
-  sections,
+  settings,
   onScan,
   onOpen,
 }: {
   running: boolean;
   autoTranslate: ComponentChildren;
-  sections: Record<MenuPage, boolean>;
+  /** 有設定頁的內容才顯示「設定」。 */
+  settings: boolean;
   onScan: () => void;
-  onOpen: (page: MenuPage) => void;
+  onOpen: (page: 'settings') => void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -353,10 +354,9 @@ function PanelMenu({
               {autoTranslate && <div class="panel-menu__switch">{autoTranslate}</div>}
               {/* 翻頁會自動偵測（#34）；這項給偵測漏掉時手動補一次。 */}
               <MenuItem label="重新擷取頁面" description="翻頁沒被偵測到時用" onClick={choose(onScan)} />
-              {sections.notes && <MenuItem label="角色與用語" onClick={choose(() => onOpen('notes'))} />}
             </>
           )}
-          {sections.settings && <MenuItem label="設定" onClick={choose(() => onOpen('settings'))} />}
+          {settings && <MenuItem label="設定" onClick={choose(() => onOpen('settings'))} />}
         </div>
       )}
     </div>
@@ -410,15 +410,21 @@ export interface SidePanelProps {
   /** 以下是只有外掛 container 才有的區塊（會讀寫 store、送 chrome 訊息）；沒給就不顯示，⚙ 選單也沒有那一項。 */
   /** ⚙ 選單裡的自動翻譯開關。 */
   autoTranslate?: ComponentChildren;
-  /** Transcript 上方的作品卡（#186）。 */
-  series?: ComponentChildren;
+  /** Transcript 上方的作品卡（#186）；open 打開作品頁或換一部作品（#191）。 */
+  renderSeriesCard?: (open: (page: SeriesPage) => void) => ComponentChildren;
   /** 「設定」頁的內容（標題列由 SidePanel 畫）；openDeleteAccount 換到「刪除帳號」那一頁。 */
   renderSettings?: (close: () => void, openDeleteAccount: () => void) => ComponentChildren;
   /** 「刪除帳號」頁的內容（#95）；back 回到設定頁（「取消」、刪除成功）。 */
   renderDeleteAccount?: (back: () => void) => ComponentChildren;
-  /** 「Series Notes」頁的內容。 */
-  renderNotes?: (close: () => void) => ComponentChildren;
+  /**
+   * 作品頁（作品身分＋Series Notes）與換一部作品的內容（#191，標題列由 SidePanel 畫）；
+   * navigate 換到另一頁，undefined＝回到逐字稿。
+   */
+  renderSeries?: (page: SeriesPage, navigate: (page: SeriesPage | undefined) => void) => ComponentChildren;
 }
+
+/** 從作品卡打得開的頁（#191）。 */
+export type SeriesPage = Extract<PanelPage, 'series' | 'seriesPick'>;
 
 /** 沒做完 onboarding（#93 畫面定案）：只有置中的大 logo、名稱、「設定還沒完成」與「完成設定」，沒有頂部的狀態與 ⚙。 */
 function FinishSetup({ logoSrc, onFinishSetup }: { logoSrc: string; onFinishSetup: (() => void) | undefined }) {
@@ -436,12 +442,9 @@ function FinishSetup({ logoSrc, onFinishSetup }: { logoSrc: string; onFinishSetu
   );
 }
 
-const PAGE_TITLES: Record<PanelPage, string> = { settings: '設定', notes: '角色與用語', deleteAccount: '刪除帳號' };
+const PAGE_TITLES: Record<PanelPage, string> = { settings: '設定', series: '作品', seriesPick: '換一部作品', deleteAccount: '刪除帳號' };
 
-/** ⚙ 選單打得開的頁。 */
-type MenuPage = Exclude<PanelPage, 'deleteAccount'>;
-
-/** 從 ⚙ 選單打開的一頁（設定、Series Notes）：整個 side panel 換成它，頂部是「←」＋標題，沒有逐字稿與底部狀態列。 */
+/** 整個取代 side panel 的一頁（設定、作品頁…）：頂部是「←」＋標題，沒有逐字稿與底部狀態列。 */
 function PanelPageView({ title, onBack, children }: { title: string; onBack: () => void; children: ComponentChildren }) {
   return (
     <div class="naru-side-panel">
@@ -472,7 +475,8 @@ export function SidePanel(props: SidePanelProps) {
     const back = () => setPage(parentPage(screen));
     const content = {
       settings: () => props.renderSettings?.(close, () => setPage('deleteAccount')),
-      notes: () => props.renderNotes?.(close),
+      series: () => props.renderSeries?.('series', setPage),
+      seriesPick: () => props.renderSeries?.('seriesPick', setPage),
       deleteAccount: () => props.renderDeleteAccount?.(back),
     }[screen];
     return (
@@ -495,7 +499,7 @@ export function SidePanel(props: SidePanelProps) {
       <PanelMenu
         running={running}
         autoTranslate={props.autoTranslate}
-        sections={{ notes: Boolean(props.renderNotes), settings: Boolean(props.renderSettings) }}
+        settings={Boolean(props.renderSettings)}
         onScan={onScan}
         onOpen={setPage}
       />
@@ -553,7 +557,7 @@ export function SidePanel(props: SidePanelProps) {
         {quota.exhausted && <QuotaExhaustedCallout exhausted={quota.exhausted} onSubscribe={props.onSubscribe} onUseOwnKey={useOwnKey} />}
         {props.paymentFailed && <PaymentUnavailable />}
         {subscribedNotice}
-        {props.series}
+        {props.renderSeriesCard?.(setPage)}
         {done.length > 0 && <DisplaySwitch display={display} onLevel={setLevel} onFurigana={setFurigana} />}
         <ul aria-label="Page">
           {view.pages.map((entry) => (
