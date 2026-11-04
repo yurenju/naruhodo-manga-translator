@@ -9,7 +9,7 @@ import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { createOverlay, type Overlay } from '../../../src/content/overlay.ts';
 import { createOverlayFontLoader } from '../../../src/content/overlay-font.ts';
-import logoSrc from '../../../src/icons/naruhodo.svg?url';
+import logoSrc from '../../../src/icons/naruhodo-small.svg?url';
 import type { LineRef } from '../../../src/shared/messages.ts';
 import type { PageMode } from '../../../src/shared/page-mode.ts';
 import TOKENS from '../../../src/shared/tokens.css';

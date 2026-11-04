@@ -661,7 +661,7 @@ function App({ tabId }: { tabId: number | undefined }) {
       consented={consent?.[translationMode]}
       pageMode={pageMode}
       hovered={hovered}
-      logoSrc="icons/naruhodo.svg"
+      logoSrc="icons/naruhodo-small.svg"
       onPageModeChange={choosePageMode}
       onStop={() => void send({ type: 'panel:stop', tabId: tabId! })}
       onScan={() => void send({ type: 'panel:scan', tabId: tabId! })}

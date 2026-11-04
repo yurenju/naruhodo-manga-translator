@@ -29,7 +29,7 @@ const hostedAccount = createHostedAccountClient({ apiUrl: HOSTED_API_URL, fetch:
 
 const apiKeys = indexedDbApiKeyStore();
 
-const LOGO = 'icons/naruhodo.svg';
+const LOGO = 'icons/naruhodo-small.svg';
 
 /** 進度點上的四步。 */
 const STEPS: { step: OnboardingStep; title: string }[] = [

@@ -20,7 +20,7 @@ const locale = Astro.params.locale as Locale;
 const t = copy[locale].checkout;
 const legal = copy[locale].legal;
 ---
-<Base locale={locale} title={`Naruhodo — ${t.title}`} alternates={byLocale((l) => `/${l}/checkout`)} bare>
+<Base locale={locale} title={`${copy[locale].brand} — ${t.title}`} alternates={byLocale((l) => `/${l}/checkout`)} bare>
   <div class="wrap">
     <div class="card checkout" data-checkout data-paddle-locale={paddleLocale(locale)}>
       <img class="logo" src={logo.src} alt="" width="56" height="56" />
