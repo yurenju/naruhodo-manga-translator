@@ -18,8 +18,8 @@
   --naru-surface: #FFFFFF;
   --naru-surface-2: #F2F0EC;
 
-  /* 主色（墨）：按鈕、連結、focus、選取。跟 logo 的線條同色（#187）；黃色不能當白底上的字或細框（約 1.8:1） */
-  --naru-accent: #1F1D1A;
+  /* 主色（墨）：按鈕、連結、focus、選取等互動與狀態，跟 logo 的線條同色（#187）；黃色不能當白底上的字或細框（約 1.8:1） */
+  --naru-accent: var(--naru-ink);
   /* 比 --naru-surface-2 深一點：選取狀態跟按鈕 hover 分得開 */
   --naru-accent-weak: #EAE6DE;
 
