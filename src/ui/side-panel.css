@@ -60,7 +60,7 @@
   display: flex; flex-direction: column; margin-bottom: var(--naru-space-2); padding: 2px var(--naru-space-1);
   border-left: 3px solid transparent; border-radius: 0 var(--naru-radius-sm) var(--naru-radius-sm) 0;
 }
-:where(.naru-side-panel) [aria-label='逐字稿'] li.hl { background: var(--naru-accent-weak); border-left-color: var(--naru-accent); }
+:where(.naru-side-panel) [aria-label='逐字稿'] li.hl { background: var(--naru-accent-weak); border-left-color: var(--naru-brand); }
 :where(.naru-side-panel) .original { font-size: var(--naru-text-ja); line-height: 1.6; }
 /* 加振り仮名時行高放大，ルビ才不會壓到上一行 */
 :where(.naru-side-panel) .original.with-ruby { line-height: 2.2; }
@@ -73,6 +73,8 @@
 :where(.naru-side-panel) .untranslated { color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
 :where(.naru-side-panel) .unreadable { color: var(--naru-ink-3); text-decoration: line-through; }
 :where(.naru-side-panel) .unreadable-label { color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
+/* 選取列的底（--naru-accent-weak）上 ink-3 只有 3.9:1，不到 AA；改用 ink-2（5.8:1） */
+:where(.naru-side-panel) [aria-label='逐字稿'] li.hl :is(.untranslated, .unreadable, .unreadable-label) { color: var(--naru-ink-2); }
 :where(.naru-side-panel) .translation-status { margin: 0; color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
 :where(.naru-side-panel) .hint { color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
 

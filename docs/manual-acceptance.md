@@ -80,7 +80,7 @@
 | E5 | 電子書閱讀器跨頁與單頁各看一次 | **使用者回報**：同 E3、E4 |
 | E6 | 滑鼠移到譯文上 | **使用者回報**：tooltip 與 highlight 出現在滑鼠指的那句，side panel 對應的 Line 同步標示 |
 | E7 | 在 canvas 網站用網站自己的放大功能 | trace：`overlay:show` 重新排版（新的 `screenScale`）或 `overlay:reattach`。使用者回報：放大後位置仍對 |
-| E8 | 滑鼠移到有振り仮名的那句，再看 side panel 的逐字稿 | **使用者回報**（design tokens，#71）：tooltip 是深色底、ルビ淺朱色；side panel 的ルビ是朱色、按鈕與選取是藍染色，兩邊看起來是同一個產品；網站的 CSS 沒有把 tooltip 的顏色或字型蓋掉 |
+| E8 | 滑鼠移到有振り仮名的那句，再看 side panel 的逐字稿 | **使用者回報**（design tokens，#71）：tooltip 是深色底、ルビ淺朱色；side panel 的ルビ是朱色、按鈕與選取是墨色、逐字稿選取列左側是黃色指示線（#187），兩邊看起來是同一個產品；網站的 CSS 沒有把 tooltip 的顏色或字型蓋掉 |
 
 ### F. 快取
 
