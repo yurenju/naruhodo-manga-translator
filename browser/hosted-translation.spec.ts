@@ -16,10 +16,10 @@
  * 刪除帳號（#95）：設定頁 → 確認頁 → Worker 的 DELETE /v1/account → 清掉 session → side panel 回到未登入。刪除的規則在
  * worker/src/account-deletion.test.ts，清掉 session 的流程在 src/shared/account-exit.test.ts。
  */
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import type { BrowserContext, Page } from '@playwright/test';
 import { createHostedAccountClient } from '../src/shared/hosted-account-client.ts';
-import { DEV_FREE_PAGES_PATH, PADDLE_WEBHOOK_PATH } from '../src/shared/hosted-api.ts';
+import { DEV_FREE_PAGES_PATH, FREE_PAGES, PADDLE_WEBHOOK_PATH } from '../src/shared/hosted-api.ts';
 import { PRACTICE_URL } from '../src/ui/links.ts';
 import { activateOnMockSite, expect, openSettings, retranslateVisible, test } from './fixtures.ts';
 import { VERTICAL_VIEW_HEIGHT } from './mock-site/vertical-scroll.ts';
@@ -123,11 +123,14 @@ const PORTAL_FORBIDDEN_CUSTOMER = 'ctm_fake_portal_forbidden';
 /** 假 Paddle 的 transaction id 是 txn_fake_<Account id>，放在 checkout 頁網址的 _ptxn。 */
 const accountIdFromCheckout = (url: string) => new URL(url).searchParams.get('_ptxn')!.replace('txn_fake_', '');
 
-/** 像 Paddle 一樣簽好、送一個 subscription.created 給本機 Worker；custom_data 的 Account id 是 Worker 建立 transaction 時放的。 */
+/**
+ * 像 Paddle 一樣簽好、送一個 subscription.created 給本機 Worker；custom_data 的 Account id 是 Worker 建立 transaction 時放的。
+ * 平行的測試共用同一個 Worker，而 Worker 用 event_id 去重：event_id 要每次都不同，同一毫秒送出的另一個 webhook 才不會被當成重送略過。
+ */
 async function sendSubscriptionCreated(accountId: string, customerId = `ctm_browser_${accountId}`): Promise<void> {
   const now = new Date().toISOString();
   const body = JSON.stringify({
-    event_id: `evt_browser_${Date.now()}`,
+    event_id: `evt_browser_${randomUUID()}`,
     event_type: 'subscription.created',
     occurred_at: now,
     data: {
@@ -164,6 +167,18 @@ async function signInOnPanel(panel: Page, context: BrowserContext, email: string
   await panel.getByRole('button', { name: '返回' }).click();
 }
 
+/** 仿 canvas 網站（預設網址）一開始畫面上看得到的 Page 數。 */
+const VISIBLE_PAGES = 2;
+
+/**
+ * 等登入後畫面上的頁都翻完、扣完頁：每頁都「已翻譯」，而且額度已經重讀成扣完的數字。
+ * 之後才能訂閱，不然還在翻的頁會在訂閱生效後才扣，扣到每月額度（800 變 798）。
+ */
+async function waitForVisiblePagesCharged(panel: Page): Promise<void> {
+  await expect(panel.getByRole('status', { name: '翻譯狀態' }).filter({ hasText: /^已翻譯・/ })).toHaveCount(VISIBLE_PAGES);
+  await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(new RegExp(`^免費額度剩 ${FREE_PAGES - VISIBLE_PAGES} 頁`));
+}
+
 // unit 測不到的（#176）：side panel → SW 的 payment:open、SW 真的向 Worker 查方案、用真的 chrome.tabs 關掉付款分頁，
 // 再透過 chrome.storage.session 讓 side panel 顯示「已訂閱」。什麼時候關、切回哪個分頁的規則在 src/background/payment-return.test.ts。
 test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webhook 送到 Worker 後，SW 關掉付款分頁，side panel 顯示已訂閱與本月額度', async ({
@@ -175,8 +190,8 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   await signInOnPanel(panel, context, freshEmail(testInfo.workerIndex));
   const remaining = panel.getByRole('status', { name: '剩餘額度' });
-  // 登入後畫面上的頁會直接翻（扣頁），剩幾頁看翻到哪
-  await expect(remaining).toHaveText(/免費額度剩 \d+ 頁/);
+  // 登入後畫面上的頁會直接翻（扣頁），等全部扣完再訂閱
+  await waitForVisiblePagesCharged(panel);
 
   // 本機的產品網站沒有啟動，只看網址：Worker 自己組的 checkout 頁，transaction id（假 Paddle 帶 Account id）。
   // 網站回空白頁：連不上的話網址會變成 chrome-error://（Linux 上立刻就變），就看不到原本的網址
@@ -241,7 +256,7 @@ test('直式捲動的長 Page 捲動兩次只扣一頁：扣掉最後一頁之�
   expect(await sw.evaluate(() => globalThis.__translateCalls ?? 0)).toBe(0);
 });
 
-/** 訂閱後按「訂閱」拿到 Account id、送 webhook，回到 side panel 時已經是訂閱中。 */
+/** 按「訂閱」拿到 Account id、送 webhook，回到 side panel 時已經是訂閱中。畫面上還有頁在翻的話先 waitForVisiblePagesCharged。 */
 async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId?: string): Promise<void> {
   await context.route('http://localhost:4321/**', (route) => route.fulfill({ contentType: 'text/html', body: '' }));
   const opened = context.waitForEvent('page');
@@ -264,6 +279,7 @@ test('管理訂閱：Paddle 拒絕建立 customer portal 時，設定頁顯示�
 }, testInfo) => {
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   await signInOnPanel(panel, context, freshEmail(testInfo.workerIndex));
+  await waitForVisiblePagesCharged(panel);
   await subscribeOnPanel(panel, context, PORTAL_FORBIDDEN_CUSTOMER);
   await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
