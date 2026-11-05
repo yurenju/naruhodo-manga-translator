@@ -15,7 +15,7 @@ import type { Page } from '@playwright/test';
 import { build } from '../../scripts/build.ts';
 import type { TranslationMode } from '../../src/shared/translation-mode.ts';
 import { readTestApiKey, TEST_API_KEY_ENV } from '../../src/testing/test-api-key.ts';
-import { activateOnMockSite, expect, launchWithExtension, openSettings, openSidePanel, test } from '../fixtures.ts';
+import { activateOnMockSite, expect, launchWithExtension, openSettings, openSidePanel, selectTranslationMode, test } from '../fixtures.ts';
 import { onboardingPage, signInFromPanel } from '../sign-in.ts';
 import { startWorker } from '../worker.ts';
 
@@ -79,7 +79,7 @@ test.describe('e2e build', () => {
         async beforeActivate(panel) {
           await openSettings(panel);
           const settings = panel.getByRole('region', { name: '設定' });
-          await settings.getByRole('radio', { name: '內建翻譯' }).check();
+          await selectTranslationMode(panel, '內建翻譯');
           // 在 onboarding 登入時就取得資料使用同意，不另外按說明卡
           await signInFromPanel(context, () => settings.getByRole('button', { name: '登入' }).click(), `smoke-${Date.now()}@example.com`);
           await panel.getByRole('button', { name: '返回' }).click();
