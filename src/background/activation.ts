@@ -56,8 +56,8 @@ export interface ActivationDeps {
   closeSidePanel(tabId: number): Promise<void>;
   /** 點圖示的當下卡在哪一步（沒同意、沒登入、額度 0、沒有 key）；能翻譯就是 undefined。 */
   blockedStep(): Promise<BlockedStep | undefined>;
-  /** 用新分頁打開 onboarding、直接跳到能解決問題的那一步；完成後「回到漫畫」切回 tabId。 */
-  openOnboarding(tabId: number, step: BlockedStep): Promise<void>;
+  /** 用新分頁打開能解決問題的那一頁（額度 0 是帳號頁，#213；其他是 onboarding 的那一步）；完成後「回到漫畫」切回 tabId。 */
+  openBlockedPage(tabId: number, step: BlockedStep): Promise<void>;
   injectContentScript(tabId: number): Promise<void>;
   stopContentScript(tabId: number): Promise<void>;
   onStatusChanged(tabId: number, active: boolean): void;
@@ -154,7 +154,7 @@ export function createActivation(deps: ActivationDeps) {
     let started!: () => void;
     const activated = new Promise<void>((resolve) => (started = resolve));
     const onboarding = Promise.all([blocked, activated]).then(async ([step]) => {
-      if (step && (await isActive(tabId))) await deps.openOnboarding(tabId, step).catch((e: unknown) => console.warn('open onboarding failed', e));
+      if (step && (await isActive(tabId))) await deps.openBlockedPage(tabId, step).catch((e: unknown) => console.warn('open blocked page failed', e));
     });
     await start(tabId, started);
     // 沒啟動成功（注入失敗）就不等 onboarding

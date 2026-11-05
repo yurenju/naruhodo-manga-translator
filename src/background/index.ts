@@ -29,6 +29,7 @@ import type {
 } from '../shared/messages.ts';
 import { acceptSuggestion, editEntry, ignoreSuggestion, pendingSuggestions, type SeriesNotes, type TranslatorVersion } from '../shared/series-notes.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
+import { accountUrl, blockedPageUrl } from '../shared/account-page.ts';
 import { onboardingUrl, saveInstallState, saveOnboarding } from '../shared/onboarding.ts';
 import type { ActionBadge, StatusAction } from '../shared/page-status.ts';
 import { saveSidePanelOnActivation, watchSidePanelOnActivation } from '../shared/side-panel-setting.ts';
@@ -482,6 +483,7 @@ const panelPath = (tabId: number) => `sidepanel.html?tabId=${tabId}`;
 
 const MENU_PANEL_ON_ACTIVATION = 'sidePanelOnActivation';
 const MENU_OPEN_PANEL = 'openSidePanel';
+const MENU_ACCOUNT = 'account';
 
 /**
  * Side Panel on Activation（#185）：點圖示時要同步知道（sidePanel.open 要在第一個 await 之前），所以記在記憶體裡。
@@ -496,7 +498,7 @@ watchSidePanelOnActivation((open) => {
 });
 
 /**
- * 點圖示的當下卡在哪（#185）：沒同意或沒登入是「同意並登入」，額度 0 是「選擇方案」，自備金鑰沒有 key 是「使用自備金鑰」。
+ * 點圖示的當下卡在哪（#185）：沒同意或沒登入是「同意並登入」，額度 0 是帳號頁（#213），自備金鑰沒有 key 是「使用自備金鑰」。
  * 讀不到額度（離線、Worker 出錯）就當作沒卡住，翻譯時再說。
  */
 async function blockedStep(): Promise<BlockedStep | undefined> {
@@ -546,9 +548,9 @@ const activation = createActivation({
     await chrome.sidePanel.setOptions({ tabId, enabled: sidePanelOnActivation ?? true });
   },
   blockedStep,
-  async openOnboarding(tabId, step) {
+  async openBlockedPage(tabId, step) {
     trace('activate:blocked', { tabId, step });
-    await chrome.tabs.create({ url: onboardingUrl(step, tabId) });
+    await chrome.tabs.create({ url: blockedPageUrl(step, tabId) });
   },
   async injectContentScript(tabId) {
     await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
@@ -589,7 +591,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 /**
- * 圖示的右鍵選單（#185）：勾選「啟動時打開側邊欄」，以及臨時「打開側邊欄」。
+ * 圖示的右鍵選單（#185）：勾選「啟動時打開側邊欄」、臨時「打開側邊欄」，以及「帳號與訂閱」（#213）。
  * SW 每次啟動都重建，不只在 onInstalled：開發時重新載入 unpacked 外掛、或 Chrome 開機時載入改過的外掛，不一定有安裝事件。
  */
 const createMenus = () =>
@@ -602,6 +604,8 @@ const createMenus = () =>
       contexts: ['action'],
     });
     chrome.contextMenus.create({ id: MENU_OPEN_PANEL, title: '打開側邊欄', contexts: ['action'] });
+    // 不管有沒有登入、用哪一種翻譯方式都在：帳號的事都到這一頁（#213）
+    chrome.contextMenus.create({ id: MENU_ACCOUNT, title: '帳號與訂閱', contexts: ['action'] });
   });
 createMenus();
 
@@ -609,6 +613,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === MENU_PANEL_ON_ACTIVATION) void saveSidePanelOnActivation(info.checked === true);
   // 在 user gesture 裡：openPanel 同步打開 side panel
   else if (info.menuItemId === MENU_OPEN_PANEL && tab?.id !== undefined) void activation.openPanel(tab.id);
+  else if (info.menuItemId === MENU_ACCOUNT) void chrome.tabs.create({ url: accountUrl() });
 });
 
 /**
@@ -645,7 +650,8 @@ const paymentReturn = createPaymentReturn({
     accessChanged();
     // onboarding 分頁可能已經關了：付款完成就算設定完成，跟 onboarding 頁自己寫的一樣
     if (from === 'onboarding') void saveTranslationMode('hosted').then(() => saveOnboarding('done'));
-    else void showSubscribedNotice();
+    // 帳號頁自己顯示「訂閱完成」
+    else if (from === 'panel') void showSubscribedNotice();
   },
   now: () => Date.now(),
 });
@@ -689,11 +695,11 @@ async function returnToManga(tabId: number): Promise<void> {
   accessChanged();
 }
 
-/** Page 上的紅色小標籤被點了（#185）：看方案、登入、設定 key 都打開 onboarding 的那一步；重試只重翻這一頁。 */
+/** Page 上的紅色小標籤被點了（#185）：看方案打開帳號頁（#213），登入、設定 key 打開 onboarding 的那一步；重試只重翻這一頁。 */
 async function statusAction(tabId: number, action: StatusAction, pageHash: string): Promise<void> {
   trace('content:statusAction', { tabId, action, pageHash });
   if (action !== 'retry') {
-    await chrome.tabs.create({ url: onboardingUrl(action, tabId) });
+    await chrome.tabs.create({ url: blockedPageUrl(action, tabId) });
     return;
   }
   const page = transcriber.get(tabId).find((p) => p.pageHash === pageHash);

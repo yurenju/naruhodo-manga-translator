@@ -347,10 +347,8 @@ export interface SidePanelProps {
   /** 以下是只有外掛 container 才有的區塊（會讀寫 store、送 chrome 訊息）；沒給就不顯示（沒有設定頁就沒有 ⚙）。 */
   /** Transcript 上方的作品卡（#186）；open 打開作品頁或換一部作品（#191）。 */
   renderSeriesCard?: (open: (page: SeriesPage) => void) => ComponentChildren;
-  /** 「設定」頁的內容（標題列由 SidePanel 畫）；openDeleteAccount 換到「刪除帳號」那一頁。 */
-  renderSettings?: (close: () => void, openDeleteAccount: () => void) => ComponentChildren;
-  /** 「刪除帳號」頁的內容（#95）；back 回到設定頁（「取消」、刪除成功）。 */
-  renderDeleteAccount?: (back: () => void) => ComponentChildren;
+  /** 「設定」頁的內容（標題列由 SidePanel 畫）。 */
+  renderSettings?: (close: () => void) => ComponentChildren;
   /**
    * 作品頁（作品身分＋Series Notes）與換一部作品的內容（#191，標題列由 SidePanel 畫）；
    * navigate 換到另一頁，undefined＝回到逐字稿。
@@ -377,7 +375,7 @@ function FinishSetup({ logoSrc, onFinishSetup }: { logoSrc: string; onFinishSetu
   );
 }
 
-const PAGE_TITLES: Record<PanelPage, string> = { settings: '設定', series: '作品', seriesPick: '換一部作品', deleteAccount: '刪除帳號' };
+const PAGE_TITLES: Record<PanelPage, string> = { settings: '設定', series: '作品', seriesPick: '換一部作品' };
 
 /** 整個取代 side panel 的一頁（設定、作品頁…）：頂部是「←」＋標題，沒有逐字稿與底部狀態列。 */
 function PanelPageView({ title, onBack, children }: { title: string; onBack: () => void; children: ComponentChildren }) {
@@ -411,10 +409,9 @@ export function SidePanel(props: SidePanelProps) {
   if (screen !== 'transcript') {
     const back = () => setPage(parentPage(screen));
     const content = {
-      settings: () => props.renderSettings?.(close, () => setPage('deleteAccount')),
+      settings: () => props.renderSettings?.(close),
       series: () => props.renderSeries?.('series', setPage),
       seriesPick: () => props.renderSeries?.('seriesPick', setPage),
-      deleteAccount: () => props.renderDeleteAccount?.(back),
     }[screen];
     return (
       <PanelPageView title={PAGE_TITLES[screen]} onBack={back}>

@@ -6,7 +6,7 @@
 import type { ModelStatus, PageView } from './messages.ts';
 import type { RequestedStep } from './onboarding-step.ts';
 
-/** 紅色小標籤點了做什麼：打開 onboarding 的那一步（plan＝看方案、signIn＝登入、ownKey＝設定 API key），或 retry＝重試這一頁。 */
+/** 紅色小標籤點了做什麼：plan＝打開帳號頁（#213）；signIn＝登入、ownKey＝設定 API key 打開 onboarding 的那一步；retry＝重試這一頁。 */
 export type StatusAction = RequestedStep | 'retry';
 
 /** 一個 anchor 上的狀態；Spread 的兩頁共用一個 anchor，有一頁在翻就顯示翻譯中。 */

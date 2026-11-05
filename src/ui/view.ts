@@ -147,11 +147,11 @@ export function setupNotices({
 /**
  * 整個取代 side panel 內容的一頁（頂部是「← 返回」＋標題，#93）：設定按 ⚙ 打開；
  * 作品頁（作品身分＋Series Notes，#191）從作品卡打開，換一部作品從作品頁（或作品卡的「換一部」）打開；
- * 刪除帳號（#95）從設定頁打開，不用 dialog（side panel 裡的 dialog 只蓋得住 panel 自己）。
+ * 刪除帳號在帳號與訂閱頁（#213），不在 side panel。
  */
-export type PanelPage = 'settings' | 'series' | 'seriesPick' | 'deleteAccount';
+export type PanelPage = 'settings' | 'series' | 'seriesPick';
 
-const PARENT_PAGES: Partial<Record<PanelPage, PanelPage>> = { deleteAccount: 'settings', seriesPick: 'series' };
+const PARENT_PAGES: Partial<Record<PanelPage, PanelPage>> = { seriesPick: 'series' };
 
 /** 這一頁的「←」回到哪一頁；undefined＝回到逐字稿。 */
 export const parentPage = (page: PanelPage): PanelPage | undefined => PARENT_PAGES[page];
@@ -263,4 +263,74 @@ export function accountPlanView(quota: Quota): AccountPlanView {
   if (quota.cancelScheduled)
     return { badge: { text: '訂閱中・不會續訂', tone: 'warn' }, lines: [month, `訂閱在 ${fullDate(quota.periodEndsAt)}結束`], subscribed: true };
   return { badge: { text: '訂閱中', tone: 'ok' }, lines: [month, `下次續訂：${fullDate(quota.periodEndsAt)}`], subscribed: true };
+}
+
+/**
+ * 帳號與訂閱頁（#213）的輸入：翻譯模式、有沒有登入、Worker 給的額度（讀不到是 undefined）；
+ * justPaid＝在這頁付完款，justSignedIn＝在這頁登入，hasOrigin＝從漫畫分頁卡住來的（才有「回到漫畫」）。
+ */
+export interface AccountPageInput {
+  mode: TranslationMode;
+  signedIn: boolean;
+  quota: Quota | undefined;
+  justPaid: boolean;
+  justSignedIn: boolean;
+  hasOrigin: boolean;
+}
+
+/** 帳號與訂閱頁要顯示什麼（#213，prototype/account-status 的方案 B）。 */
+export interface AccountPageView {
+  /** 頂部的說明；backToManga＝有「回到漫畫」。 */
+  notice: { tone: 'info' | 'warn'; title: string; body: string; backToManga: boolean } | undefined;
+  /** 「目前方案」：left＝額度的剩餘文字，fraction＝進度條畫的剩餘比例（用完是 0）。讀不到額度時 undefined。 */
+  plan: { name: string; note: string | undefined; quotaLabel: string; left: string; fraction: number; warn: boolean } | undefined;
+  /** 有沒有「訂閱」那一段（只有免費方案）。 */
+  subscribe: boolean;
+  /** 自備金鑰模式但帳號還登入著：說明不會用到這個帳號的頁數。 */
+  ownKeyNote: boolean;
+  /** 沒登入：「登入」上面的說明。 */
+  signedOut: string | undefined;
+}
+
+const UNTRANSLATED_PAGES_KEEP_ORIGINAL = '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音';
+
+/** 帳號頁沒登入時「登入」上面的說明：正在用自備金鑰的話說不需要登入。 */
+export const signedOutText = (mode: TranslationMode): string =>
+  mode === 'ownKey'
+    ? `目前用自備金鑰翻譯，不需要登入。想改用內建翻譯的話可以登入，新帳號有 ${FREE_PAGES} 頁免費額度。`
+    : `尚未登入。登入後就能用內建翻譯，新帳號有 ${FREE_PAGES} 頁免費額度。`;
+
+export function accountPageView({ mode, signedIn, quota, justPaid, justSignedIn, hasOrigin }: AccountPageInput): AccountPageView {
+  const empty = { notice: undefined, plan: undefined, subscribe: false, ownKeyNote: false, signedOut: undefined };
+  if (!signedIn) return { ...empty, signedOut: signedOutText(mode) };
+  if (!quota) return { ...empty, ownKeyNote: mode === 'ownKey' };
+  const usedUp = quota.remaining === 0;
+  // 自備金鑰不會用到帳號的頁數：用完了也不必說明
+  const usesAccount = mode === 'hosted';
+  const meter = (total: number, usedUpText: string) => ({
+    left: usedUp ? usedUpText : `剩 ${quota.remaining} / ${total} 頁`,
+    fraction: quota.remaining / total,
+    warn: quota.remaining <= LOW_QUOTA,
+  });
+  const signedInNotice: AccountPageView['notice'] =
+    justSignedIn && hasOrigin && !usedUp ? { tone: 'info', title: '✓ 已登入', body: '回到漫畫後會接著翻譯。', backToManga: true } : undefined;
+  if (quota.plan === 'free')
+    return {
+      ...empty,
+      notice: usesAccount && usedUp ? { tone: 'warn', title: '免費額度已用完', body: `${UNTRANSLATED_PAGES_KEEP_ORIGINAL}。`, backToManga: false } : signedInNotice,
+      plan: { name: '免費', note: `新帳號一次 ${FREE_PAGES} 頁，不會過期`, quotaLabel: '免費額度', ...meter(FREE_PAGES, '已用完') },
+      subscribe: true,
+      ownKeyNote: !usesAccount,
+    };
+  const notice: AccountPageView['notice'] = justPaid
+    ? { tone: 'info', title: '✓ 訂閱完成', body: `每月可翻 ${quota.limit} 頁。`, backToManga: hasOrigin }
+    : usesAccount && usedUp
+      ? { tone: 'warn', title: `本月額度已用完，${monthDay(quota.resetsAt)}重置`, body: `${UNTRANSLATED_PAGES_KEEP_ORIGINAL}，重置後就會繼續翻。`, backToManga: hasOrigin }
+      : signedInNotice;
+  return {
+    ...empty,
+    notice,
+    plan: { name: '訂閱（年繳）', note: undefined, quotaLabel: '本月額度', ...meter(quota.limit, '本月已用完') },
+    ownKeyNote: !usesAccount,
+  };
 }

@@ -44,7 +44,7 @@ function fakeChrome(urls: Record<number, string>) {
     openSidePanel: async (tabId, { onlyIfEnabled } = {}) => void (onlyIfEnabled ? calls.openedIfEnabled : calls.openedPanels).push(tabId),
     closeSidePanel: async (tabId) => void calls.closedPanels.push(tabId),
     blockedStep: async () => settings.blocked,
-    openOnboarding: async (tabId, step) => void calls.onboardings.push([tabId, step]),
+    openBlockedPage: async (tabId, step) => void calls.onboardings.push([tabId, step]),
     injectContentScript: async (tabId) => {
       if (failInjectionFor.has(tabId)) throw new Error('Cannot access contents of the page');
       calls.injected.push(tabId);
