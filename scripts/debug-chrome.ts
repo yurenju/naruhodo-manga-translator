@@ -1,6 +1,6 @@
 /**
  * 在真實網站上除錯（目前只支援 Windows）：
- *   npm run debug:chrome   build debug 版外掛 → 用獨立 profile 開 Chrome（帶 remote debugging）→ 透過 CDP 錄下除錯記錄
+ *   npm run debug:chrome   build debug 版外掛 → 用獨立 profile 開 Chrome（帶 remote debugging；已開著就接上）→ 重新載入外掛 → 透過 CDP 錄下除錯記錄
  *   npm run debug:reload   重新 build，並叫已開著的 Chrome 重新載入外掛（之後重新整理分頁、再跑 npm run debug:activate）
  *
  * 外掛 build 到固定位置（不跟 worktree 走），profile 載入一次就好：第一次在那個 Chrome 的
@@ -274,17 +274,18 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (await isListening(port)) {
-    // Chrome 已經開著：剛剛 build 換掉了執行中外掛的檔案，重新載入才會一致
-    const cdp = await connectCdp(port);
-    if (await reloadExtension(cdp)) console.log(RELOADED_MESSAGE);
-    cdp.close();
-  } else {
+  if (!(await isListening(port))) {
     const chrome = option('--chrome') ?? DEFAULT_CHROME;
     const profile = option('--profile') ?? DEFAULT_PROFILE;
     await launchChrome({ chrome, profile, port, loadExtension: process.argv.includes('--load-extension') });
-    console.log(`已開啟 Chrome（profile：${profile}）。第一次使用請在 chrome://extensions 載入未封裝項目：${EXTENSION_DIR}`);
+    console.log(`已開啟 Chrome（profile：${profile}）。`);
   }
+  // 新開的也要重新載入：Chrome 重開時 unpacked 外掛的 SW 沿用之前註冊的舊腳本（連 manifest 版號變了都一樣），
+  // 頁面（side panel、offscreen）卻讀磁碟上的新檔，新舊程式混著跑（#220、#163）。只有重新載入會換掉 SW。
+  const cdp = await connectCdp(port);
+  const reloaded = await reloadExtension(cdp);
+  cdp.close();
+  console.log(reloaded ? RELOADED_MESSAGE : `第一次使用請在 chrome://extensions 載入未封裝項目：${EXTENSION_DIR}`);
 
   await mkdir(DEBUG_DIR, { recursive: true });
   const old = sessionsToPrune(await readdir(DEBUG_DIR), KEEP_SESSIONS - 1);
