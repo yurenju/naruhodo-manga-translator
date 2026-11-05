@@ -97,7 +97,7 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
     const body = translateRequest(input);
     const item = (body.output_config.format.schema as { properties: { items: { items: { properties: Record<string, unknown>; required: string[] } } } }).properties.items.items;
 
-    expect(Object.keys(item.properties)).toEqual(['id', 'zh', 'unreadable', 'sfx']);
+    expect(Object.keys(item.properties)).not.toContain('reading');
     expect(body.system[0]?.text).not.toMatch(/reading|讀音/);
   });
 
@@ -106,6 +106,36 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
 
     expect(text).toMatch(/片假名寫的人名[^\n]*不要在譯文裡留下片假名/);
     expect(text).toMatch(/完整的句子[^\n]*句尾要有全形標點[^\n]*狀聲詞不用加/);
+  });
+
+  it('schema 先要整頁一份 names 再要 items：模型先寫出名字的中文譯名，zh 才不會照抄假名', () => {
+    const schema = translateRequest(input).output_config.format.schema as {
+      properties: Record<string, unknown> & { items: { items: { properties: Record<string, unknown> } } };
+      required: string[];
+    };
+
+    // structured output 依 properties 的順序產生，names 一定要排在 items 前面
+    expect(Object.keys(schema.properties)).toEqual(['names', 'items']);
+    expect(schema.required).toContain('names');
+    // 每一項都帶 names 時，模型會照著前一項的空陣列把 zh 也寫成空字串（長頁整頁空白）
+    expect(Object.keys(schema.properties.items.items.properties)).toEqual(['id', 'zh', 'unreadable', 'sfx']);
+  });
+
+  it('names 的指示：假名要音譯成中文字，不照抄、不用羅馬拼音，zh 沿用 names 的譯名', () => {
+    const text = translateRequest(input).system[0]?.text;
+
+    expect(text).toMatch(/names：這一頁所有 ja[^\n]*平假名、片假名要音譯成中文字，不能照抄，也不能改寫成羅馬拼音/);
+    expect(text).toMatch(/names：[^\n]*zh 裡要用 names 的譯名/);
+    // names 會讓模型想在譯名後面加註原文，例如「巧克（チョコちゃん）」
+    expect(text).toMatch(/names：[^\n]*不要在名字後面用括號附上原文或羅馬拼音/);
+    // 名字翻了、敬稱照抄，例如「巧克ちゃん」
+    expect(text).toMatch(/names：[^\n]*敬稱（ちゃん、さん、君等）[^\n]*翻成中文或省略，不要把假名留在譯文裡/);
+  });
+
+  it('保留原文只限真實世界的名稱，作品裡虛構的歌手、偶像照專有名詞的規則翻', () => {
+    const text = translateRequest(input).system[0]?.text;
+
+    expect(text).toMatch(/保留原文[^\n]*只限現實中真的存在[^\n]*虛構的歌手、偶像[^\n]*翻成中文/);
   });
 
   it('整理 Notes 的 request body：沒有 Series Notes 時 system 只有指示一段', () => {
@@ -124,6 +154,14 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
       usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 700, costUsd: 0.000137 },
       model: CLAUDE_MODEL,
     });
+  });
+
+  it('解析翻譯回應：names 只給模型用，不往下傳', () => {
+    const out = parseTranslateResponse(
+      apiResponse({ names: [{ ja: 'ひなた', zh: '日向' }], items: [{ id: 'b1', zh: '早安，日向！', unreadable: false, sfx: false }] }),
+    );
+
+    expect(out.items).toEqual([{ id: 'b1', 譯文: '早安，日向！', unreadable: false, sfx: false }]);
   });
 
   it('解析 Notes 回應：轉成新增／補空欄位／建議修改', () => {
