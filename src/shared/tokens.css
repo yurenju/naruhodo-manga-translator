@@ -58,11 +58,13 @@
   --naru-tooltip-chip-on-line: #5C564B;
 
   /*
-   * 字型：外掛頁面先用打包的 Noto Sans CJK（cjk-font.css），日文與中文是同一個字型、跟著 lang 換字形；
-   * 沒載入它的地方（網頁上的覆蓋層 tooltip、產品網站）用後面的系統字型堆疊，不從網路載入
+   * 字型：只用系統字型，不打包、不從網路載入。中文與日文各一串，各自只列該語言的字型：
+   *   - 不混列另一個語言的字型：日文排到繁中字型會變成中文字形，缺的字再被別的字型補，同一行字形不一（#205 前的 side panel）
+   *   - 語言字型排在 system-ui 前面：system-ui 跟著作業系統語系走（繁中 Windows 是微軟正黑體），日文也會被它接走
+   * Windows 用微軟正黑體／Yu Gothic，macOS 用 PingFang TC／Hiragino Sans：不列使用者可能另外裝的字型（例如 Noto Sans TC），大家看到的一樣
    */
-  --naru-font-sans: 'Naruhodo Noto Sans CJK', 'Noto Sans TC', 'Noto Sans JP', system-ui, -apple-system, 'Segoe UI', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
-  --naru-font-ja: 'Naruhodo Noto Sans CJK', 'Noto Sans JP', 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', 'Yu Gothic UI', 'Hiragino Sans', sans-serif;
+  --naru-font-sans: 'PingFang TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --naru-font-ja: 'Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --naru-font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
   /* 字級 */

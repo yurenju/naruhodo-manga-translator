@@ -55,44 +55,34 @@ test('窄寬度下 side panel 沒有水平捲軸', async ({ context, sw, extensi
 });
 
 /**
- * 字型：side panel 用打包的 Noto Sans CJK（src/shared/cjk-font.css）。unit 只看得到 CSS 怎麼寫；
- * 實際畫字用了哪個字型（缺字時 Chrome 會改用系統字型補）與 lang 有沒有切換字形，要真的 Chrome 才看得到。
+ * 字型：side panel 只用系統字型（src/shared/tokens.css）。清單怎麼排由 src/shared/tokens.test.ts 檢查；
+ * 實際畫字用了哪個字型（缺字時 Chrome 會改用別的字型補、system-ui 會跟著作業系統語系），要真的 Chrome 才看得到。
+ * 只在 Windows 與 macOS 跑：CI 的 Linux 沒有這兩個系統的字型，結果沒有意義。
  */
-test('逐字稿的日文與中文都用打包的 Noto Sans CJK 畫，跟著 lang 顯示日文與繁中字形', async ({ context, sw, extensionId, mockSite }) => {
+test('逐字稿的日文全部用日文系統字型、中文全部用中文系統字型，沒有混用', async ({ context, sw, extensionId, mockSite }) => {
+  test.skip(process.platform === 'linux', 'Linux 沒有 Windows／macOS 的系統字型');
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   const transcript = panel.getByRole('list', { name: 'Page' }).getByRole('listitem', { name: '第 1 頁' }).getByRole('list', { name: '逐字稿' });
   await expect(transcript.locator('[lang="zh-Hant"]').first()).toBeVisible();
-  await panel.evaluate(() => document.fonts.ready);
 
-  // 每個字實際用哪個字型畫（含缺字時補上的系統字型）：CDP 的 CSS.getPlatformFontsForNode
+  // 每個字實際用哪個字型畫（含缺字時補上的字型）：CDP 的 CSS.getPlatformFontsForNode
   const cdp = await context.newCDPSession(panel);
   await cdp.send('DOM.enable');
   await cdp.send('CSS.enable');
   const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
-  for (const lang of ['ja', 'zh-Hant']) {
+  const fontsFor = async (lang: string) => {
     const { nodeIds } = await cdp.send('DOM.querySelectorAll', { nodeId: root.nodeId, selector: `ol[aria-label="逐字稿"] [lang="${lang}"]` });
     expect(nodeIds.length).toBeGreaterThan(0);
     const used = new Set<string>();
-    for (const nodeId of nodeIds) {
-      const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
-      for (const f of fonts) used.add(`${f.familyName}${f.isCustomFont ? '（打包）' : '（系統）'}`);
-    }
-    expect([...used], lang).toEqual(['Noto Sans CJK JP（打包）']);
-  }
-
-  // 同一個字在 lang="ja" 與 lang="zh-Hant" 畫出不同字形（OpenType locl）：「骨」的內部筆畫日文與繁中寫法不同
-  const glyph = async (lang: string) => {
-    const el = await panel.evaluateHandle((lang) => {
-      const span = document.createElement('span');
-      span.lang = lang;
-      span.textContent = '骨';
-      span.style.cssText = 'display:inline-block;font:400 64px var(--naru-font-sans);line-height:1;background:#fff;color:#000';
-      document.querySelector('.naru-side-panel')!.append(span);
-      return span;
-    }, lang);
-    return el.asElement()!.screenshot();
+    for (const nodeId of nodeIds) for (const f of (await cdp.send('CSS.getPlatformFontsForNode', { nodeId })).fonts) used.add(f.familyName);
+    return [...used];
   };
-  expect((await glyph('ja')).equals(await glyph('zh-Hant'))).toBe(false);
+  const japanese = ['Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic'];
+  const chinese = ['PingFang TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei'];
+  const ja = await fontsFor('ja');
+  const zh = await fontsFor('zh-Hant');
+  expect(ja.filter((f) => !japanese.includes(f)), `日文用了 ${ja.join('、')}`).toEqual([]);
+  expect(zh.filter((f) => !chinese.includes(f)), `中文用了 ${zh.join('、')}`).toEqual([]);
 });
 
 test.describe('逐字稿出來之前', () => {

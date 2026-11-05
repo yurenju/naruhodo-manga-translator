@@ -2,7 +2,7 @@ import { access, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { build, CJK_FONT_FILE } from './build.ts';
+import { build } from './build.ts';
 
 let prodDir: string;
 let e2eDir: string;
@@ -106,37 +106,13 @@ describe('正式 build', () => {
     expect(files.filter((f) => f.endsWith('.onnx'))).toEqual([]);
   });
 
-  it('打包覆蓋層用的 Noto Sans TC 700 子集與授權，只開放字型檔給網頁讀取', async () => {
+  it('不打包字型檔、不對網頁開放任何外掛檔案（系統字型；覆蓋層的標點字型以 base64 在 content script 裡）', async () => {
     const manifest = await readJson(prodDir, 'manifest.json');
-    const fonts = await readdir(join(prodDir, 'fonts'));
+    const files = await readdir(prodDir, { recursive: true });
 
-    // content script 依 700.css 的 url() 找子集，每一個都要在
-    const css = await readFile('node_modules/@fontsource/noto-sans-tc/700.css', 'utf8');
-    const referenced = [...css.matchAll(/url\(\.\/files\/([^)]+\.woff2)\)/g)].map((m) => m[1]);
-    expect(referenced.length).toBeGreaterThan(100);
-    expect(fonts.filter((f) => f.endsWith('.woff2') && f !== CJK_FONT_FILE).sort()).toEqual([...new Set(referenced)].sort());
-    expect(fonts).toContain('LICENSE');
-    expect(manifest.web_accessible_resources).toEqual([{ resources: ['fonts/*'], matches: ['<all_urls>'] }]);
-  });
-
-  it('side panel 與 onboarding 載入打包的 Noto Sans CJK（一個 woff2 加授權），tokens 的字型堆疊第一個就是它', async () => {
-    const fonts = await readdir(join(prodDir, 'fonts'));
-    expect(fonts).toContain(CJK_FONT_FILE);
-    expect(fonts).toContain('LICENSE-NotoSansCJK');
-
-    const fontCss = await readText(prodDir, 'cjk-font.css');
-    expect(fontCss).toContain(`url(fonts/${CJK_FONT_FILE})`);
-    const family = fontCss.match(/font-family:\s*('[^']+')/)![1]!;
-    const tokens = await readText(prodDir, 'tokens.css');
-    expect(tokens).toMatch(new RegExp(`--naru-font-sans: ${family},`));
-    expect(tokens).toMatch(new RegExp(`--naru-font-ja: ${family},`));
-    for (const page of ['sidepanel.html', 'onboarding.html']) {
-      const html = await readText(prodDir, page);
-      // 字型跟著 lang 換字形（locl）：沒標 lang 的文字會用 jp 的預設字形，所以頁面要標中文
-      expect(html).toContain('<html lang="zh-Hant">');
-      expect(html.indexOf('href="cjk-font.css"')).toBeGreaterThan(-1);
-      expect(html.indexOf('href="cjk-font.css"')).toBeLessThan(html.indexOf('href="tokens.css"'));
-    }
+    expect(files.filter((f) => /\.(woff2?|otf|ttf|ttc)$/.test(f))).toEqual([]);
+    // 原本覆蓋層要從網頁 origin fetch 打包的字型才開放 fonts/*，網站因此能探測到外掛
+    expect(manifest.web_accessible_resources).toBeUndefined();
   });
 
   it('外掛頁面 cross-origin isolated，onnxruntime-web 的 wasm 才能多執行緒', async () => {

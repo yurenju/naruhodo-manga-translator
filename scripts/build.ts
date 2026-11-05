@@ -7,7 +7,7 @@
  *   - background（SW）、sidepanel、onboarding、offscreen：ES module
  *   - content：IIFE。scripting.executeScript({files}) 只能注入傳統 script，不能有 import。
  */
-import { copyFile, cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as esbuild from 'esbuild';
@@ -17,14 +17,14 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 
 /**
  * 原樣複製進外掛的檔案：[來源（相對 repo 根目錄）, 輸出路徑]。
- * ONNX 模型不在這裡：第一次使用時才下載（spec #27 第 3.3 節）。Noto Sans TC 字型見 FONT_DIR。
+ * ONNX 模型不在這裡：第一次使用時才下載（spec #27 第 3.3 節）。
+ * 字型檔不打包：side panel 與覆蓋層都用系統字型（src/shared/tokens.css）；覆蓋層只有幾個標點用 Noto Sans TC，
+ * 以 base64 打包在 content script 裡（src/content/punctuation-font.ts）。
  */
 const STATIC_FILES: [string, string][] = [
   ['src/sidepanel/sidepanel.html', 'sidepanel.html'],
   // design tokens（#71）：side panel 直接載入；content script 另外把它打包成字串放進 shadow DOM
   ['src/shared/tokens.css', 'tokens.css'],
-  // 外掛頁面的 Noto Sans CJK（字型檔見 copyFonts）
-  ['src/shared/cjk-font.css', 'cjk-font.css'],
   // side panel 的畫面樣式（src/ui/，#108）；sidepanel.css 只剩外掛整頁的 html／body
   ['src/ui/components.css', 'components.css'],
   ['src/ui/side-panel.css', 'side-panel.css'],
@@ -46,22 +46,6 @@ const STATIC_DIRS: [string, string][] = [
   ['src/icons', 'icons'],
 ];
 
-/**
- * 覆蓋層的 Noto Sans TC（#32）：@fontsource 依 unicode-range 切好的 700 字重 woff2 子集（約 3.5 MB），
- * 原樣複製到 fonts/；子集與範圍的對照在 700.css，由 content script 打包成字串（src/content/overlay-font.ts）。
- */
-const FONT_DIR = 'node_modules/@fontsource/noto-sans-tc';
-
-/** side panel、onboarding 的 Noto Sans CJK Variable（一個檔案，日文與繁中字形都在裡面）。 */
-export const CJK_FONT_SRC = 'src/fonts';
-export const CJK_FONT_FILE = 'NotoSansCJKjp-VF.woff2';
-
-/** 700.css 引用的 woff2（同一個目錄還有沒被引用的合併檔，不打包）。 */
-export async function overlayFontFiles(): Promise<string[]> {
-  const css = await readFile(join(root, FONT_DIR, '700.css'), 'utf8');
-  return [...new Set([...css.matchAll(/url\(\.\/files\/([^)]+\.woff2)\)/g)].map((m) => m[1]!))];
-}
-
 /** e2e build 才有：量 #7 指標用的流水線測試頁（browser/ocr-accuracy.spec.ts）、覆蓋渲染測試頁（browser/overlay-render.spec.ts）。 */
 const E2E_STATIC_FILES: [string, string][] = [
   ['src/test-pipeline/test-pipeline.html', 'test-pipeline.html'],
@@ -80,18 +64,6 @@ export const E2E_WORKER_PORT = 8788;
  */
 export function hostedApiUrl({ e2e, debug }: { e2e: boolean; debug: boolean }): string {
   return e2e ? `http://localhost:${E2E_WORKER_PORT}` : debug ? 'http://localhost:8787' : 'https://api.naruhodo.page';
-}
-
-async function copyFonts(outDir: string): Promise<void> {
-  await mkdir(join(outDir, 'fonts'), { recursive: true });
-  const files = await overlayFontFiles();
-  await Promise.all([
-    ...files.map((f) => copyFile(join(root, FONT_DIR, 'files', f), join(outDir, 'fonts', f))),
-    copyFile(join(root, FONT_DIR, 'LICENSE'), join(outDir, 'fonts', 'LICENSE')),
-    // 外掛頁面的 Noto Sans CJK（src/shared/cjk-font.css，scripts/cjk-font.ts 產生）
-    copyFile(join(root, CJK_FONT_SRC, CJK_FONT_FILE), join(outDir, 'fonts', CJK_FONT_FILE)),
-    copyFile(join(root, CJK_FONT_SRC, 'LICENSE'), join(outDir, 'fonts', 'LICENSE-NotoSansCJK')),
-  ]);
 }
 
 export async function build({ e2e, debug = false, outDir }: { e2e: boolean; debug?: boolean; outDir: string }): Promise<void> {
@@ -142,7 +114,6 @@ export async function build({ e2e, debug = false, outDir }: { e2e: boolean; debu
       await mkdir(dirname(join(outDir, to)), { recursive: true });
       await copyFile(join(root, from), join(outDir, to));
     }),
-    copyFonts(outDir),
     ...[...STATIC_DIRS, ...(e2e ? E2E_STATIC_DIRS : [])].map(([from, to]) => cp(join(root, from), join(outDir, to), { recursive: true })),
     writeFile(join(outDir, 'manifest.json'), JSON.stringify(buildManifest({ e2e, debug }), null, 2)),
   ]);
