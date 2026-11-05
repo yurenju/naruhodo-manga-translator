@@ -91,7 +91,8 @@ describe('Claude 翻譯：request', () => {
     expect(body.model).toBe('claude-haiku-5-5');
     expect(body.output_config.effort).toBe('low');
     expect(body.output_config.format.type).toBe('json_schema');
-    expect(Object.keys(body.output_config.format.schema.properties)).toEqual(['items']); // 只回譯文，Notes 由 ② 整理
+    // 只回譯文與給模型先想好名字用的 names（解析時丟掉），Notes 由 ② 整理
+    expect(Object.keys(body.output_config.format.schema.properties)).toEqual(['names', 'items']);
     expect(body.thinking).toEqual({ type: 'disabled' });
     expect(body).not.toHaveProperty('temperature');
     expect(body).not.toHaveProperty('stream');
