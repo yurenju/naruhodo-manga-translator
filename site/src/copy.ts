@@ -113,7 +113,7 @@ export const copy: Record<Locale, SiteCopy> = {
         tag: '年繳',
         pay: { label: '你付', price: ZH_YEARLY, unit: '／年', note: '一年扣款一次' },
         average: { label: '平均', price: ZH_MONTHLY, unit: '／月', note: '比一杯咖啡還少' },
-        items: [`每月 ${MONTHLY_PAGES} 頁翻譯，大約 4 本單行本`, '每月在你訂閱的那天重置', '隨時取消，用到這一年結束'],
+        items: [`每月 ${MONTHLY_PAGES} 頁翻譯，大約 4 本單行本`, '每月在你訂閱的那天重置', '一年後自動續訂，隨時可以取消'],
       },
       start: {
         steps: [
@@ -219,7 +219,7 @@ export const copy: Record<Locale, SiteCopy> = {
         tag: 'Yearly',
         pay: { label: 'You pay', price: EN_YEARLY, unit: '/year', note: 'Billed once a year' },
         average: { label: 'About', price: EN_MONTHLY, unit: '/month', note: 'Less than a cup of coffee' },
-        items: [`${MONTHLY_PAGES} translated pages a month, about 4 volumes`, 'Resets each month on the day you subscribed', 'Cancel anytime, keep using it until the year ends'],
+        items: [`${MONTHLY_PAGES} translated pages a month, about 4 volumes`, 'Resets each month on the day you subscribed', 'Renews automatically after a year; cancel anytime'],
       },
       start: {
         steps: [
