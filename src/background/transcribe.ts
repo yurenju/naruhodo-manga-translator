@@ -197,6 +197,11 @@ function translatedLines(page: PageText, added: PageText): TranslatedLine[] {
 /** 兩份橫條併成一份，同一條留先看到的。 */
 const mergeStripes = (a: readonly Stripe[], b: readonly Stripe[]) => [...a, ...b.filter((t) => !a.some((u) => u.index === t.index))];
 
+/** 辨識完、還沒翻譯（沒有 Translator、翻譯失敗、額度用完）：「翻譯此頁」與能翻譯時要翻的頁。 */
+function isUntranslated(record: PageRecord): boolean {
+  return record.transcript.state === 'done' && !record.transcript.translated;
+}
+
 export function createTranscriber(deps: TranscriberDeps) {
   const ledger = createNotesLedger({ store: deps.notes });
   const pageTranslation = createPageTranslation({
@@ -619,7 +624,7 @@ export function createTranscriber(deps: TranscriberDeps) {
     const translator = await deps.getTranslator();
     const pages = pageHash === undefined ? tab.pages : tab.pages.filter((p) => p.pageHash === pageHash);
     const visible = [...new Set(pages.flatMap((p) => findSamePage(tab.records, p.pageHash) ?? []))].filter(
-      (record) => pageHash !== undefined || (record.transcript.state === 'done' && !record.transcript.translated),
+      (record) => pageHash !== undefined || isUntranslated(record),
     );
     if (pageHash !== undefined) for (const record of visible) if (record.transcript.state === 'done') record.text ??= record.transcript.text;
     await start(tab, visible, translator);
@@ -636,7 +641,7 @@ export function createTranscriber(deps: TranscriberDeps) {
       [...tabs.values()].map((tab) => {
         const waiting = tab.pages.flatMap((p) => {
           const record = findSamePage(tab.records, p.pageHash);
-          return record?.transcript.state === 'done' && !record.transcript.translated ? [record] : [];
+          return record && isUntranslated(record) ? [record] : [];
         });
         return start(tab, [...new Set(waiting)], translator);
       }),

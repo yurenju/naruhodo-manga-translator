@@ -91,11 +91,9 @@ test('設定 API key、同意資料使用後，已啟動的分頁直接翻譯：
   await panel.getByRole('button', { name: '返回' }).click();
   await expect(panel.getByText('尚未設定 API key')).toHaveCount(0);
 
-  // 有 key 但還沒同意：按「翻譯此頁」也不送出
-  await panel.getByRole('button', { name: '翻譯此頁' }).click();
+  // 有 key 但還沒同意：送不出去，所以沒有「翻譯此頁」，由資料使用說明卡帶路
   await expect(transcript.getByText('未翻譯').first()).toBeVisible();
-  // 斷言「沒有送出」：等一段時間確認 FakeTranslator 沒被呼叫
-  await panel.waitForTimeout(1000);
+  await expect(panel.getByRole('button', { name: '翻譯此頁' })).toHaveCount(0);
   expect(await sw.evaluate(() => globalThis.__translateCalls)).toBe(0);
 
   // 同意之後卡片消失，已啟動的分頁直接開始翻譯

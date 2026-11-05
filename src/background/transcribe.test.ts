@@ -387,7 +387,7 @@ describe('翻譯此頁', () => {
     expect(transcriber.get(1)[0]!.transcript).toEqual({ state: 'done', text: pageText, translated: false });
   });
 
-  it('能翻譯了（同意、登入）：直接翻還沒翻譯的頁，已翻好的不重翻', async () => {
+  it('translateUntranslated（能翻譯了：同意、登入）：直接翻還沒翻譯的頁，已翻好的不重翻', async () => {
     let translator: Translator | undefined;
     const calls: TranslateInput[] = [];
     const cache = memoryCache();
@@ -405,7 +405,7 @@ describe('翻譯此頁', () => {
     expect(second!.state === 'done' && second!.translated).toBe(true);
   });
 
-  it('還是不能翻時不動', async () => {
+  it('translateUntranslated：還是不能翻時不動', async () => {
     const { transcriber, published } = setup();
     await transcriber.update(1, [thumb('a1')], capture);
     const before = published.length;
@@ -416,7 +416,7 @@ describe('翻譯此頁', () => {
     expect(transcriber.get(1)[0]!.transcript).toEqual({ state: 'done', text: pageText, translated: false });
   });
 
-  it('「翻譯此頁」只翻還沒翻譯的頁，已翻好的不重翻（不多扣頁）', async () => {
+  it('translate 不帶 pageHash（「翻譯此頁」）：只翻還沒翻譯的頁，已翻好的不重翻（不多扣頁）', async () => {
     let translator: Translator | undefined;
     const calls: TranslateInput[] = [];
     const cache = memoryCache();

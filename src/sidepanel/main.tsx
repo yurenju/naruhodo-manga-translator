@@ -24,7 +24,7 @@ import { dismissHostedHint, onboardingUrl, watchHostedHint, watchOnboarding, typ
 import { DEFAULT_PAGE_MODE, savePageMode, watchPageMode, type PageMode } from '../shared/page-mode.ts';
 import { dismissSubscribedNotice, openPayment, watchSubscribedNotice } from '../shared/payment-return.ts';
 import { saveTranslationMode, watchTranslationMode, type TranslationMode } from '../shared/translation-mode.ts';
-import { Badge, Button, RadioCard, Switch } from '../ui/components.tsx';
+import { Badge, Button, RadioCard } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
 import { SidePanel, type SeriesPage } from '../ui/side-panel.tsx';
 import { PaymentUnavailable, SubscribeButton } from '../ui/subscribe-button.tsx';

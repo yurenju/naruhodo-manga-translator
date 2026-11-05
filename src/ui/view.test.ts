@@ -4,7 +4,7 @@ import type { PageView } from '../shared/messages.ts';
 import type { RatioRect } from '../shared/page-text.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { SeriesOption } from '../shared/series.ts';
-import { accountPlanView, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView } from './view.ts';
+import { accountPlanView, canTranslate, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView } from './view.ts';
 
 type Transcript = PageView['transcript'];
 type Done = Extract<Transcript, { state: 'done' }>;
@@ -192,6 +192,17 @@ describe('翻譯前的設定提示', () => {
       notice: undefined,
     });
     expect(setupNotices({ access: { mode: 'ownKey', hasKey: false }, consented: undefined, untranslated: false }).consentCard).toBe(false);
+  });
+});
+
+describe('送得出翻譯嗎（底部的「翻譯此頁」）', () => {
+  it('目前翻譯模式已登入／有 key，而且同意了才算', () => {
+    expect(canTranslate({ mode: 'hosted', signedIn: true }, true)).toBe(true);
+    expect(canTranslate({ mode: 'ownKey', hasKey: true }, true)).toBe(true);
+    expect(canTranslate({ mode: 'hosted', signedIn: false }, true)).toBe(false);
+    expect(canTranslate({ mode: 'ownKey', hasKey: false }, true)).toBe(false);
+    expect(canTranslate({ mode: 'ownKey', hasKey: true }, false)).toBe(false);
+    expect(canTranslate({ mode: 'hosted', signedIn: true }, undefined)).toBe(false);
   });
 });
 

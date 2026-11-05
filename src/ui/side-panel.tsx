@@ -16,6 +16,7 @@ import { PRIVACY_URL } from './links.ts';
 import { PaymentUnavailable, SubscribeButton, SubscriptionPrice } from './subscribe-button.tsx';
 import { DEFAULT_LEVEL, DisplaySwitch, Transcript, type Display, type Level } from './transcript.tsx';
 import {
+  canTranslate,
   quotaView,
   setupNotices,
   parentPage,
@@ -429,6 +430,8 @@ export function SidePanel(props: SidePanelProps) {
   );
   const done = pages.filter((p) => p.transcript.state === 'done');
   const untranslated = done.some((p) => p.transcript.state === 'done' && !p.transcript.translated);
+  // 沒登入、沒 key、還沒同意時按了也送不出去：不放按鈕，由上面的設定提示帶路
+  const showTranslate = untranslated && canTranslate(access, consented);
   const notices = setupNotices({ access, consented, untranslated, hostedHint: props.hostedHint });
   const consentCard = notices.consentCard && <DataConsentCard onAccept={props.onAcceptConsent} />;
   const useOwnKey = () => {
@@ -502,7 +505,7 @@ export function SidePanel(props: SidePanelProps) {
           ) : (
             quota.footerButton === 'translate' &&
             // 只在有頁還沒翻譯（沒有 key、翻譯失敗）時出現；翻好的頁要重翻走過時提示的單頁「重新翻譯」
-            untranslated && (
+            showTranslate && (
               <Button variant="primary" onClick={translate}>
                 翻譯此頁
               </Button>

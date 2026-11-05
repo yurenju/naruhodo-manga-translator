@@ -56,13 +56,14 @@ export function SegmentedControl<T extends string>({
       style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
     >
       {options.map((o, i) => {
+        const part = variant === 'tabs' ? 'naru-tabs' : 'naru-seg';
         const descId = variant === 'tabs' && o.description ? `${id}-${i}` : undefined;
         return (
           <button key={o.value} type="button" aria-pressed={o.value === value} aria-describedby={descId} onClick={() => onChange(o.value)}>
-            <span class="naru-seg__label">{o.label}</span>
+            <span class={`${part}__label`}>{o.label}</span>
             {/* 在 button 裡的文字會算進名字；aria-hidden 拿掉，aria-describedby 照樣讀得到 */}
             {descId && (
-              <span id={descId} class="naru-seg__desc" aria-hidden="true">
+              <span id={descId} class="naru-tabs__desc" aria-hidden="true">
                 {o.description}
               </span>
             )}

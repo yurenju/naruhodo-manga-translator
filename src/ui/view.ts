@@ -109,6 +109,11 @@ export function sidePanelView(pages: PageView[], mode: TranslationMode): SidePan
 /** 能不能翻譯取決於翻譯模式（spec #86）：內建翻譯看有沒有登入，自備金鑰看有沒有 key。 */
 export type TranslationAccess = { mode: 'hosted'; signedIn: boolean } | { mode: 'ownKey'; hasKey: boolean };
 
+/** 現在送得出翻譯嗎：目前翻譯模式已登入／有 key，而且同意了。不能時「翻譯此頁」按了也沒用，改由設定提示帶路。 */
+export function canTranslate(access: TranslationAccess, consented: boolean | undefined): boolean {
+  return consented === true && (access.mode === 'hosted' ? access.signedIn : access.hasKey);
+}
+
 /**
  * 逐字稿上方的提示：signedOut＝「尚未登入」（內建翻譯），noKey＝「尚未設定 API key」（自備金鑰），
  * hostedHint＝「現在也可以改用內建翻譯」（從舊版更新、仍用自備金鑰，只出現一次，#93）。
@@ -198,7 +203,7 @@ export interface QuotaView {
   line: { text: string; warn: boolean; subscribeLink: boolean } | undefined;
   /** 額度用完：逐字稿上方的 warn Callout（粗體標題、說明、subscribe＝有沒有「訂閱」，「使用自備金鑰」一定有）。undefined＝還能翻。 */
   exhausted: { title: string; body: string; subscribe: boolean } | undefined;
-  /** 底部狀態列右邊的按鈕：translate＝「翻譯此頁／重新翻譯」，subscribe＝primary「訂閱」，none＝不放（本月額度用完，等重置）。 */
+  /** 底部狀態列右邊的按鈕：translate＝「翻譯此頁」（還要有沒翻譯的頁、送得出翻譯才出現），subscribe＝primary「訂閱」，none＝不放（本月額度用完，等重置）。 */
   footerButton: 'translate' | 'subscribe' | 'none';
 }
 

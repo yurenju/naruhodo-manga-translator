@@ -60,7 +60,7 @@ test.describe('全新安裝', () => {
     await sw.evaluate((id) => chrome.tabs.remove(id), (await practiceTab())!);
     await finishOnboarding(onboarding);
 
-    // 設定完成：side panel 不再只顯示「完成設定」，自動翻譯直接經過 Worker 翻（同意在登入時取得，沒有資料使用說明卡）
+    // 設定完成：side panel 不再只顯示「完成設定」，啟動後直接經過 Worker 翻（同意在登入時取得，沒有資料使用說明卡）
     const { panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite });
     const transcript = firstTranscript(panel);
     await expect(transcript.getByText('早安！今天好早喔')).toBeVisible();

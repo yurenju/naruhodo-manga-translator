@@ -93,7 +93,7 @@ test.describe('e2e build', () => {
   });
 });
 
-/** 同意之後才會送出文字。真的 OCR 這時還在跑，自動翻譯是開的，OCR 做完就會翻。 */
+/** 同意之後才會送出文字。真的 OCR 這時還在跑，OCR 做完就會直接翻。 */
 async function acceptConsent(panel: Page): Promise<void> {
   await panel.getByRole('region', { name: '資料使用說明' }).getByRole('button', { name: '同意並啟用翻譯' }).click();
 }
