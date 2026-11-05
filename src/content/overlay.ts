@@ -191,9 +191,15 @@ function textDiv(className: string, text: string): HTMLElement {
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-/** 等兩個 rAF（確定已重繪）；tab 在背景時 rAF 不會跑，最多等 FRAME_TIMEOUT_MS。 */
+/**
+ * 等兩個 rAF（確定已重繪）；tab 在背景時 rAF 不會跑，最多等 FRAME_TIMEOUT_MS。
+ * 回傳有沒有真的重繪：false＝頁面沒在產生新畫面，這時截圖拿到的是舊 frame（#197）。
+ */
 export const untilRepainted = () =>
-  Promise.race([nextFrame().then(nextFrame), new Promise<void>((resolve) => setTimeout(resolve, FRAME_TIMEOUT_MS))]);
+  Promise.race([
+    nextFrame().then(nextFrame).then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), FRAME_TIMEOUT_MS)),
+  ]);
 
 /** 滑鼠移到哪一句上（null＝離開）。 */
 export type OnHover = (line: LineRef | null) => void;
@@ -733,15 +739,10 @@ export function createOverlay({ loadFont, onHover, onStatusAction }: { loadFont:
     await untilRepainted();
   }
 
-  /** 截圖前藏起 Page 上的狀態（不管覆蓋層藏不藏）；回傳有沒有藏到東西（要等重繪）。 */
-  function hideStatusForCapture(): boolean {
+  /** 截圖前藏起 Page 上的狀態（不管覆蓋層藏不藏）。 */
+  function hideStatusForCapture(): void {
     statusHidden = true;
-    let hid = false;
-    for (const entry of entries.values()) {
-      entry.host.dataset.statusHidden = '';
-      hid ||= entry.status !== undefined && entry.host.style.visibility !== 'hidden';
-    }
-    return hid;
+    for (const entry of entries.values()) entry.host.dataset.statusHidden = '';
   }
 
   /** 截完立刻還原；回傳覆蓋層被藏了多久（ms），沒藏就是 undefined。 */

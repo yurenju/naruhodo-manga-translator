@@ -26,8 +26,12 @@ export function createCapturePrep({ overlay, anchors, longAnchors, isOwn }: {
 }) {
   let occluders: HiddenOccluders | undefined;
 
-  /** hideOverlay＝false：SW 已經記過帶覆蓋層的樣子，只藏網站的遮擋物。 */
-  async function prepare(hideOverlay: boolean): Promise<void> {
+  /**
+   * hideOverlay＝false：SW 已經記過帶覆蓋層的樣子，只藏網站的遮擋物。
+   * 回傳 painted：藏完之後頁面有沒有重繪。沒有就是頁面沒在產生新畫面（視窗被擋住等），captureVisibleTab
+   * 會等到 timeout 交回最後一張舊 frame，可能是十幾秒前、還帶著覆蓋層與 Page 上的狀態（#197）。
+   */
+  async function prepare(hideOverlay: boolean): Promise<{ painted: boolean }> {
     occluders?.restore();
     startRepaint();
     const startedAt = performance.now();
@@ -36,8 +40,11 @@ export function createCapturePrep({ overlay, anchors, longAnchors, isOwn }: {
     if (__DEBUG__) trace('capture:prepare', { hideOverlay, ms: performance.now() - startedAt, occluders: found.slice(0, 10).map(describeElement) });
     try {
       // Page 上的狀態（#185）一律藏：小標籤的字不能進 OCR，也不能改變 Page hash
-      const hidStatus = overlay.hideStatusForCapture();
-      await Promise.all([hideOverlay ? overlay.hideForCapture(longAnchors) : undefined, occluders.count > 0 || hidStatus ? untilRepainted() : undefined]);
+      overlay.hideStatusForCapture();
+      // 沒藏任何東西也等重繪：重繪動畫已經開始，頁面有在畫就只要兩個 frame，等不到就表示截到的會是舊 frame
+      const [, painted] = await Promise.all([hideOverlay ? overlay.hideForCapture(longAnchors) : undefined, untilRepainted()]);
+      if (__DEBUG__ && !painted) trace('capture:notPainted', { visibilityState: document.visibilityState, ms: performance.now() - startedAt });
+      return { painted };
     } catch (e) {
       // SW 收到失敗就不會叫 finish：自己先還原，網站的元素才不會一直藏著
       finish();

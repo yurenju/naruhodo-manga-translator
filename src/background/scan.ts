@@ -24,8 +24,9 @@ export interface ScannerDeps {
   /**
    * 截圖前：讓頁面持續重繪（#60）、藏起疊在 Page 上的網站元素（工具列、翻頁感應區，#59），hideOverlay 時
    * 也藏自己的覆蓋層（shadow host）；等到瀏覽器重繪完才 resolve（spec #27 第 3.2 節）。
+   * painted＝false：等不到重繪（rAF 沒跑），頁面沒在產生新畫面，這時截到的是很久以前的舊 frame（#197）。
    */
-  prepareCapture(tabId: number, hideOverlay: boolean): Promise<void>;
+  prepareCapture(tabId: number, hideOverlay: boolean): Promise<{ painted: boolean }>;
   /** 截完立刻還原。stable＝false：藏起來的元素在截圖期間被換掉，截圖不能用。 */
   finishCapture(tabId: number): Promise<{ stable: boolean }>;
   /** 截圖。要在呼叫當下就送出 captureVisibleTab，限速是以呼叫的時間計算。 */
@@ -91,11 +92,19 @@ export function createScanner(deps: ScannerDeps) {
     return result;
   }
 
-  /** 截圖前後的準備一律做（藏網站的遮擋物）；hideOverlay 決定要不要連自己的覆蓋層一起藏。 */
-  async function capture(windowId: number, tabId: number, hideOverlay: boolean): Promise<{ screenshot: string; stable: boolean }> {
-    let screenshot: string;
+  /**
+   * 截圖前後的準備一律做（藏網站的遮擋物）；hideOverlay 決定要不要連自己的覆蓋層一起藏。
+   * 頁面沒重繪就不截（screenshot 是 undefined）：真實 Chrome 這時會等 1.6 s 再交回最後一張舊 frame（#197）。
+   */
+  async function capture(windowId: number, tabId: number, hideOverlay: boolean): Promise<{ screenshot: string | undefined; stable: boolean }> {
+    let screenshot: string | undefined;
     try {
-      await deps.prepareCapture(tabId, hideOverlay);
+      const { painted } = await deps.prepareCapture(tabId, hideOverlay);
+      if (!painted) {
+        trace('scan:notPainted', { tabId });
+        await deps.finishCapture(tabId);
+        return { screenshot: undefined, stable: true };
+      }
       lastCaptureAt = Date.now();
       screenshot = await deps.captureWindow(windowId);
     } catch (e) {
@@ -110,6 +119,7 @@ export function createScanner(deps: ScannerDeps) {
   async function scanOnce(tabId: number, generation: number): Promise<void> {
     const isCurrentGeneration = () => (generations.get(tabId) ?? 0) === generation;
     let forceHide = false;
+    let notPainted = false;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       // 等完才量 rect，rect 才不會在等待期間過時。
       await waitForCaptureAllowed();
@@ -131,6 +141,10 @@ export function createScanner(deps: ScannerDeps) {
       // 元素（工具列等）不管哪一種都藏（#59）。
       const keep = !forceHide && canKeepOverlay(tabId, before.candidates);
       const { screenshot, stable } = await capture(windowId, tabId, !keep);
+      // 頁面沒在產生新畫面（例如視窗被擋住）：舊 frame 可能還是上一頁、甚至帶著覆蓋層，認成翻好的頁就會把舊譯文蓋上新頁。
+      // 一時卡住（長 task）重試就好；一直不重繪就放棄，等頁面重新可見時的翻頁訊號
+      notPainted = screenshot === undefined;
+      if (screenshot === undefined) continue;
       // side panel 剛打開造成重排、使用者在截圖時捲動、藏起來的元素被換掉（藏不到新的）……截圖不可靠就重來。
       if (!stable) {
         trace('scan:occludersChanged', { tabId, attempt });
@@ -154,6 +168,7 @@ export function createScanner(deps: ScannerDeps) {
       if (!keep && withOverlay(before.candidates).length > 0 && !canKeepOverlay(tabId, before.candidates)) void recordOverlaid(tabId);
       return;
     }
+    if (notPainted) return;
     throw new Error(`layout kept changing during capture (tab ${tabId})`);
   }
 
@@ -180,7 +195,7 @@ export function createScanner(deps: ScannerDeps) {
     const windowId = await deps.getVisibleWindowId(tabId);
     if (windowId === undefined) return;
     const { screenshot, stable } = await capture(windowId, tabId, false);
-    if (!stable || !sameLayout(before, await deps.findPageCandidates(tabId)) || !isCurrentGeneration()) return;
+    if (screenshot === undefined || !stable || !sameLayout(before, await deps.findPageCandidates(tabId)) || !isCurrentGeneration()) return;
     const cropped = await deps.crop({ screenshot, viewport: before.viewport, candidates: shown });
     if (!isCurrentGeneration()) return;
     let looks = overlaidLooks.get(tabId);

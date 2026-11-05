@@ -71,7 +71,7 @@ export type Message =
    */
   | { type: 'content:showOverlay'; anchorId: string; pageHash: string; subRect?: RatioRect; text: PageText }
   /**
-   * SW → content script：截圖前開始重繪動畫（#60）、藏起疊在 Page 上的元素（#59），hideOverlay 時也藏覆蓋層；等兩個 rAF（已重繪）才回應。
+   * SW → content script：截圖前開始重繪動畫（#60）、藏起疊在 Page 上的元素（#59），hideOverlay 時也藏覆蓋層；等兩個 rAF（已重繪）才回應 CapturePreparedResponse。
    */
   | { type: 'content:prepareCapture'; hideOverlay: boolean }
   /** SW → content script：截完還原。回應 CaptureFinishedResponse。 */
@@ -173,6 +173,11 @@ export type TestConnectionResponse = { ok: true; model: string } | { ok: false; 
 
 export interface StatusResponse {
   active: boolean;
+}
+
+export interface CapturePreparedResponse {
+  /** false：等不到重繪，頁面沒在產生新畫面，截到的會是舊 frame（#197）。 */
+  painted: boolean;
 }
 
 export interface CaptureFinishedResponse {
