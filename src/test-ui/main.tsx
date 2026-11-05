@@ -74,7 +74,6 @@ globalThis.__testUi = {
         hovered={hovered}
         logoSrc=""
         onPageModeChange={noop}
-        onStop={noop}
         onScan={noop}
         onTranslate={noop}
         onLineHover={noop}

@@ -93,6 +93,6 @@
   --naru-radius-md: 10px;
   --naru-radius-pill: 999px;
   --naru-shadow-1: 0 1px 3px rgba(31, 29, 26, 0.14);
-  /* 浮層（⚙ 選單） */
+  /* 浮層 */
   --naru-shadow-2: 0 12px 32px rgba(31, 29, 26, 0.16);
 }

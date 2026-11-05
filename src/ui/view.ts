@@ -140,7 +140,7 @@ export function setupNotices({
 }
 
 /**
- * 整個取代 side panel 內容的一頁（頂部是「← 返回」＋標題，#93）：設定從 ⚙ 選單打開；
+ * 整個取代 side panel 內容的一頁（頂部是「← 返回」＋標題，#93）：設定按 ⚙ 打開；
  * 作品頁（作品身分＋Series Notes，#191）從作品卡打開，換一部作品從作品頁（或作品卡的「換一部」）打開；
  * 刪除帳號（#95）從設定頁打開，不用 dialog（side panel 裡的 dialog 只蓋得住 panel 自己）。
  */

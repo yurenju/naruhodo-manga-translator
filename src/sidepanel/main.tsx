@@ -9,7 +9,6 @@ import type {
   Message,
   ModelStatus,
   ModelStatusResponse,
-  AutoTranslateResponse,
   PagesResponse,
   PageView,
   SeriesResponse,
@@ -331,7 +330,7 @@ function OwnKey({ session, onKeyChanged }: { session: HostedSession | null; onKe
 }
 
 /**
- * 設定頁（#93 畫面定案）：從 ⚙ 選單的「設定」打開，整個 side panel 換成這一頁。
+ * 設定頁（#93 畫面定案）：按頂部的 ⚙ 打開，整個 side panel 換成這一頁。
  * 翻譯方式是明確的二選一（不會自動切換；切到自備金鑰不會登出），下面是匯出／匯入。
  */
 function Settings({
@@ -452,19 +451,6 @@ function usePageMode(): [PageMode, (mode: PageMode) => void] {
     void savePageMode(value);
   };
   return [mode, choose];
-}
-
-/** 自動翻譯開關（spec #27 第 3.4、8 節；預設開）；關掉後翻頁只顯示快取，其他要按「翻譯此頁」。 */
-function AutoTranslateToggle({ tabId }: { tabId: number }) {
-  const [enabled, setEnabled] = useState(true);
-  useEffect(() => {
-    void send<AutoTranslateResponse>({ type: 'panel:getAutoTranslate', tabId }).then((r) => setEnabled(r.enabled));
-  }, [tabId]);
-  const toggle = (value: boolean) => {
-    setEnabled(value);
-    void send({ type: 'panel:setAutoTranslate', tabId, enabled: value });
-  };
-  return <Switch label="自動翻譯" description="翻頁就翻，關掉只顯示快取" checked={enabled} onChange={toggle} />;
 }
 
 /** 名稱輸入（新增作品／取名字）；送出空白不算。 */
@@ -740,7 +726,7 @@ function SeriesPickView({ tabId, navigate }: { tabId: number; navigate: (page: S
 
 /**
  * 外掛的 container（#108）：接 chrome 訊息、API key、同意狀態與 Page Mode 的 store，把資料交給純畫面的 SidePanel。
- * 會讀寫 store 的區塊（設定頁、作品卡、作品頁與換一部作品、自動翻譯開關）也在這裡，以 slot／render prop 交給 SidePanel。
+ * 會讀寫 store 的區塊（設定頁、作品卡、作品頁與換一部作品）也在這裡，以 slot／render prop 交給 SidePanel。
  * 沒做完 onboarding（#93）時 SidePanel 只顯示「完成設定」；「登入」「完成設定」用新分頁打開 onboarding。
  */
 function App({ tabId }: { tabId: number | undefined }) {
@@ -796,7 +782,6 @@ function App({ tabId }: { tabId: number | undefined }) {
       hovered={hovered}
       logoSrc="icons/naruhodo-small.svg"
       onPageModeChange={choosePageMode}
-      onStop={() => void send({ type: 'panel:stop', tabId: tabId! })}
       onScan={() => void send({ type: 'panel:scan', tabId: tabId! })}
       onTranslate={(pageHash) => void send({ type: 'panel:translate', tabId: tabId!, ...(pageHash === undefined ? {} : { pageHash }) })}
       onLineHover={(line) => {
@@ -815,7 +800,6 @@ function App({ tabId }: { tabId: number | undefined }) {
       paymentFailed={paymentFailed}
       subscribedNotice={subscribedNotice}
       onDismissSubscribedNotice={() => void dismissSubscribedNotice()}
-      autoTranslate={running && <AutoTranslateToggle tabId={tabId} />}
       renderSeriesCard={(open) =>
         running && (
           <SeriesCard

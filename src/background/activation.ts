@@ -357,7 +357,7 @@ export function createActivation(deps: ActivationDeps) {
     await store.delete(tabId);
   }
 
-  /** side panel 的「停止」。 */
+  /** 停止但不關 side panel（e2e／debug 的 test:stop）。 */
   async function stop(tabId: number): Promise<void> {
     await markInactive(tabId);
     // 頁面可能已經關掉或換頁，content script 不在也沒關係。

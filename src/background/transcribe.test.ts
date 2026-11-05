@@ -346,7 +346,8 @@ describe('翻譯此頁', () => {
     await transcriber.update(1, [thumb('a1')], capture);
 
     translator = { ...noNotes, translatePage: async () => Promise.reject(new Error('Claude API 500：boom')) };
-    await transcriber.translate(1);
+    // 翻好的頁只能單頁重翻（過時提示的「重新翻譯」）
+    await transcriber.translate(1, transcriber.get(1)[0]!.pageHash);
 
     expect(transcriber.get(1)[0]!.transcript).toEqual({ state: 'done', text: pageText, translated: false, translateError: 'Claude API 500：boom' });
   });
@@ -386,7 +387,7 @@ describe('翻譯此頁', () => {
     expect(transcriber.get(1)[0]!.transcript).toEqual({ state: 'done', text: pageText, translated: false });
   });
 
-  it('能翻譯了（同意、登入）：自動翻譯開著的 tab 直接翻還沒翻譯的頁，已翻好的不重翻', async () => {
+  it('能翻譯了（同意、登入）：直接翻還沒翻譯的頁，已翻好的不重翻', async () => {
     let translator: Translator | undefined;
     const calls: TranslateInput[] = [];
     const cache = memoryCache();
@@ -404,21 +405,32 @@ describe('翻譯此頁', () => {
     expect(second!.state === 'done' && second!.translated).toBe(true);
   });
 
-  it('能翻譯了，但自動翻譯關著的 tab 不動（等讀者按「翻譯此頁」）；還是不能翻時也不動', async () => {
+  it('還是不能翻時不動', async () => {
+    const { transcriber, published } = setup();
+    await transcriber.update(1, [thumb('a1')], capture);
+    const before = published.length;
+
+    await transcriber.translateUntranslated();
+
+    expect(published).toHaveLength(before);
+    expect(transcriber.get(1)[0]!.transcript).toEqual({ state: 'done', text: pageText, translated: false });
+  });
+
+  it('「翻譯此頁」只翻還沒翻譯的頁，已翻好的不重翻（不多扣頁）', async () => {
     let translator: Translator | undefined;
     const calls: TranslateInput[] = [];
-    const { transcriber, deps } = setup({ getTranslator: () => translator });
-    await transcriber.update(1, [thumb('a1')], capture);
-    await transcriber.setAutoTranslate(2, false);
-    await transcriber.update(2, [thumb('a2')], capture);
+    const cache = memoryCache();
+    await setup({ cache, getTranslator: () => translatorReturning('舊') }).transcriber.update(1, [thumb('a1')], capture);
+    const { transcriber } = setup({ cache, getTranslator: () => translator });
+    await transcriber.update(1, [thumb('a1'), thumb('a2')], capture);
 
-    await transcriber.translateUntranslated();
     translator = translatorReturning('今天', calls);
-    await transcriber.translateUntranslated();
+    await transcriber.translate(1);
 
     expect(calls).toHaveLength(1);
-    expect(deps.analyze).toHaveBeenCalledTimes(1);
-    expect(transcriber.get(2)[0]!.transcript).toEqual({ state: 'pending' });
+    const [first, second] = transcriber.get(1).map((p) => p.transcript);
+    expect(first!.state === 'done' && first!.translation?.source).toBe('cache');
+    expect(second!.state === 'done' && second!.translated).toBe(true);
   });
 
   it('分析失敗的 Page 不送翻譯', async () => {
@@ -801,16 +813,16 @@ describe('翻譯佇列（#34）', () => {
     expect(cache.saved.map((t) => t.seriesId)).toEqual(['series-1']);
 
     transcriber.reassignSeries(1, 'series-2');
-    await transcriber.translate(1);
+    // 翻好的頁只能單頁重翻（過時提示的「重新翻譯」）
+    await transcriber.translate(1, transcriber.get(1)[0]!.pageHash);
 
     expect(cache.saved.map((t) => t.seriesId)).toEqual(['series-1', 'series-2']);
   });
 
-  it('同 origin 重新整理（resetPages）：同一頁重新從快取拿，自動翻譯設定保留', async () => {
+  it('同 origin 重新整理（resetPages）：同一頁重新從快取拿', async () => {
     const translator = { ...noNotes, translatePage: vi.fn(async () => translatedOutput()) } satisfies Translator;
     const { transcriber, published } = setup({ getTranslator: () => translator });
     await transcriber.update(1, [thumb('a1')], capture);
-    await transcriber.setAutoTranslate(1, false);
 
     transcriber.resetPages(1);
     expect(published.at(-1)).toEqual([]);
@@ -818,7 +830,6 @@ describe('翻譯佇列（#34）', () => {
 
     const t = transcriber.get(1)[0]!.transcript;
     expect(t.state === 'done' && t.translation?.source).toBe('cache');
-    expect(transcriber.isAutoTranslate(1)).toBe(false);
   });
 
   // 同一批的頁依閱讀順序一頁一頁送 ①（Prior Pages），併發要用不同 tab 的頁來看（佇列跨 tab 共用）
@@ -929,47 +940,6 @@ describe('翻譯佇列（#34）', () => {
     expect(deps.analyze).toHaveBeenCalledTimes(1);
     const retried = transcriber.get(1)[0]!.transcript;
     expect(retried.state === 'done' && retried.translated && !retried.translateError).toBe(true);
-  });
-});
-
-describe('自動翻譯開關', () => {
-  it('預設開；關掉後新 Page 停在「未翻譯」，不跑本機流水線；按「翻譯此頁」才翻', async () => {
-    const calls: TranslateInput[] = [];
-    const { transcriber, deps } = setup({ getTranslator: () => translatorReturning('今天', calls) });
-    expect(transcriber.isAutoTranslate(1)).toBe(true);
-
-    await transcriber.setAutoTranslate(1, false);
-    await transcriber.update(1, [thumb('a1')], capture);
-
-    expect(deps.analyze).not.toHaveBeenCalled();
-    expect(transcriber.get(1)[0]!.transcript).toEqual({ state: 'pending' });
-
-    await transcriber.translate(1);
-    expect(deps.analyze).toHaveBeenCalledTimes(1);
-    expect(calls).toHaveLength(1);
-    const t = transcriber.get(1)[0]!.transcript;
-    expect(t.state === 'done' && t.translated).toBe(true);
-  });
-
-  it('關著時快取命中照樣直接顯示', async () => {
-    const cache = memoryCache();
-    await setup({ cache, getTranslator: () => translatorReturning('今天') }).transcriber.update(1, [thumb('a1')], capture);
-    const { transcriber } = setup({ cache, getTranslator: () => translatorReturning('今天') });
-
-    await transcriber.setAutoTranslate(1, false);
-    await transcriber.update(1, [thumb('a1')], capture);
-
-    const t = transcriber.get(1)[0]!.transcript;
-    expect(t.state === 'done' && t.translation?.source).toBe('cache');
-  });
-
-  it('停止後回到預設（開）', async () => {
-    const { transcriber } = setup();
-    await transcriber.setAutoTranslate(1, false);
-
-    transcriber.clear(1);
-
-    expect(transcriber.isAutoTranslate(1)).toBe(true);
   });
 });
 
@@ -1707,7 +1677,8 @@ describe('直式捲動的長 Page（spec #142）', () => {
 
     await transcriber.update(1, [longThumb('a1', 0, [[0, HASHES.a1!]])], capture);
     await transcriber.update(1, [longThumb('a1', 0.3, [[3, HASHES.a3!]])], capture);
-    await transcriber.translate(1);
+    // 翻好的頁只能單頁重翻（過時提示的「重新翻譯」）
+    await transcriber.translate(1, transcriber.get(1)[0]!.pageHash);
     await transcriber.update(1, [longThumb('a1', 0.6, [[5, HASHES.a5!]])], capture);
 
     expect(calls.map((c) => [c.items.length, c.pageUsageRecordId])).toEqual([

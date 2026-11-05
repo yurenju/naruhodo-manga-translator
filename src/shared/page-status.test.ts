@@ -57,10 +57,6 @@ describe('翻完', () => {
     expect(pageStatus(input([page('a1', 'h1', { state: 'done', text, translated: true })]))).toEqual({ anchors: [], badge: 'on' });
   });
 
-  it('自動翻譯關著、等「翻譯此頁」的 Page 也不顯示', () => {
-    expect(pageStatus(input([page('a1', 'h1', { state: 'pending' })]))).toEqual({ anchors: [], badge: 'on' });
-  });
-
   it('沒有任何 Page（還在找、畫面上沒有完整的頁）：小點', () => {
     expect(pageStatus(input([]))).toEqual({ anchors: [], badge: 'on' });
   });

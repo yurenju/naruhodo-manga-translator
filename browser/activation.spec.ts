@@ -7,6 +7,7 @@ import {
   tabIdOf,
   test,
   testActivate,
+  testStop,
 } from './fixtures.ts';
 
 /** 載入完成後給 SW 的 tabs.onUpdated 一點時間；用在「應該不會注入」的斷言。 */
@@ -54,10 +55,10 @@ test('同 origin 重新整理後 content script 自動重新注入', async ({ co
   await expect(panel.getByText('已啟動')).toBeVisible();
 });
 
-test('按「停止」後清掉 content script，重新整理也不再注入', async ({ context, sw, extensionId, mockSite }) => {
+test('停止（再點一次圖示）後清掉 content script，重新整理也不再注入', async ({ context, sw, extensionId, mockSite }) => {
   const { page, panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite });
 
-  await panel.getByRole('button', { name: '停止' }).click();
+  await testStop(panel, tabId);
 
   await expect(panel.getByText('請點外掛圖示啟動')).toBeVisible();
   await expect.poll(() => isContentScriptInjected(sw, tabId)).toBe(false);
@@ -80,5 +81,4 @@ test('從 Chrome 內建 side panel 選單打開（沒有 tabId）只提示點外
   const panel = await openSidePanel(context, extensionId);
 
   await expect(panel.getByText('請點外掛圖示啟動')).toBeVisible();
-  await expect(panel.getByRole('button', { name: '停止' })).toHaveCount(0);
 });

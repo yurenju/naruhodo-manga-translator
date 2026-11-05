@@ -21,7 +21,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 import { createHostedAccountClient } from '../src/shared/hosted-account-client.ts';
 import { DEV_FREE_PAGES_PATH, PADDLE_WEBHOOK_PATH } from '../src/shared/hosted-api.ts';
 import { PRACTICE_URL } from '../src/ui/links.ts';
-import { activateOnMockSite, chooseFromPanelMenu, expect, openPanelMenu, test } from './fixtures.ts';
+import { activateOnMockSite, expect, openSettings, retranslateVisible, test } from './fixtures.ts';
 import { VERTICAL_VIEW_HEIGHT } from './mock-site/vertical-scroll.ts';
 import { finishOnboarding, lastCode, onboardingPage, signInFromPanel, signInWithEmail } from './sign-in.ts';
 import { WORKER_URL } from './worker.ts';
@@ -61,14 +61,14 @@ test.describe('全新安裝', () => {
     await finishOnboarding(onboarding);
 
     // 設定完成：side panel 不再只顯示「完成設定」，自動翻譯直接經過 Worker 翻（同意在登入時取得，沒有資料使用說明卡）
-    const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
+    const { panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite });
     const transcript = firstTranscript(panel);
     await expect(transcript.getByText('早安！今天好早喔')).toBeVisible();
     await expect(panel.getByRole('region', { name: '資料使用說明' })).toHaveCount(0);
     expect(await sw.evaluate(() => globalThis.__translateCalls)).toBe(0);
 
     // 自備金鑰：設定頁切換（不會登出），同一頁重新翻譯改走 offscreen
-    await chooseFromPanelMenu(panel, '設定');
+    await openSettings(panel);
     const settings = panel.getByRole('region', { name: '設定' });
     await settings.getByRole('radio', { name: '自備金鑰' }).check();
     await expect(settings).toContainText(`帳號 ${email} 仍然登入著`);
@@ -77,7 +77,7 @@ test.describe('全新安裝', () => {
     await panel.getByRole('button', { name: '返回' }).click();
     // 自備金鑰的同意另外問（資料流向不同）
     await panel.getByRole('region', { name: '資料使用說明' }).getByRole('button', { name: '同意並啟用翻譯' }).click();
-    await panel.getByRole('button', { name: '重新翻譯' }).click();
+    await retranslateVisible(panel, tabId);
     await expect.poll(() => sw.evaluate(() => globalThis.__translateCalls)).toBeGreaterThan(0);
     await expect(transcript.getByText('早安！今天好早喔')).toBeVisible();
   });
@@ -150,10 +150,12 @@ async function sendSubscriptionCreated(accountId: string, customerId = `ctm_brow
   expect(response.status).toBe(200);
 }
 
-/** 登入一個免費帳號、關掉自動翻譯（剩餘頁數不會被背景的翻譯改掉），回到逐字稿。 */
+/**
+ * 登入一個免費帳號，回到 side panel 原本的畫面。已啟動的分頁登入後會直接翻還沒翻譯的頁（扣頁）；
+ * 要在翻譯前先調好額度的測試，在 activateOnMockSite 的 beforeActivate 裡登入。
+ */
 async function signInOnPanel(panel: Page, context: BrowserContext, email: string): Promise<void> {
-  await (await openPanelMenu(panel)).getByRole('switch', { name: '自動翻譯' }).uncheck();
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
   await settings.getByRole('radio', { name: '內建翻譯' }).check();
   // 設定頁的「登入」打開 onboarding 的第 2 步
@@ -173,7 +175,8 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   await signInOnPanel(panel, context, freshEmail(testInfo.workerIndex));
   const remaining = panel.getByRole('status', { name: '剩餘額度' });
-  await expect(remaining).toHaveText(/免費額度剩 50 頁/);
+  // 登入後畫面上的頁會直接翻（扣頁），剩幾頁看翻到哪
+  await expect(remaining).toHaveText(/免費額度剩 \d+ 頁/);
 
   // 本機的產品網站沒有啟動，只看網址：Worker 自己組的 checkout 頁，transaction id（假 Paddle 帶 Account id）。
   // 網站回空白頁：連不上的話網址會變成 chrome-error://（Linux 上立刻就變），就看不到原本的網址
@@ -193,7 +196,7 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   await expect(remaining).toHaveText(/^本月剩 800 頁・\d+ 月 \d+ 日重置$/);
   await panel.getByRole('group', { name: '已訂閱' }).getByRole('button', { name: '知道了' }).click();
   await expect(panel.getByRole('group', { name: '已訂閱' })).toHaveCount(0);
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
   await expect(settings.getByText('訂閱中', { exact: true })).toBeVisible();
   await expect(settings.getByRole('button', { name: '管理訂閱' })).toBeVisible();
@@ -212,19 +215,26 @@ async function setFreePages(email: string, remaining: number): Promise<void> {
 // unit 測不到的：外掛真的把 Worker 回的 usageRecordId 帶回下一截的請求、Worker 照它不扣頁（transcribe 的 unit 用假的
 // Translator，Worker 的 unit 直接送 HTTP；兩邊接起來只有這裡看得到）
 test('直式捲動的長 Page 捲動兩次只扣一頁：扣掉最後一頁之後，接續的那一截照樣翻譯', async ({ context, sw, extensionId, mockSite }, testInfo) => {
-  const { page, panel } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.verticalScrollUrl });
   const email = freshEmail(testInfo.workerIndex);
-  await signInOnPanel(panel, context, email);
-  await setFreePages(email, 1);
+  // 啟動前先登入、只留一頁額度：啟動後第一截就扣掉最後一頁
+  const { page, panel } = await activateOnMockSite({
+    context,
+    sw,
+    extensionId,
+    mockSite,
+    url: mockSite.verticalScrollUrl,
+    beforeActivate: async (panel) => {
+      await signInOnPanel(panel, context, email);
+      await setFreePages(email, 1);
+    },
+  });
 
   // 第一截：扣掉最後一頁
-  await panel.getByRole('button', { name: '翻譯此頁' }).click();
   await expect(panel.getByText('早安！今天好早喔')).toBeVisible();
   const remaining = panel.getByRole('status', { name: '剩餘額度' });
   await expect(remaining).toHaveText('免費額度已用完');
 
   // 第二截是同一個 Page 的接續：帶第一次的 usageRecordId，Worker 不扣頁，額度用完也翻得出來（扣頁的話會是 402、未翻譯）
-  await (await openPanelMenu(panel)).getByRole('switch', { name: '自動翻譯' }).check();
   await page.locator('#scroller').evaluate((el, top) => (el.scrollTop = top), VERTICAL_VIEW_HEIGHT);
   await expect(panel.getByText('我是轉學生霧島湊，請多指教')).toBeVisible();
   await expect(panel.getByText('未翻譯')).toHaveCount(0);
@@ -255,7 +265,7 @@ test('管理訂閱：Paddle 拒絕建立 customer portal 時，設定頁顯示�
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   await signInOnPanel(panel, context, freshEmail(testInfo.workerIndex));
   await subscribeOnPanel(panel, context, PORTAL_FORBIDDEN_CUSTOMER);
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
 
   const pagesBefore = context.pages().length;
@@ -270,16 +280,19 @@ test('免費額度用完：Worker 回額度不足後，side panel 顯示用完�
   extensionId,
   mockSite,
 }, testInfo) => {
-  const { page, panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite });
-  // 關掉自動翻譯：登入後只有按「翻譯此頁」才會送到 Worker，額度與按鈕不會被背景的翻譯搶先改掉
   const email = freshEmail(testInfo.workerIndex);
-  await signInOnPanel(panel, context, email);
+  // 啟動前登入，登入後才把額度用完：side panel 還不知道，要等啟動後的翻譯被 Worker 拒絕才換畫面
+  const { page, panel, tabId } = await activateOnMockSite({
+    context,
+    sw,
+    extensionId,
+    mockSite,
+    beforeActivate: async (panel) => {
+      await signInOnPanel(panel, context, email);
+      await setFreePages(email, 0);
+    },
+  });
   const remaining = panel.getByRole('status', { name: '剩餘額度' });
-  await expect(remaining).toHaveText(/免費額度剩 50 頁/);
-
-  // 登入後才把額度用完：side panel 還不知道，要等翻譯被 Worker 拒絕才換畫面
-  await setFreePages(email, 0);
-  await panel.getByRole('button', { name: '翻譯此頁' }).click();
 
   const exhausted = panel.getByRole('group', { name: '額度已用完' });
   await expect(exhausted).toBeVisible();
@@ -309,7 +322,7 @@ test('刪除帳號：設定頁的「刪除帳號」換到確認頁 → 確定刪
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   const email = freshEmail(testInfo.workerIndex);
   await signInOnPanel(panel, context, email);
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
   await panel.getByRole('region', { name: '設定' }).getByRole('button', { name: '刪除帳號' }).click();
 
   const confirm = panel.getByRole('region', { name: '刪除帳號' });

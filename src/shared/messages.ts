@@ -12,8 +12,6 @@ export type ExecutionProvider = 'webgpu' | 'wasm';
 export type Message =
   /** side panel → SW：這個 tab 啟動了沒？回應 StatusResponse。 */
   | { type: 'panel:getStatus'; tabId: number }
-  /** side panel → SW：停止這個 tab。 */
-  | { type: 'panel:stop'; tabId: number }
   /** SW → side panel：某個 tab 的啟動狀態改變了。 */
   | { type: 'status:changed'; tabId: number; active: boolean }
   /** SW → content script：清理並結束。 */
@@ -49,7 +47,7 @@ export type Message =
   /** SW → offscreen：這台電腦會用哪一組模型。SW 裡的 navigator.gpu.requestAdapter() 不會回應，要在 document 裡偵測。回應 ExecutionProvider。 */
   | { type: 'offscreen:detectExecutionProvider' }
   /**
-   * side panel → SW：「翻譯此頁／重新翻譯」：用已經辨識好的原文重新呼叫 Translator。
+   * side panel → SW：「翻譯此頁／重試」：用已經辨識好的原文翻譯還沒翻譯的頁。
    * pageHash：只翻這一頁（過時提示的「重新翻譯」，#38）。
    */
   | { type: 'panel:translate'; tabId: number; pageHash?: string }
@@ -80,10 +78,6 @@ export type Message =
   | { type: 'content:pageTurn' }
   /** content script → SW：覆蓋層畫好了。SW 不藏覆蓋層截一次，記下這頁帶覆蓋層的樣子（#27 除錯）。 */
   | { type: 'content:overlayShown' }
-  /** side panel → SW：「自動翻譯」開關（#34）。 */
-  | { type: 'panel:setAutoTranslate'; tabId: number; enabled: boolean }
-  /** side panel → SW：自動翻譯開關目前的狀態。回應 AutoTranslateResponse。 */
-  | { type: 'panel:getAutoTranslate'; tabId: number }
   /** side panel → SW：Series 下拉選單與這個 tab 目前的 Series。回應 SeriesResponse。 */
   | { type: 'panel:getSeries'; tabId: number }
   /** side panel → SW：選了一部 Series（非 Provisional 才記住網址模式）；之後的快取查詢與翻譯改用它。 */
@@ -126,7 +120,9 @@ export type Message =
   /** content script → SW：Page 上的紅色小標籤被點了（#185）。 */
   | { type: 'content:statusAction'; action: StatusAction; pageHash: string }
   /** e2e build 才有：等同點外掛圖示（spec #27 第 12 節）。 */
-  | { type: 'test:activate'; tabId: number };
+  | { type: 'test:activate'; tabId: number }
+  /** e2e build 才有：等同已啟動時再點一次外掛圖示（停止），但不關 side panel（測試的 panel 是獨立視窗）。 */
+  | { type: 'test:stop'; tabId: number };
 
 /**
  * 一個 Page 上的一句（line：一個 Balloon 或 Loose Text 項目）。lineId（b1、l1…）每個 Page 各自編號，
@@ -206,10 +202,6 @@ export interface NotesResponse {
 
 export type ImportResponse = { ok: true } | { ok: false; error: string };
 
-export interface AutoTranslateResponse {
-  enabled: boolean;
-}
-
 /** 畫面座標（CSS px，相對 viewport 左上角）。 */
 export interface Rect {
   x: number;
@@ -282,8 +274,6 @@ export interface PageView extends PageThumb {
   transcript:
     /** 排在佇列裡或正在本機流水線／LLM。 */
     | { state: 'analyzing' }
-    /** 自動翻譯關著（#34）：等使用者按「翻譯此頁」。 */
-    | { state: 'pending' }
     /**
      * translated=false：沒有 Translator（沒有 API key）或翻譯失敗（translateError），讀音是 kuromoji、沒有譯文。
      * translating：按了「翻譯此頁」，正在等 Translator；text 仍是上一份。

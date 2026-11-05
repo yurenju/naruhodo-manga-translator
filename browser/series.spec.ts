@@ -1,13 +1,13 @@
 /**
  * #36、#186：Series 的選擇與自動歸類。網址模式＝origin＋path；確認過的 Series 才記住。網址模式對不上時從頁面標題猜作品原名
  * （FakeTranslator 的 fakeSeriesGuess：仿 canvas 網站每一話的標題相同，所以猜到同一個原名）。
- * 「停止」後再啟動才是新的一次啟動（已啟動的 tab 重新整理會沿用同一個 Series），所以每次都先停止再重新整理。
+ * 停止（再點一次圖示）後再啟動才是新的一次啟動（已啟動的 tab 重新整理會沿用同一個 Series），所以每次都先停止再重新整理。
  */
 import type { Page, Worker } from '@playwright/test';
 import type { Message, SeriesResponse } from '../src/shared/messages.ts';
 import type { PageTranslation } from '../src/shared/page-text.ts';
 import type { Series } from '../src/shared/series.ts';
-import { activateOnMockSite, expect, readStore, testActivate, test } from './fixtures.ts';
+import { activateOnMockSite, expect, readStore, testActivate, testStop, test } from './fixtures.ts';
 
 /** 跟 cache.spec.ts 一樣用真的視窗：截圖與 rect 才對得上。 */
 test.use({ viewport: null });
@@ -39,7 +39,7 @@ async function createSeries(panel: Page, name: string): Promise<void> {
 
 /** 停止 → 重新整理 → 再啟動（新的一次啟動，要靠網址模式預選）。 */
 async function stopReloadActivate(page: Page, panel: Page, tabId: number): Promise<void> {
-  await panel.getByRole('button', { name: '停止' }).click();
+  await testStop(panel, tabId);
   await expect(panel.getByText('請點外掛圖示啟動')).toBeVisible();
   await page.reload();
   await page.locator('body[data-ready="true"]').waitFor();

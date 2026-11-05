@@ -10,7 +10,6 @@
  * - 後進先出：新出現的可見 Page 先做；同一次擷取裡依閱讀順序。工作帶 priority（v1 只有可見頁）。
  * - 翻太快：已不在畫面上、還沒開始的工作丟掉（之後再出現會重新排）；已開始的做完、寫進快取，但不顯示也不覆蓋。
  * - 去重：同一個 Page（hash 在門檻內）已有工作在跑就不重複排，等那份結果。
- * - 自動翻譯關著時新 Page 停在 pending，按「翻譯此頁」才排。快取命中照樣直接顯示（不算翻譯）。
  * - 429 依 retry-after 退避重試在 Translator 裡（claude-translator.ts）；重試後仍失敗就帶 translateError，按「重試」重送 LLM。
  *
  * Series Notes（#37、ADR 0005；順序在 notes-ledger.ts）：翻譯（①）帶這個 Series 的 Notes 快照，回來就寫快取、顯示；
@@ -209,7 +208,6 @@ export function createTranscriber(deps: TranscriberDeps) {
   });
   const tabs = new Map<number, TabState>();
   const views = new Map<number, PageView[]>();
-  const autoTranslate = new Map<number, boolean>();
   const seen = new Map<number, SeenPages>();
   let batches = 0;
 
@@ -473,7 +471,7 @@ export function createTranscriber(deps: TranscriberDeps) {
   function requestSlice(record: PageRecord, page: PageThumb, capture: CropRequest, spec: Omit<JobSpec, 'record' | 'request'>): void {
     const long = record.long!;
     const slice = sliceOf(page.rect, page.visible!);
-    if (sameSlice(long.slice, slice) || record.transcript.state === 'pending') return;
+    if (sameSlice(long.slice, slice)) return;
     long.slice = slice;
     const request = analyzeRequestOf(page, capture);
     if (record.job && !record.job.started) record.job.request = request;
@@ -498,7 +496,7 @@ export function createTranscriber(deps: TranscriberDeps) {
   }
 
   /**
-   * 新的擷取：可見的 Page 換成這一批。新 Page 先查快取，沒命中就排進佇列（自動翻譯關著時停在 pending）。
+   * 新的擷取：可見的 Page 換成這一批。新 Page 先查快取，沒命中就排進佇列。
    * 回傳的 promise 在這一批可見 Page 的工作都做完（或被丟掉）時 resolve。
    */
   async function update(tabId: number, pages: PageThumb[], capture: CropRequest | undefined): Promise<void> {
@@ -559,8 +557,8 @@ export function createTranscriber(deps: TranscriberDeps) {
     publish(tab);
 
     // Series 還在猜（#186）：一般 Page 先排進本機段跑 OCR，翻譯前才等 Series、查快取（seriesDecided）。
-    // 長 Page 要先用 Series 查快取認身分，自動翻譯關著的要先查快取決定顯示什麼，都照常等。
-    if (deps.isSeriesPending?.(tabId) && autoTranslate.get(tabId) !== false && newPages.every(({ record }) => !record.long)) {
+    // 長 Page 要先用 Series 查快取認身分，照常等。
+    if (deps.isSeriesPending?.(tabId) && newPages.every(({ record }) => !record.long)) {
       const seriesPending = deps.getSeriesId(tabId);
       const groupOf = snapshotGroups();
       for (const { record, index } of newPages) {
@@ -594,7 +592,7 @@ export function createTranscriber(deps: TranscriberDeps) {
       const { record } = job;
       const cached = lookups[i];
       if (!isCurrent(tab)) finish(job, undefined);
-      else if (cached && record.long && autoTranslate.get(tabId) !== false) {
+      else if (cached && record.long) {
         // 長 Page 命中快取：先顯示快取的整個 Page，這一截照樣辨識，收快取裡還沒有的 Line
         record.transcript = cached;
         enqueueLocal(job);
@@ -602,8 +600,7 @@ export function createTranscriber(deps: TranscriberDeps) {
       else if (!isVisible(tab, record)) {
         tab.records = tab.records.filter((r) => r !== record);
         finish(job, undefined);
-      } else if (autoTranslate.get(tabId) === false) finish(job, { state: 'pending' });
-      else enqueueLocal(job);
+      } else enqueueLocal(job);
     }
     for (const { record, page, index } of slices) requestSlice(record, page, capture!, { tab, batch, index, group: groupOf(record) });
     if (newPages.some(({ record }) => record.long)) publish(tab);
@@ -611,51 +608,49 @@ export function createTranscriber(deps: TranscriberDeps) {
   }
 
   /**
-   * 「翻譯此頁／重新翻譯／重試」：可見的 Page 裡，pending 的排進佇列；已辨識完的重新翻譯（不重跑 OCR）。
-   * 已有工作在跑的不重複排。沒有 key 時只會跑 pending 的本機流水線。
-   * pageHash：只翻這一頁（過時提示的「重新翻譯」，#38）；命中快取的頁沒有 OCR 結果，就用快取裡的原文送出。
+   * 「翻譯此頁／重試」：可見的 Page 裡辨識完、還沒翻譯的（沒有 key、翻譯失敗）用同一份辨識結果翻譯（不重跑 OCR）；
+   * 已翻好的不重翻，不會多扣頁。已有工作在跑的不重複排。沒有 key 時什麼都不做。
+   * pageHash：只翻這一頁，翻好的也重翻（過時提示的「重新翻譯」#38、Page 上紅標籤的「重試」）；
+   * 命中快取的頁沒有 OCR 結果，就用快取裡的原文送出。
    */
   async function translate(tabId: number, pageHash?: string): Promise<void> {
     const tab = tabs.get(tabId);
     if (!tab) return;
     const translator = await deps.getTranslator();
     const pages = pageHash === undefined ? tab.pages : tab.pages.filter((p) => p.pageHash === pageHash);
-    const visible = [...new Set(pages.flatMap((p) => findSamePage(tab.records, p.pageHash) ?? []))];
+    const visible = [...new Set(pages.flatMap((p) => findSamePage(tab.records, p.pageHash) ?? []))].filter(
+      (record) => pageHash !== undefined || (record.transcript.state === 'done' && !record.transcript.translated),
+    );
     if (pageHash !== undefined) for (const record of visible) if (record.transcript.state === 'done') record.text ??= record.transcript.text;
     await start(tab, visible, translator);
   }
 
   /**
-   * 能翻譯了（同意、登入，#93）：自動翻譯開著的 tab，畫面上辨識完、還沒翻譯的頁直接翻，不必再按「翻譯此頁」。
-   * 已翻好（含快取）的不重翻；自動翻譯關著的 tab 照舊等讀者按。
+   * 能翻譯了（同意、登入，#93）：畫面上辨識完、還沒翻譯的頁直接翻，不必再按「翻譯此頁」。
+   * 已翻好（含快取）的不重翻。
    */
   async function translateUntranslated(): Promise<void> {
     const translator = await deps.getTranslator();
     if (!translator) return;
     await Promise.all(
-      [...tabs.values()]
-        .filter((tab) => isAutoTranslate(tab.tabId))
-        .map((tab) => {
-          const waiting = tab.pages.flatMap((p) => {
-            const record = findSamePage(tab.records, p.pageHash);
-            return record?.transcript.state === 'done' && !record.transcript.translated ? [record] : [];
-          });
-          return start(tab, [...new Set(waiting)], translator);
-        }),
+      [...tabs.values()].map((tab) => {
+        const waiting = tab.pages.flatMap((p) => {
+          const record = findSamePage(tab.records, p.pageHash);
+          return record?.transcript.state === 'done' && !record.transcript.translated ? [record] : [];
+        });
+        return start(tab, [...new Set(waiting)], translator);
+      }),
     );
   }
 
-  /** 把這些可見的 Page 排進佇列：pending 的跑本機流水線，辨識完的（有 Translator 時）重新翻譯；已有工作在跑的不重複排。 */
+  /** 把這些可見的 Page 排進 LLM 段：辨識完的（有 Translator 時）重新翻譯；已有工作在跑的不重複排。 */
   async function start(tab: TabState, visible: PageRecord[], translator: Translator | undefined): Promise<void> {
     const batch = ++batches;
     const groupOf = snapshotGroups();
     const started: PageRecord[] = [];
     for (const [index, record] of visible.entries()) {
       if (record.job) continue;
-      if (record.transcript.state === 'pending') {
-        record.transcript = { state: 'analyzing' };
-        enqueueLocal(newJob({ tab, record, batch, index, group: groupOf(record) }));
-      } else if (translator && record.transcript.state === 'done' && record.text) {
+      if (translator && record.transcript.state === 'done' && record.text) {
         record.transcript = { ...record.transcript, translating: true };
         const job = newJob({ tab, record, batch, index, group: groupOf(record) });
         job.translator = translator;
@@ -668,29 +663,13 @@ export function createTranscriber(deps: TranscriberDeps) {
     await Promise.all(started.map((r) => r.settled));
   }
 
-  /** side panel 的「自動翻譯」開關（每個 tab；預設開，停止後回到預設）。打開時把 pending 的 Page 排進佇列。 */
-  function setAutoTranslate(tabId: number, enabled: boolean): Promise<void> {
-    autoTranslate.set(tabId, enabled);
-    return enabled ? translatePending(tabId) : Promise.resolve();
-  }
-
-  async function translatePending(tabId: number): Promise<void> {
-    const tab = tabs.get(tabId);
-    if (!tab || !tab.records.some((r) => r.transcript.state === 'pending')) return;
-    await translate(tabId);
-  }
-
-  function isAutoTranslate(tabId: number): boolean {
-    return autoTranslate.get(tabId) ?? true;
-  }
-
   function get(tabId: number): PageView[] {
     return views.get(tabId) ?? [];
   }
 
   /**
    * 同 origin 重新整理（content script 重新注入，anchor 都換了）：忘掉畫面上的 Page，下次擷取重新查快取。
-   * 還沒開始的工作丟掉，已開始的做完只寫快取。設定（自動翻譯）保留。
+   * 還沒開始的工作丟掉，已開始的做完只寫快取。
    */
   function resetPages(tabId: number): void {
     tabs.delete(tabId);
@@ -744,9 +723,8 @@ export function createTranscriber(deps: TranscriberDeps) {
     return next;
   }
 
-  /** 停止或關 tab：同 resetPages，設定與看過的頁也忘掉。 */
+  /** 停止或關 tab：同 resetPages，看過的頁也忘掉。 */
   function clear(tabId: number): void {
-    autoTranslate.delete(tabId);
     seen.delete(tabId);
     resetPages(tabId);
   }
@@ -755,8 +733,6 @@ export function createTranscriber(deps: TranscriberDeps) {
     update,
     translate,
     translateUntranslated,
-    setAutoTranslate,
-    isAutoTranslate,
     get,
     resetPages,
     reassignSeries,

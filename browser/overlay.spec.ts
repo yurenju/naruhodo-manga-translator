@@ -5,7 +5,7 @@
  */
 import type { Page, Worker } from '@playwright/test';
 import { readGroundTruth } from '../src/testing/synthetic.ts';
-import { activateOnMockSite, chooseFromPanelMenu, expect, sentOriginals, test } from './fixtures.ts';
+import { activateOnMockSite, expect, rescan, sentOriginals, test, testStop } from './fixtures.ts';
 import { WATERMARK_TEXT } from './mock-site/canvas-site.ts';
 import { overlayHostCount, pageMode, shownErasers, shownTranslations, type ScreenRect } from './overlay-helpers.ts';
 
@@ -122,7 +122,7 @@ test('譯文蓋在 Balloon 上；捲動、祖先 transform 縮放後仍對齊；
 });
 
 test('主頁面重繪把 host 拿掉後自動掛回；停止後所有 host 消失、position 還原', async ({ context, sw, extensionId, mockSite }) => {
-  const { page, panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
+  const { page, panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   await waitForOverlay(page);
   const positions = () =>
     page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.viewer .page')].slice(0, 2).map((s) => [s.style.position, getComputedStyle(s).position]));
@@ -139,7 +139,7 @@ test('主頁面重繪把 host 拿掉後自動掛回；停止後所有 host 消�
   await expect.poll(() => overlayHostCount(page)).toBe(2);
   await expectAligned(page, '重掛後');
 
-  await panel.getByRole('button', { name: '停止' }).click();
+  await testStop(panel, tabId);
   await expect.poll(() => overlayHostCount(page)).toBe(0);
   expect(await positions()).toEqual([
     ['', 'static'],
@@ -166,7 +166,7 @@ test('已翻譯的頁重新擷取時不藏覆蓋層（用帶覆蓋層的樣子�
 
   // 覆蓋層顯示中再擷取一次（SW 的 captureVisibleTab）
   const requestedAt = await sw.evaluate(() => Date.now());
-  await chooseFromPanelMenu(panel, '重新擷取頁面');
+  await rescan(panel, tabId);
   const captured = await captureStartedAfter(sw, requestedAt);
 
   // 截圖裡有我們的中文（沒藏），覆蓋層一直是顯示的，頁也還認得（沒有重翻）

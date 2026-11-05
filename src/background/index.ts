@@ -5,7 +5,6 @@ import { FAKE_VERSION } from '../shared/fake-translator.ts';
 import { clearHostedSession, HOSTED_API_URL, hostedSessionToken } from '../shared/hosted-session.ts';
 import type {
   AnalyzeResponse,
-  AutoTranslateResponse,
   CaptureFinishedResponse,
   CapturePreparedResponse,
   CropResponse,
@@ -718,6 +717,10 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
     activation.activate(message.tabId).then(() => sendResponse());
     return true;
   }
+  if ((__E2E__ || __DEBUG__) && message.type === 'test:stop') {
+    activation.stop(message.tabId).then(() => sendResponse());
+    return true;
+  }
   switch (message.type) {
     case 'models:status':
       modelStatus = message.status;
@@ -749,9 +752,6 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
     case 'panel:getStatus':
       activation.isActive(message.tabId).then((active) => sendResponse({ active } satisfies StatusResponse));
       return true;
-    case 'panel:stop':
-      activation.stop(message.tabId).then(() => sendResponse());
-      return true;
     case 'content:pageTurn': {
       const tabId = sender.tab?.id;
       if (tabId !== undefined)
@@ -768,13 +768,6 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
         });
       return false;
     }
-    case 'panel:getAutoTranslate':
-      sendResponse({ enabled: transcriber.isAutoTranslate(message.tabId) } satisfies AutoTranslateResponse);
-      return false;
-    case 'panel:setAutoTranslate':
-      void transcriber.setAutoTranslate(message.tabId, message.enabled);
-      sendResponse();
-      return false;
     case 'panel:getPages':
       sendResponse({ pages: transcriber.get(message.tabId) } satisfies PagesResponse);
       return false;

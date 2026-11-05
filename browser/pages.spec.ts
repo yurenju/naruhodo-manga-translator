@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { readGroundTruth } from '../src/testing/synthetic.ts';
-import { activateOnMockSite, chooseFromPanelMenu, expect, test } from './fixtures.ts';
+import { activateOnMockSite, expect, rescan, test } from './fixtures.ts';
 
 /**
  * 用真的視窗（1280×1500）而不是 Playwright 模擬的 viewport：啟動時 side panel 會真的打開、把頁面擠窄，
@@ -52,11 +52,11 @@ test('啟動後 side panel 列出完整可見的 Page，只露出一部分的不
 });
 
 test('捲動後重新擷取：上下都只露出一部分時只列中間那頁', async ({ context, sw, extensionId, mockSite }) => {
-  const { page, panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
+  const { page, panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   await expectPagesListed(panel, ['p01-basic', 'p02-ruby']);
 
   await page.evaluate(() => window.scrollTo(0, 300));
-  await chooseFromPanelMenu(panel, '重新擷取頁面');
+  await rescan(panel, tabId);
 
   await expectPagesListed(panel, ['p02-ruby']);
 });

@@ -10,7 +10,7 @@
   color: var(--naru-ink); background: var(--naru-surface);
 }
 :where(.naru-side-panel) [lang='ja'] { font-family: var(--naru-font-ja); }
-/* 頂部（#77）：logo＋名稱、狀態、（空白）、停止、⚙。窄的時候名稱與狀態可以縮，按鈕不縮 */
+/* 頂部（#77）：logo＋名稱、狀態、（空白）、⚙。窄的時候名稱與狀態可以縮，按鈕不縮 */
 :where(.naru-side-panel) .panel-header { display: flex; align-items: center; gap: var(--naru-space-2); min-width: 0; margin: var(--naru-space-3) 0; }
 :where(.naru-side-panel) .panel-header__spacer { flex: 1 1 0; }
 :where(.naru-side-panel) .panel-header > .naru-btn, :where(.naru-side-panel) .panel-header > .naru-badge { flex: none; }
@@ -20,25 +20,6 @@
   font-size: var(--naru-text-body); font-weight: 700; color: var(--naru-ink);
 }
 :where(.naru-side-panel) .title img { flex: none; }
-
-/* ⚙ 選單：浮在頂部下面、靠右，不推開下面的內容 */
-:where(.naru-side-panel) .panel-menu { position: relative; flex: none; }
-:where(.naru-side-panel) .panel-menu__popover {
-  position: absolute; top: calc(100% + var(--naru-space-1)); right: 0; z-index: 10;
-  display: flex; flex-direction: column; gap: 2px; box-sizing: border-box;
-  width: 256px; max-width: calc(100vw - 2 * var(--naru-space-3)); padding: 6px;
-  background: var(--naru-surface); border: 1px solid var(--naru-line); border-radius: var(--naru-radius-md);
-  box-shadow: var(--naru-shadow-2);
-}
-:where(.naru-side-panel) .panel-menu__item {
-  display: flex; flex-direction: column; gap: 2px; padding: 10px;
-  border: 0; border-radius: var(--naru-radius-sm); background: transparent;
-  font: inherit; font-size: var(--naru-text-label); color: var(--naru-ink); text-align: left; cursor: pointer;
-}
-:where(.naru-side-panel) .panel-menu__item:hover, :where(.naru-side-panel) .panel-menu__switch:hover { background: var(--naru-surface-2); }
-:where(.naru-side-panel) .panel-menu__item:focus-visible { outline: 2px solid var(--naru-accent); outline-offset: -2px; }
-:where(.naru-side-panel) .panel-menu__desc { font-size: var(--naru-text-caption); color: var(--naru-ink-3); }
-:where(.naru-side-panel) .panel-menu__switch { padding: 10px; border-radius: var(--naru-radius-sm); }
 
 /* 沒做完 onboarding（#93）：置中的大 logo、名稱、說明與「完成設定」 */
 :where(.naru-side-panel) .finish-setup { display: flex; flex-direction: column; align-items: center; gap: var(--naru-space-2); padding: 96px var(--naru-space-4); text-align: center; }
@@ -95,7 +76,7 @@
 :where(.naru-side-panel) .translation-status { margin: 0; color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
 :where(.naru-side-panel) .hint { color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
 
-/* 設定、Series Notes 頁（#93：從 ⚙ 選單打開、整個取代 side panel） */
+/* 設定、Series Notes 頁（#93：從 ⚙、作品卡打開，整個取代 side panel） */
 :where(.naru-side-panel) .settings, :where(.naru-side-panel) .notes { margin: var(--naru-space-2) 0; }
 /* 設定頁的小標（翻譯方式、資料） */
 :where(.naru-side-panel) .settings > h2 { margin: var(--naru-space-4) 0 var(--naru-space-1); font-size: var(--naru-text-caption); font-weight: 700; color: var(--naru-ink-3); letter-spacing: 0.04em; }

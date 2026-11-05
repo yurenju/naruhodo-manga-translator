@@ -136,7 +136,7 @@ describe('底部的整體狀態列', () => {
 
   it('沒有任何譯文時不顯示', () => {
     expect(overall([])).toBeUndefined();
-    expect(overall([{ state: 'analyzing' }, { state: 'pending' }, { state: 'done', text: TEXT, translated: false }])).toBeUndefined();
+    expect(overall([{ state: 'analyzing' }, { state: 'done', text: TEXT, translated: false }])).toBeUndefined();
   });
 
   it('費用算不出來時顯示「費用未知」', () => {
@@ -201,7 +201,7 @@ describe('side panel 顯示哪一個畫面', () => {
     expect(sidePanelScreen({ setupComplete: false, page: 'settings' })).toBe('finishSetup');
   });
 
-  it('設定完成：平常是逐字稿；從 ⚙ 選單打開設定、從作品卡打開作品頁時整個換成那一頁', () => {
+  it('設定完成：平常是逐字稿；按 ⚙ 打開設定、從作品卡打開作品頁時整個換成那一頁', () => {
     expect(sidePanelScreen({ setupComplete: true, page: undefined })).toBe('transcript');
     expect(sidePanelScreen({ setupComplete: true, page: 'settings' })).toBe('settings');
     expect(sidePanelScreen({ setupComplete: true, page: 'series' })).toBe('series');

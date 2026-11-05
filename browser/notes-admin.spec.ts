@@ -5,7 +5,7 @@
 import type { Page } from '@playwright/test';
 import type { PageTranslation } from '../src/shared/page-text.ts';
 import type { NotesEntry } from '../src/shared/translator.ts';
-import { activateOnMockSite, chooseFromPanelMenu, configuredServiceWorker, expect, launchWithExtension, openSidePanel, readStore, test } from './fixtures.ts';
+import { activateOnMockSite, configuredServiceWorker, expect, launchWithExtension, openSettings, openSidePanel, readStore, retranslateVisible, test } from './fixtures.ts';
 
 const パン = { 原文: 'パン', 讀音: 'ぱん', 譯文: '麵包', 類別: '用語' };
 const 霧島湊 = { 原文: '霧島湊', 讀音: 'きりしまみなと', 譯文: '霧島湊', 類別: '人名' };
@@ -46,9 +46,9 @@ const entryOf = async (sw: Parameters<typeof readStore>[0], 原文: string) =>
  * 快取記的是翻譯（①）送出時 Notes 裡的條目（ADR 0005），第 1 頁翻譯時パン還不在 Notes 裡。
  * 等背景整理（②）把パン寫進 Notes，再重新翻譯 p01，讓它的快取記下用到パン。
  */
-async function retranslateWithパン(sw: Parameters<typeof readStore>[0], panel: Page): Promise<void> {
+async function retranslateWithパン(sw: Parameters<typeof readStore>[0], panel: Page, tabId: number): Promise<void> {
   await expect.poll(async () => (await entryOf(sw, 'パン'))?.譯文).toBe('麵包');
-  await panel.getByRole('contentinfo', { name: '狀態列' }).getByRole('button', { name: '重新翻譯' }).click();
+  await retranslateVisible(panel, tabId);
   await expect
     .poll(async () => (await readStore<PageTranslation>(sw, 'pageTranslations')).flatMap((t) => t.usedNotes.map((u) => u.原文)))
     .toEqual(['パン']);
@@ -58,9 +58,9 @@ async function retranslateWithパン(sw: Parameters<typeof readStore>[0], panel:
 // notes-ledger、transcribe、backup 的 unit；這裡只確認 side panel ↔ SW ↔ IndexedDB 接得起來。
 
 test('在 side panel 編輯條目會寫進 Notes（locked）；重新翻譯後 LLM 的建議列出來，按接受寫回', async ({ context, sw, extensionId, mockSite }) => {
-  const { page, panel } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
+  const { page, panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
   await expect(statusLine(panel)).toHaveText([/^已翻譯・/]);
-  await retranslateWithパン(sw, panel);
+  await retranslateWithパン(sw, panel, tabId);
   await openNotes(panel);
   await expect(notesSection(panel).getByRole('row', { name: /パン/ })).toContainText('麵包');
 
@@ -81,9 +81,9 @@ test('在 side panel 編輯條目會寫進 Notes（locked）；重新翻譯後 L
 });
 
 test('在別頁改了某頁用到的條目，翻回那頁（快取）出現過時提示', async ({ context, sw, extensionId, mockSite }) => {
-  const { page, panel } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
+  const { page, panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
   await expect(statusLine(panel)).toHaveText([/^已翻譯・/]);
-  await retranslateWithパン(sw, panel);
+  await retranslateWithパン(sw, panel, tabId);
 
   // ← 鍵＝下一頁（RTL）；在 p02 改 p01 用到的パン
   await page.keyboard.press('ArrowLeft');
@@ -103,7 +103,7 @@ test('匯出 JSON 真的下載得到檔案，在乾淨的 profile 選檔匯入�
   await expect(statusLine(panel)).toHaveText([/^已翻譯・/]);
   // Notes 在背景整理（ADR 0005）：寫進去之後再匯出
   await expect.poll(async () => (await entryOf(sw, 'パン'))?.譯文).toBe('麵包');
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
 
   const downloading = panel.waitForEvent('download');
   await panel.getByRole('button', { name: '匯出 JSON' }).click();
@@ -113,7 +113,7 @@ test('匯出 JSON 真的下載得到檔案，在乾淨的 profile 選檔匯入�
   try {
     const cleanSw = await configuredServiceWorker(clean, mockSite);
     const cleanPanel = await openSidePanel(clean, new URL(cleanSw.url()).host);
-    await chooseFromPanelMenu(cleanPanel, '設定');
+    await openSettings(cleanPanel);
     await cleanPanel.getByLabel('匯入 JSON').setInputFiles(file);
     await expect(cleanPanel.getByText('匯入完成')).toBeVisible();
 

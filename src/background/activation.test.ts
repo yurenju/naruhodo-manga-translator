@@ -239,7 +239,7 @@ describe('toggle（點圖示、快捷鍵）', () => {
     expect(chrome.calls.onboardings).toEqual([]);
   });
 
-  it('側邊欄的「停止」不關側邊欄', async () => {
+  it('stop()（e2e／debug 的 test:stop）不關側邊欄', async () => {
     const chrome = fakeChrome({ 1: EPISODE });
     const activation = createActivation(chrome.deps);
     await activation.toggle(1);
