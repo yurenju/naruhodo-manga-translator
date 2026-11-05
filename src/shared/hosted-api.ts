@@ -74,6 +74,15 @@ export interface VerifyCodeResponse {
 export const FREE_PAGES = 50;
 
 /**
+ * 訂閱的年費（美元，Paddle 的價格）與每月頁數，給外掛與網站的文案用。每月頁數真正的上限是 Worker 的 vars
+ * （`worker/wrangler.jsonc` 的 `MONTHLY_PAGE_LIMIT`），調整時兩邊一起改。
+ */
+export const YEARLY_PRICE_USD = 20;
+export const MONTHLY_PAGES = 800;
+/** 年費攤到每個月的平均（文案的「平均每月 US$1.67」），兩位小數 */
+export const MONTHLY_AVERAGE_USD = (YEARLY_PRICE_USD / 12).toFixed(2);
+
+/**
  * 剩餘額度（spec #86「額度規則」）。外掛只顯示這裡的數字，不自己算。
  * - free：沒有訂閱（包含訂閱結束後），remaining 是剩下的 Free Pages
  * - subscribed：訂閱中（`active`，包含排定取消，以及扣款失敗重試中的 `past_due`）。remaining 是本月剩餘頁數，

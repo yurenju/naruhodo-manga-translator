@@ -11,7 +11,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { indexedDbApiKeyStore } from '../shared/api-key-store.ts';
 import { grantDataConsent, hasDataConsent } from '../shared/data-consent.ts';
-import { FREE_PAGES } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_AVERAGE_USD, MONTHLY_PAGES, YEARLY_PRICE_USD } from '../shared/hosted-api.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { HOSTED_API_URL, loadHostedSession, saveHostedSession, type HostedSession } from '../shared/hosted-session.ts';
 import type { Message, ModelStatus, ModelStatusResponse } from '../shared/messages.ts';
@@ -21,11 +21,11 @@ import { savePageMode, type PageMode } from '../shared/page-mode.ts';
 import { saveSidePanelOnActivation } from '../shared/side-panel-setting.ts';
 import { onboardingPaymentChange, openPayment, watchPendingPayment, type PendingPayment } from '../shared/payment-return.ts';
 import { saveTranslationMode } from '../shared/translation-mode.ts';
-import { Button, Callout } from '../ui/components.tsx';
+import { Badge, Button, Callout } from '../ui/components.tsx';
 import { OwnKeyDataFlow, PolicyLinks } from '../ui/data-flow.tsx';
 import { PRACTICE_URL } from '../ui/links.ts';
 import { SignIn } from '../ui/sign-in.tsx';
-import { SubscribeButton } from '../ui/subscribe-button.tsx';
+import { SubscribeButton, SubscriptionPrice } from '../ui/subscribe-button.tsx';
 
 const hostedAccount = createHostedAccountClient({ apiUrl: HOSTED_API_URL, fetch: (url, init) => fetch(url, init) });
 
@@ -66,8 +66,9 @@ function Intro({ downloadBytes, onNext }: { downloadBytes: number | undefined; o
           <li>
             用 email 註冊之後，有 <strong>{FREE_PAGES} 頁的免費額度</strong>（大約兩話），不用輸入付款資料。
           </li>
-          {/* 價格與上限依最終定價（#94） */}
-          <li>試用滿意的話，可以訂閱：年繳 US$20，每月可翻 800 頁。</li>
+          <li>
+            試用滿意的話，可以訂閱：年繳 US${YEARLY_PRICE_USD}（平均每月 US${MONTHLY_AVERAGE_USD}），每月可翻 {MONTHLY_PAGES} 頁。
+          </li>
           <li>回頭看已經翻過的頁面不會扣頁數；翻譯失敗也不扣。</li>
         </ul>
       </div>
@@ -262,9 +263,11 @@ function Plan({
           <Button onClick={free}>先用免費的 {FREE_PAGES} 頁</Button>
         </section>
         <section class="ob-plan ob-plan--hl" aria-label="訂閱（年繳）">
-          <p class="ob-plan__name">訂閱（年繳）</p>
-          <p class="ob-plan__price">US$20 / 年</p>
-          <p class="hint">每月可翻 800 頁，從訂閱那天起每月同一天重置。</p>
+          <p class="ob-plan__name">
+            訂閱 <Badge tone="solid">年繳</Badge>
+          </p>
+          <SubscriptionPrice />
+          <p class="hint">從訂閱那天起每月同一天重置。隨時取消，用到這一年結束。</p>
           <SubscribeButton variant="primary" onSubscribe={() => void subscribe()} />
         </section>
       </div>

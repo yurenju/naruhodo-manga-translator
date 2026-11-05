@@ -1,0 +1,36 @@
+---
+/**
+ * 雙價並列（價格呈現定案）的網站版：跟外掛的 PricePair（src/ui/components.tsx）輸出同一份 DOM、共用
+ * src/ui/components.css 的樣式，改的時候兩邊一起改。網站的字比較大（--lg），夠寬時左右排，窄的時候上下排。
+ */
+import type { PriceSide } from '../../../src/ui/components.tsx';
+import '../../../src/ui/components.css';
+
+interface Props {
+  pay: PriceSide;
+  average: PriceSide;
+}
+const { pay, average } = Astro.props;
+---
+<div class="naru-price-pair naru-price-pair--lg">
+  <div class="naru-price-pair__box">
+    <div class="naru-price-pair__side">
+      <span class="naru-price-pair__k">{pay.label}</span>
+      <span class="naru-price-pair__v">{pay.price}<small>{pay.unit}</small></span>
+      <span class="naru-price-pair__s">{pay.note}</span>
+    </div>
+    <div class="naru-price-pair__side naru-price-pair__side--avg">
+      <span class="naru-price-pair__k">{average.label}</span>
+      <span class="naru-price-pair__v">{average.price}<small>{average.unit}</small></span>
+      <span class="naru-price-pair__s">{average.note}</span>
+      <span class="naru-price-pair__arrow" aria-hidden="true">
+        <svg class="naru-price-pair__right" width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1.5 6h9M7 2.5l3.5 3.5L7 9.5" />
+        </svg>
+        <svg class="naru-price-pair__down" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 1.5v9M2.5 7l3.5 3.5L9.5 7" />
+        </svg>
+      </span>
+    </div>
+  </div>
+</div>

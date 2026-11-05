@@ -54,7 +54,7 @@ html, body { margin: 0; background: var(--naru-surface-2); }
 }
 .ob-plan p { margin: 0; }
 .ob-plan--hl { border-color: var(--naru-accent); box-shadow: 0 0 0 1px var(--naru-accent); }
-.ob-plan__name { font-weight: 700; }
+.ob-plan__name { display: flex; align-items: center; gap: var(--naru-space-2); font-weight: 700; }
 .ob-plan__price { font-size: 22px; font-weight: 700; }
 .ob-plan .naru-btn { margin-top: auto; }
 /* 第 4 步的「看漫畫／學日文」（#185）：整張卡片是按鈕 */

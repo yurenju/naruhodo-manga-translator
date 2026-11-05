@@ -99,13 +99,34 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
 .steps p { margin: 0; font-size: var(--naru-text-label); color: var(--naru-ink-2); }
 
 .plans { display: grid; grid-template-columns: 1fr 1fr; gap: var(--naru-space-5); }
-.plan { display: flex; flex-direction: column; padding: var(--naru-space-6); }
+.plan { display: flex; flex-direction: column; padding: var(--naru-space-5); }
 .plan.featured { border: 2px solid var(--naru-accent); box-shadow: var(--naru-shadow-2); }
+.plan-head { display: flex; align-items: center; justify-content: space-between; gap: var(--naru-space-3); }
 .plan h3 { margin: 0; font-size: var(--naru-text-lead); }
-.plan .price { margin: var(--naru-space-3) 0 0; font-size: var(--naru-text-price); font-weight: 800; }
-.plan .price small { font-size: var(--naru-text-body); font-weight: 500; color: var(--naru-ink-2); }
-.plan ul { flex: 1; padding-left: var(--naru-space-5); font-size: var(--naru-text-label); color: var(--naru-ink-2); }
-.plan .btn { justify-content: center; }
+.plan-tag {
+  flex: none; padding: var(--naru-space-1) var(--naru-space-3); border-radius: var(--naru-radius-pill);
+  font-size: var(--naru-text-small); font-weight: 700; line-height: 1.5; white-space: nowrap;
+  background: var(--naru-ink); color: var(--naru-on-accent);
+}
+.plan-tag--soft { background: var(--naru-accent-weak); color: var(--naru-ink); }
+.plan .price { margin: var(--naru-space-4) 0 0; font-size: var(--naru-text-price); font-weight: 800; line-height: 1.15; }
+/* 免費卡的「註冊就送 50 頁」 */
+.grant { margin: var(--naru-space-3) 0 0; padding: var(--naru-space-2) var(--naru-space-3); border: 1px solid var(--naru-line-strong); border-radius: var(--naru-radius-md); }
+.grant strong { font-weight: 800; }
+.grant span { display: block; font-size: var(--naru-text-small); color: var(--naru-ink-2); }
+.plan .naru-price-pair { margin-top: var(--naru-space-4); }
+.plan ul { flex: 1; margin: var(--naru-space-4) 0 0; padding-left: var(--naru-space-5); font-size: var(--naru-text-label); color: var(--naru-ink-2); }
+
+/* 價格卡下面的三步驟＋唯一的按鈕 */
+.start { display: flex; align-items: center; gap: var(--naru-space-6); margin-top: var(--naru-space-5); padding: var(--naru-space-5) var(--naru-space-6); }
+.start-steps { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--naru-space-4); margin: 0; padding: 0; list-style: none; }
+.start-steps li { display: flex; align-items: flex-start; gap: var(--naru-space-2); font-size: var(--naru-text-label); color: var(--naru-ink-2); }
+.start-steps b { display: block; font-size: var(--naru-text-body); color: var(--naru-ink); }
+.start-num {
+  flex: none; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  border-radius: var(--naru-radius-pill); background: var(--naru-accent-weak); font-weight: 800; color: var(--naru-ink);
+}
+.start .btn { flex: none; justify-content: center; white-space: nowrap; }
 .own-key { margin-top: var(--naru-space-4); text-align: center; font-size: var(--naru-text-small); color: var(--naru-ink-3); }
 
 .faq details { margin-bottom: var(--naru-space-3); padding: var(--naru-space-3) var(--naru-space-4); background: var(--naru-surface); border: 1px solid var(--naru-line); border-radius: var(--naru-radius-sm); }
@@ -140,8 +161,13 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
 .summary div { display: flex; justify-content: space-between; padding: var(--naru-space-1) 0; }
 .checkout .agree { margin: var(--naru-space-4) 0 0; font-size: var(--naru-text-small); color: var(--naru-ink-3); }
 
+/* 三步驟＋按鈕排一行太擠：按鈕換到下面 */
+@media (max-width: 960px) {
+  .start { flex-direction: column; align-items: stretch; gap: var(--naru-space-4); padding: var(--naru-space-5); }
+}
+
 @media (max-width: 760px) {
-  .steps, .plans { grid-template-columns: 1fr; }
+  .steps, .plans, .start-steps { grid-template-columns: 1fr; }
   .hide-sm { display: none; }
   .site-header .wrap, .nav { gap: var(--naru-space-2); }
   .hero h1 { font-size: var(--naru-text-heading); }

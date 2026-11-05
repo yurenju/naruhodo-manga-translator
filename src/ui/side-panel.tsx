@@ -5,7 +5,7 @@
  */
 import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
-import type { Quota } from '../shared/hosted-api.ts';
+import { MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
 import type { LineRef, ModelStatus, PageView } from '../shared/messages.ts';
 import { megabytes } from '../shared/model-download.ts';
 import type { PageMode } from '../shared/page-mode.ts';
@@ -13,7 +13,7 @@ import type { StaleReason } from '../shared/series-notes.ts';
 import { Badge, Button, Callout, PageHeader, Progress, SegmentedControl, type SegmentOption } from './components.tsx';
 import { OwnKeyDataFlow } from './data-flow.tsx';
 import { PRIVACY_URL } from './links.ts';
-import { PaymentUnavailable, SubscribeButton } from './subscribe-button.tsx';
+import { PaymentUnavailable, SubscribeButton, SubscriptionPrice } from './subscribe-button.tsx';
 import { DEFAULT_LEVEL, DisplaySwitch, Transcript, type Display, type Level } from './transcript.tsx';
 import {
   quotaView,
@@ -231,6 +231,7 @@ function QuotaExhaustedCallout({
         <strong>{exhausted.title}</strong>
       </p>
       <p>{exhausted.body}</p>
+      {exhausted.subscribe && <SubscriptionPrice />}
       <div class="naru-row">
         {exhausted.subscribe && <SubscribeButton variant="primary" onSubscribe={onSubscribe} />}
         <Button variant="link" onClick={onUseOwnKey}>
@@ -517,8 +518,7 @@ export function SidePanel(props: SidePanelProps) {
   // 付款確認後讀者被帶回來時，side panel 不一定已經啟動，兩種畫面都顯示
   const subscribedNotice = props.subscribedNotice && (
     <Callout tone="info" class="naru-callout--stack" role="group" aria-label="已訂閱">
-      {/* 價格與上限依最終定價 */}
-      <p>✓ 已訂閱，每月可翻 800 頁。</p>
+      <p>✓ 已訂閱一年，每月可翻 {MONTHLY_PAGES} 頁。</p>
       <div class="naru-row">
         <Button variant="ghost" onClick={() => props.onDismissSubscribedNotice?.()}>
           知道了

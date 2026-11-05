@@ -26,7 +26,7 @@
 
 翻譯有兩種用法，在 side panel 的 ⚙ →「設定」→「翻譯方式」隨時切換：
 
-- **內建翻譯**（預設）：用 email 註冊帳號就能翻譯，新帳號有 50 頁免費額度，不用輸入付款資料。用完之後訂閱（年繳 US$20，每月 800 頁，由 Paddle 處理付款）。文字經過 Naruhodo 的服務交給 Anthropic 翻譯，服務不保存這些文字。
+- **內建翻譯**（預設）：用 email 註冊帳號就能翻譯，新帳號有 50 頁免費額度，不用輸入付款資料。用完之後可以訂閱：年繳 US$20（平均每月 US$1.67），每月 800 頁，由 Paddle 處理付款。文字經過 Naruhodo 的服務交給 Anthropic 翻譯，服務不保存這些文字。
 - **自備金鑰**：輸入你自己的 [Claude API key](https://console.anthropic.com/)，文字直接從你的瀏覽器送到 Anthropic，費用由你的 Anthropic 帳戶支付（用 Claude Haiku 每頁不到一美分），不用註冊帳號。
 
 兩種方式送出與保存的資料見 [隱私權政策](PRIVACY.md)。

@@ -40,7 +40,7 @@ Naruhodo：邊看日文漫畫邊翻譯、邊學日文
 
 ■ 翻譯方式與費用
 翻譯需要付費，有兩種方式，可以隨時在設定裡切換：
-・內建翻譯（預設）：用 email 註冊，新帳號有 50 頁免費額度，不用輸入付款資料。用完之後要訂閱才能繼續翻譯：年繳 US$20，每月可翻 800 頁。看過的頁面不扣頁數，翻譯失敗也不扣。
+・內建翻譯（預設）：用 email 註冊，新帳號有 50 頁免費額度，不用輸入付款資料。用完之後要訂閱才能繼續翻譯：年繳 US$20（平均每月 US$1.67），每月可翻 800 頁。看過的頁面不扣頁數，翻譯失敗也不扣。
 ・自備金鑰：輸入你自己的 Claude API key（Anthropic），翻譯費用由你的 Anthropic 帳戶支付，用 Claude Haiku 每頁大約不到一美分，不需要註冊或訂閱。
 沒有翻譯時也能用，但只會顯示原文與讀音。
 
@@ -66,7 +66,7 @@ Naruhodo：邊看日文漫畫邊翻譯、邊學日文
 原始碼以 MIT 授權公開在 GitHub：https://github.com/yurenju/naruhodo-manga-translator
 
 ---
-English: Naruhodo: Japanese Manga Translator. It translates Japanese manga on the current tab into Traditional Chinese, in place, and lists the original text, furigana readings and translation side by side for language learners. Detection and OCR run locally. Translation is paid: sign up with your email for 50 free pages, then subscribe (US$20 per year, 800 pages per month), or use your own Anthropic API key instead. The subscription is sold by Paddle.com, as reseller and Merchant of Record, on behalf of the developer, Sad Coder, Inc.; Google is not the seller. Refund policy: https://naruhodo.page/refund/
+English: Naruhodo: Japanese Manga Translator. It translates Japanese manga on the current tab into Traditional Chinese, in place, and lists the original text, furigana readings and translation side by side for language learners. Detection and OCR run locally. Translation is paid: sign up with your email for 50 free pages, then subscribe (US$20 billed yearly, about US$1.67 a month, 800 pages per month), or use your own Anthropic API key instead. The subscription is sold by Paddle.com, as reseller and Merchant of Record, on behalf of the developer, Sad Coder, Inc.; Google is not the seller. Refund policy: https://naruhodo.page/refund/
 ```
 
 隱私權政策、服務條款、退款政策的網址是產品網站的 `/privacy/`、`/terms/`、`/refund/`（`site/src/pages/[doc].astro`，內容就是 repo 根目錄的 `PRIVACY.md`、`TERMS.md`、`REFUND.md`）。
