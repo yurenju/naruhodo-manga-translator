@@ -316,7 +316,7 @@ describe('merge', () => {
   it('來源不是 Provisional Series：不合併，什麼都不動', async () => {
     const { db, catalog } = setup();
     const target = await catalog.create('範例作品', EP1);
-    const named = await catalog.create('鬼滅', EP2);
+    const named = await catalog.create('另一部作品', EP2);
     db.seed([translation(named.id, B, '另一頁')], [note(named.id, '鈴木', '阿鈴')]);
 
     const merged = await catalog.merge(named.id, target.id, EP2);
