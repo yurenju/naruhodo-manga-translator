@@ -26,43 +26,44 @@ export function Button({ variant = 'secondary', type = 'button', class: extra, .
 export interface SegmentOption<T extends string> {
   value: T;
   label: string;
-  /** 大尺寸才顯示的一行副標；不算進按鈕的 accessible name（用 aria-describedby）。 */
+  /** tabs 才顯示的一行副標；不算進按鈕的 accessible name（用 aria-describedby）。 */
   description?: string;
 }
 
 /**
  * 分段切換：一組 aria-pressed 的按鈕，外層是有名字的 group。
- * sm：一般選項（例如顯示層級）；lg：每格有標題與副標（例如 Page Mode）。
+ * segmented：灰底膠囊（例如顯示層級）；tabs：頂部整排的底線分頁，每格有標題與副標（Page Mode：最上層、整片內容都跟著它）。
  */
 export function SegmentedControl<T extends string>({
   label,
   options,
   value,
   onChange,
-  size = 'sm',
+  variant = 'segmented',
 }: {
   label: string;
   options: readonly SegmentOption<T>[];
   value: T;
   onChange: (value: T) => void;
-  size?: 'sm' | 'lg';
+  variant?: 'segmented' | 'tabs';
 }) {
   const id = useId();
   return (
     <div
       role="group"
       aria-label={label}
-      class={cx('naru-seg', `naru-seg--${size}`)}
+      class={variant === 'tabs' ? 'naru-tabs' : 'naru-seg'}
       style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
     >
       {options.map((o, i) => {
-        const descId = size === 'lg' && o.description ? `${id}-${i}` : undefined;
+        const part = variant === 'tabs' ? 'naru-tabs' : 'naru-seg';
+        const descId = variant === 'tabs' && o.description ? `${id}-${i}` : undefined;
         return (
           <button key={o.value} type="button" aria-pressed={o.value === value} aria-describedby={descId} onClick={() => onChange(o.value)}>
-            <span class="naru-seg__label">{o.label}</span>
+            <span class={`${part}__label`}>{o.label}</span>
             {/* 在 button 裡的文字會算進名字；aria-hidden 拿掉，aria-describedby 照樣讀得到 */}
             {descId && (
-              <span id={descId} class="naru-seg__desc" aria-hidden="true">
+              <span id={descId} class="naru-tabs__desc" aria-hidden="true">
                 {o.description}
               </span>
             )}

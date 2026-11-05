@@ -81,12 +81,11 @@ const STYLE = `${TOKENS}
   font-family: var(--naru-font-sans); z-index: 2; }
 .tip.on { display: block; }
 .tip-ja { font-family: var(--naru-font-ja); font-size: 1.1em; line-height: 2; color: var(--naru-tooltip-ink-2); }
-.tip-ja rt, .tip-guess, .tip-note { color: var(--naru-tooltip-ruby); }
+.tip-ja rt, .tip-guess { color: var(--naru-tooltip-ruby); }
 .tip-ja rt { font-size: 0.6em; font-weight: 400; }
 .tip-guess { font-size: 0.75em; }
 .tip-unreadable { color: var(--naru-tooltip-ink-3); text-decoration: line-through dotted; }
 .tip-zh { font-size: 1.15em; }
-.tip-note { margin-top: 0.3em; font-size: 0.75em; }
 .tip.learn .tip-ja { font-size: 1.4em; color: var(--naru-tooltip-ink); }
 .tip-reveal { display: flex; align-items: center; gap: 0.6em; box-sizing: border-box; min-height: 3em; margin: 0.3em 0;
   padding: 0.6em 0.75em; border-radius: 0.6em; background: var(--naru-tooltip-chip-bg); border: 1px dashed var(--naru-tooltip-chip-line); }
@@ -639,7 +638,7 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
   }
 
   /**
-   * tooltip：原文＋ルビ＋譯文（全文，第 3 階截斷的也看得到）＋「讀音為推測」。學習時譯文藏在「譯」區塊後面，
+   * tooltip：原文＋ルビ＋譯文（全文，第 3 階截斷的也看得到）。學習時譯文藏在「譯」區塊後面，
    * 滑進區塊才揭露；每次顯示都重新藏起來。
    */
   function showTooltip(layer: PageLayer, line: HoverLine): void {
@@ -672,7 +671,6 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
       }
       // 譯文：閱讀直接顯示；學習藏在「譯」區塊後面。沒有譯文就兩種都不放
       if (line.譯文) parts.push(pageMode === 'read' ? textDiv('tip-zh', line.譯文) : revealChip(line.譯文));
-      if (line.讀音) parts.push(textDiv('tip-note', '讀音為推測'));
     }
     tip.classList.toggle('learn', pageMode === 'learn');
     tip.replaceChildren(...parts);

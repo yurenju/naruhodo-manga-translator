@@ -23,7 +23,7 @@
   /* 比 --naru-surface-2 深一點：選取狀態跟按鈕 hover 分得開 */
   --naru-accent-weak: #EAE6DE;
 
-  /* 品牌黃：logo 的底色，只當點綴（逐字稿選取列的指示線）；上面要放字只能用墨色 */
+  /* 品牌黃：logo 的底色，只當點綴（逐字稿選取列的編號底）；上面要放字只能用墨色 */
   --naru-brand: #F2B705;
 
   /* 頁面上的高亮框 */
@@ -95,6 +95,6 @@
   --naru-radius-md: 10px;
   --naru-radius-pill: 999px;
   --naru-shadow-1: 0 1px 3px rgba(31, 29, 26, 0.14);
-  /* 浮層（⚙ 選單） */
+  /* 浮層 */
   --naru-shadow-2: 0 12px 32px rgba(31, 29, 26, 0.16);
 }

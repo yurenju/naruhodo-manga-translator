@@ -6,7 +6,7 @@
  * 也檢查 key 不經過 content script 與 messaging（spec #27 第 5 節）。
  */
 import type { Page, Worker } from '@playwright/test';
-import { activateOnMockSite, chooseFromPanelMenu, expect, openSidePanel, test } from './fixtures.ts';
+import { activateOnMockSite, expect, openSettings, openSidePanel, test } from './fixtures.ts';
 
 test.use({ viewport: null, fakeTranslator: true, requireApiKey: true, unreadableTexts: ['もちろん！'] });
 
@@ -78,8 +78,8 @@ test('設定 API key、同意資料使用後，已啟動的分頁直接翻譯：
   await expect(consent).toContainText('不會上傳圖片');
   await expect(consent.getByRole('link', { name: '隱私權政策' })).toHaveAttribute('href', /PRIVACY\.md$/);
 
-  // ⚙ 選單的「設定」：整個 side panel 換成設定頁，輸入 key，只顯示末四碼
-  await chooseFromPanelMenu(panel, '設定');
+  // ⚙：整個 side panel 換成設定頁，輸入 key，只顯示末四碼
+  await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
   await expect(settings).toContainText('Anthropic Console');
   await expect(settings).toContainText('花費上限');
@@ -91,11 +91,9 @@ test('設定 API key、同意資料使用後，已啟動的分頁直接翻譯：
   await panel.getByRole('button', { name: '返回' }).click();
   await expect(panel.getByText('尚未設定 API key')).toHaveCount(0);
 
-  // 有 key 但還沒同意：按「翻譯此頁」也不送出
-  await panel.getByRole('button', { name: '翻譯此頁' }).click();
+  // 有 key 但還沒同意：送不出去，所以沒有「翻譯此頁」，由資料使用說明卡帶路
   await expect(transcript.getByText('未翻譯').first()).toBeVisible();
-  // 斷言「沒有送出」：等一段時間確認 FakeTranslator 沒被呼叫
-  await panel.waitForTimeout(1000);
+  await expect(panel.getByRole('button', { name: '翻譯此頁' })).toHaveCount(0);
   expect(await sw.evaluate(() => globalThis.__translateCalls)).toBe(0);
 
   // 同意之後卡片消失，已啟動的分頁直接開始翻譯
@@ -105,7 +103,8 @@ test('設定 API key、同意資料使用後，已啟動的分頁直接翻譯：
   // 讀音換成 Translator 的整句讀音（おはよう！きょうははやいね），以ルビ對齊回漢字
   await expect(transcript.getByRole('listitem').filter({ hasText: '早安！今天好早喔' }).locator('rt')).toHaveText(['きょう', 'はや']);
   await expect(panel.getByRole('contentinfo', { name: '狀態列' })).toContainText(/已翻譯 \d+ 頁/);
-  await expect(panel.getByRole('button', { name: '重新翻譯' })).toBeVisible();
+  // 都翻好了：底部只有狀態，沒有按鈕（翻好的頁要重翻走過時提示的單頁「重新翻譯」）
+  await expect(panel.getByRole('contentinfo', { name: '狀態列' }).getByRole('button')).toHaveCount(0);
 
   // unreadable：OCR 原文（灰、刪除線）＋「無法辨識 · 未覆蓋」
   const unreadable = transcript.getByRole('listitem').filter({ hasText: '無法辨識' });
@@ -127,7 +126,7 @@ test('設定 API key、同意資料使用後，已啟動的分頁直接翻譯：
   expect(content.stores).not.toContain('apiKeys');
 
   // 刪除 key
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
   await settings.getByRole('button', { name: '刪除' }).click();
   await expect(settings.getByLabel('Claude API key')).toBeVisible();
   await expect(settings).not.toContainText('末四碼');
@@ -137,7 +136,7 @@ test('從 Chrome 內建 side panel 選單打開（沒有啟動 tab）也能設�
   const panel = await openSidePanel(context, extensionId);
 
   await expect(panel.getByText('請點外掛圖示啟動')).toBeVisible();
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
   await settings.getByLabel('Claude API key').fill(FAKE_KEY);
   await settings.getByRole('button', { name: '儲存' }).click();
@@ -145,6 +144,6 @@ test('從 Chrome 內建 side panel 選單打開（沒有啟動 tab）也能設�
 
   // 重新打開 side panel 仍然記得（存在 IndexedDB）
   await panel.reload();
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
   await expect(panel.getByRole('region', { name: '設定' })).toContainText('末四碼 WXYZ');
 });

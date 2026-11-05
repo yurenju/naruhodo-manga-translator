@@ -248,7 +248,7 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
     const { model, latencyMs, usage } = cached;
     const [stale, { balloons, looseText }] = await Promise.all([staleOf(cached), withKuromojiReadings(cached)]);
     trace('cache:hit', { ...query, cachedHash: cached.pageHash, stale });
-    // 命中快取時沒有本機流水線的結果（text），「翻譯此頁／重新翻譯」不會重翻這頁。
+    // text 用快取裡的原文：過時提示的「重新翻譯」用它重送，不必重跑本機流水線。
     return { state: 'done', text: { balloons, looseText }, translated: true, translation: { source: 'cache', model, latencyMs, usage }, stale };
   }
 

@@ -4,7 +4,7 @@
  * 全部以根元素 .naru-side-panel 為範圍，放進 shadow root（再載入 tokens.css、components.css）就完整。
  */
 import type { ComponentChildren } from 'preact';
-import { useEffect, useId, useRef, useState } from 'preact/hooks';
+import { useId, useState } from 'preact/hooks';
 import { MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
 import type { LineRef, ModelStatus, PageView } from '../shared/messages.ts';
 import { megabytes } from '../shared/model-download.ts';
@@ -16,6 +16,7 @@ import { PRIVACY_URL } from './links.ts';
 import { PaymentUnavailable, SubscribeButton, SubscriptionPrice } from './subscribe-button.tsx';
 import { DEFAULT_LEVEL, DisplaySwitch, Transcript, type Display, type Level } from './transcript.tsx';
 import {
+  canTranslate,
   quotaView,
   setupNotices,
   parentPage,
@@ -105,7 +106,6 @@ function PageItem({
         }
       />
       {transcript.state === 'analyzing' && <Progress>辨識中…</Progress>}
-      {transcript.state === 'pending' && <Callout>未翻譯（自動翻譯已關閉，按「翻譯此頁」）</Callout>}
       {transcript.state === 'error' && <Callout tone="danger">辨識失敗：{transcript.message}</Callout>}
       {transcript.state === 'done' && transcript.stale && !transcript.translating && (
         <StaleHint reason={transcript.stale} onRetranslate={onRetranslate} />
@@ -173,7 +173,7 @@ function SetupNoticeCallout({
   onDismissHostedHint: () => void;
 }) {
   if (notice === 'noKey')
-    return <Callout tone="warn">尚未設定 API key：只顯示原文與讀音（kuromoji 推測），未翻譯。請在 ⚙ 選單的「設定」輸入 key。</Callout>;
+    return <Callout tone="warn">尚未設定 API key：只顯示原文與讀音（kuromoji 推測），未翻譯。請按右上角的 ⚙ 打開設定，輸入 key。</Callout>;
   if (notice === 'hostedHint')
     return (
       <Callout class="naru-callout--stack" role="group" aria-label="內建翻譯提示">
@@ -268,7 +268,7 @@ const PAGE_MODES: readonly SegmentOption<PageMode>[] = [
  * 學習時頁面不擦字、不畫譯文，翻譯照常進行。
  */
 function PageModeSwitch({ mode, choose }: { mode: PageMode; choose: (mode: PageMode) => void }) {
-  return <SegmentedControl label="頁面模式" size="lg" options={PAGE_MODES} value={mode} onChange={choose} />;
+  return <SegmentedControl label="頁面模式" variant="tabs" options={PAGE_MODES} value={mode} onChange={choose} />;
 }
 
 /** 標題：logo（外掛 icon 的小尺寸母檔）＋名稱。 */
@@ -281,7 +281,7 @@ function Title({ logoSrc }: { logoSrc: string }) {
   );
 }
 
-/** 齒輪圖示（⚙ 選單）。 */
+/** 齒輪圖示（⚙：打開設定頁）。 */
 function GearIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -291,76 +291,12 @@ function GearIcon() {
   );
 }
 
-/** ⚙ 選單的一項；說明不算進按鈕的 accessible name（同 SegmentedControl 的副標）。 */
-function MenuItem({ label, description, onClick }: { label: string; description?: string; onClick: () => void }) {
-  const id = useId();
+/** ⚙：直接打開設定頁（不常用的功能都在設定頁裡）。 */
+function SettingsButton({ onOpen }: { onOpen: () => void }) {
   return (
-    <button type="button" class="panel-menu__item" aria-describedby={description ? id : undefined} onClick={onClick}>
-      <span>{label}</span>
-      {description && (
-        <span id={id} class="panel-menu__desc" aria-hidden="true">
-          {description}
-        </span>
-      )}
-    </button>
-  );
-}
-
-/**
- * 頂部的 ⚙ 選單（spec #70、#77）：不常用的功能收在這裡。點外面或按 Esc 收起；按了一項（開關以外）也收起。
- * 沒有啟動的 tab 時只有「設定」。container 沒給的頁（網站上）就沒有那一項。
- */
-function PanelMenu({
-  running,
-  autoTranslate,
-  settings,
-  onScan,
-  onOpen,
-}: {
-  running: boolean;
-  autoTranslate: ComponentChildren;
-  /** 有設定頁的內容才顯示「設定」。 */
-  settings: boolean;
-  onScan: () => void;
-  onOpen: (page: 'settings') => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const menuId = useId();
-
-  useEffect(() => {
-    if (!open) return;
-    // 用 composedPath：在 shadow root 裡（網站），document 收到的 target 是 shadow host
-    const onPointerDown = (e: PointerEvent) => {
-      if (!root.current || !e.composedPath().includes(root.current)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
-
-  const choose = (action: () => void) => () => {
-    setOpen(false);
-    action();
-  };
-  return (
-    // 焦點在 ⚙ 或選單裡時按 Esc 收起
-    <div class="panel-menu" ref={root} onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
-      <Button variant="icon" aria-label="設定" aria-expanded={open} aria-controls={menuId} onClick={() => setOpen(!open)}>
-        <GearIcon />
-      </Button>
-      {open && (
-        <div id={menuId} role="group" aria-label="設定選單" class="panel-menu__popover">
-          {running && (
-            <>
-              {autoTranslate && <div class="panel-menu__switch">{autoTranslate}</div>}
-              {/* 翻頁會自動偵測（#34）；這項給偵測漏掉時手動補一次。 */}
-              <MenuItem label="重新擷取頁面" description="翻頁沒被偵測到時用" onClick={choose(onScan)} />
-            </>
-          )}
-          {settings && <MenuItem label="設定" onClick={choose(() => onOpen('settings'))} />}
-        </div>
-      )}
-    </div>
+    <Button variant="icon" aria-label="設定" onClick={onOpen}>
+      <GearIcon />
+    </Button>
   );
 }
 
@@ -379,8 +315,7 @@ export interface SidePanelProps {
   /** 標題旁的 logo（外掛是 icons/naruhodo-small.svg）。 */
   logoSrc: string;
   onPageModeChange: (mode: PageMode) => void;
-  onStop: () => void;
-  /** 重新擷取頁面（⚙ 選單、模型錯誤的「重試」）。 */
+  /** 重新擷取頁面（模型錯誤的「重試」）。 */
   onScan: () => void;
   /** 翻譯這個 tab 的頁；給 pageHash 就只重翻那一頁。 */
   onTranslate: (pageHash?: string) => void;
@@ -408,9 +343,7 @@ export interface SidePanelProps {
   /** 從 side panel 發起的付款確認了，SW 把讀者帶回來（#176）：顯示一次「已訂閱」。 */
   subscribedNotice?: boolean;
   onDismissSubscribedNotice?: () => void;
-  /** 以下是只有外掛 container 才有的區塊（會讀寫 store、送 chrome 訊息）；沒給就不顯示，⚙ 選單也沒有那一項。 */
-  /** ⚙ 選單裡的自動翻譯開關。 */
-  autoTranslate?: ComponentChildren;
+  /** 以下是只有外掛 container 才有的區塊（會讀寫 store、送 chrome 訊息）；沒給就不顯示（沒有設定頁就沒有 ⚙）。 */
   /** Transcript 上方的作品卡（#186）；open 打開作品頁或換一部作品（#191）。 */
   renderSeriesCard?: (open: (page: SeriesPage) => void) => ComponentChildren;
   /** 「設定」頁的內容（標題列由 SidePanel 畫）；openDeleteAccount 換到「刪除帳號」那一頁。 */
@@ -486,29 +419,19 @@ export function SidePanel(props: SidePanelProps) {
       </PanelPageView>
     );
   }
-  // 頂部只有 logo、名稱、狀態、停止、⚙（#77）；其餘收進 ⚙ 選單
+  // 頂部只有 logo、名稱、狀態、⚙（#77）；停止＝再點一次外掛圖示，⚙ 直接打開設定頁
   const header = (
     <div class="panel-header">
       <Title logoSrc={props.logoSrc} />
       {running && <Badge tone="ok">已啟動</Badge>}
       <span class="panel-header__spacer" />
-      {running && (
-        <Button variant="ghost" onClick={props.onStop}>
-          停止
-        </Button>
-      )}
-      <PanelMenu
-        running={running}
-        autoTranslate={props.autoTranslate}
-        settings={Boolean(props.renderSettings)}
-        onScan={onScan}
-        onOpen={setPage}
-      />
+      {props.renderSettings && <SettingsButton onOpen={() => setPage('settings')} />}
     </div>
   );
   const done = pages.filter((p) => p.transcript.state === 'done');
-  const pending = pages.some((p) => p.transcript.state === 'pending');
-  const untranslated = pending || done.some((p) => p.transcript.state === 'done' && !p.transcript.translated);
+  const untranslated = done.some((p) => p.transcript.state === 'done' && !p.transcript.translated);
+  // 沒登入、沒 key、還沒同意時按了也送不出去：不放按鈕，由上面的設定提示帶路
+  const showTranslate = untranslated && canTranslate(access, consented);
   const notices = setupNotices({ access, consented, untranslated, hostedHint: props.hostedHint });
   const consentCard = notices.consentCard && <DataConsentCard onAccept={props.onAcceptConsent} />;
   const useOwnKey = () => {
@@ -581,9 +504,10 @@ export function SidePanel(props: SidePanelProps) {
             <SubscribeButton variant="primary" onSubscribe={props.onSubscribe} />
           ) : (
             quota.footerButton === 'translate' &&
-            (done.length > 0 || pending) && (
-              <Button variant={untranslated ? 'primary' : 'secondary'} onClick={translate}>
-                {untranslated ? '翻譯此頁' : '重新翻譯'}
+            // 只在有頁還沒翻譯（沒有 key、翻譯失敗）時出現；翻好的頁要重翻走過時提示的單頁「重新翻譯」
+            showTranslate && (
+              <Button variant="primary" onClick={translate}>
+                翻譯此頁
               </Button>
             )
           )}

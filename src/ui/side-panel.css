@@ -10,7 +10,7 @@
   color: var(--naru-ink); background: var(--naru-surface);
 }
 :where(.naru-side-panel) [lang='ja'] { font-family: var(--naru-font-ja); }
-/* 頂部（#77）：logo＋名稱、狀態、（空白）、停止、⚙。窄的時候名稱與狀態可以縮，按鈕不縮 */
+/* 頂部（#77）：logo＋名稱、狀態、（空白）、⚙。窄的時候名稱與狀態可以縮，按鈕不縮 */
 :where(.naru-side-panel) .panel-header { display: flex; align-items: center; gap: var(--naru-space-2); min-width: 0; margin: var(--naru-space-3) 0; }
 :where(.naru-side-panel) .panel-header__spacer { flex: 1 1 0; }
 :where(.naru-side-panel) .panel-header > .naru-btn, :where(.naru-side-panel) .panel-header > .naru-badge { flex: none; }
@@ -20,25 +20,6 @@
   font-size: var(--naru-text-body); font-weight: 700; color: var(--naru-ink);
 }
 :where(.naru-side-panel) .title img { flex: none; }
-
-/* ⚙ 選單：浮在頂部下面、靠右，不推開下面的內容 */
-:where(.naru-side-panel) .panel-menu { position: relative; flex: none; }
-:where(.naru-side-panel) .panel-menu__popover {
-  position: absolute; top: calc(100% + var(--naru-space-1)); right: 0; z-index: 10;
-  display: flex; flex-direction: column; gap: 2px; box-sizing: border-box;
-  width: 256px; max-width: calc(100vw - 2 * var(--naru-space-3)); padding: 6px;
-  background: var(--naru-surface); border: 1px solid var(--naru-line); border-radius: var(--naru-radius-md);
-  box-shadow: var(--naru-shadow-2);
-}
-:where(.naru-side-panel) .panel-menu__item {
-  display: flex; flex-direction: column; gap: 2px; padding: 10px;
-  border: 0; border-radius: var(--naru-radius-sm); background: transparent;
-  font: inherit; font-size: var(--naru-text-label); color: var(--naru-ink); text-align: left; cursor: pointer;
-}
-:where(.naru-side-panel) .panel-menu__item:hover, :where(.naru-side-panel) .panel-menu__switch:hover { background: var(--naru-surface-2); }
-:where(.naru-side-panel) .panel-menu__item:focus-visible { outline: 2px solid var(--naru-accent); outline-offset: -2px; }
-:where(.naru-side-panel) .panel-menu__desc { font-size: var(--naru-text-caption); color: var(--naru-ink-3); }
-:where(.naru-side-panel) .panel-menu__switch { padding: 10px; border-radius: var(--naru-radius-sm); }
 
 /* 沒做完 onboarding（#93）：置中的大 logo、名稱、說明與「完成設定」 */
 :where(.naru-side-panel) .finish-setup { display: flex; flex-direction: column; align-items: center; gap: var(--naru-space-2); padding: 96px var(--naru-space-4); text-align: center; }
@@ -55,21 +36,38 @@
 /* 逐字稿 */
 :where(.naru-side-panel) [aria-label='Page'] { list-style: none; margin: 0; padding: 0; }
 :where(.naru-side-panel) [aria-label='Page'] > li { margin: var(--naru-space-3) 0 var(--naru-space-5); }
-:where(.naru-side-panel) [aria-label='逐字稿'] { padding-left: var(--naru-space-5); }
+:where(.naru-side-panel) [aria-label='逐字稿'] { padding-left: 0; counter-reset: line; }
+/*
+ * 每句（原文＋譯文）一組，左邊是閱讀順序編號，讓組與組之間有明確的開頭。
+ * 內距平常就留著（不只高亮時才加），高亮出現時文字不會跳；左右往外延伸 space-2，文字位置跟原本對齊。
+ */
 :where(.naru-side-panel) [aria-label='逐字稿'] li {
-  display: flex; flex-direction: column; margin-bottom: var(--naru-space-2); padding: 2px var(--naru-space-1);
-  border-left: 3px solid transparent; border-radius: 0 var(--naru-radius-sm) var(--naru-radius-sm) 0;
+  position: relative; display: flex; flex-direction: column; counter-increment: line;
+  margin: 0 calc(-1 * var(--naru-space-2)) 6px; padding: 6px var(--naru-space-3) 10px 38px;
+  border-radius: var(--naru-radius-md);
 }
-:where(.naru-side-panel) [aria-label='逐字稿'] li.hl { background: var(--naru-accent-weak); border-left-color: var(--naru-brand); }
+:where(.naru-side-panel) [aria-label='逐字稿'] li::before {
+  content: counter(line); position: absolute; left: 10px; top: 10px;
+  display: grid; place-items: center; width: 18px; height: 18px; border-radius: var(--naru-radius-pill);
+  font-size: 10.5px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+  color: var(--naru-ink-3); box-shadow: inset 0 0 0 1px var(--naru-line-strong);
+}
+/* 第一行是帶ルビ的原文（行高 2.2）：編號往下對齊那一行的中間 */
+:where(.naru-side-panel) [aria-label='逐字稿'] li:has(> .original.with-ruby:first-child)::before { top: 16px; }
+:where(.naru-side-panel) [aria-label='逐字稿'] li.hl { background: var(--naru-accent-weak); }
+:where(.naru-side-panel) [aria-label='逐字稿'] li.hl::before { background: var(--naru-brand); color: var(--naru-ink); box-shadow: none; }
 :where(.naru-side-panel) .original { font-size: var(--naru-text-ja); line-height: 1.6; }
 /* 加振り仮名時行高放大，ルビ才不會壓到上一行 */
 :where(.naru-side-panel) .original.with-ruby { line-height: 2.2; }
-:where(.naru-side-panel) .translation { font-size: var(--naru-text-body); line-height: 1.6; }
+/* 譯文退一階（深灰、小一號），原文和譯文才分得出主從 */
+:where(.naru-side-panel) .translation { font-size: var(--naru-text-label); line-height: 1.5; color: var(--naru-ink-2); }
 :where(.naru-side-panel) .badges { display: flex; flex-wrap: wrap; gap: var(--naru-space-1); margin: 2px 0; }
 /* 振り仮名用朱色（白底與高亮底都過 WCAG AA） */
 :where(.naru-side-panel) rt, :where(.naru-side-panel) .reading { color: var(--naru-ruby); }
 :where(.naru-side-panel) .reading { display: block; font-size: 0.6em; line-height: 1.4; }
 :where(.naru-side-panel) .levels { margin: var(--naru-space-2) 0; }
+/* Page Mode 分頁：延伸到 panel 左右兩邊，下面整片內容都屬於這個模式 */
+:where(.naru-side-panel) main > .naru-tabs { margin: 0 calc(-1 * var(--naru-space-3)) var(--naru-space-3); padding: 0 var(--naru-space-3); }
 :where(.naru-side-panel) .untranslated { color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
 :where(.naru-side-panel) .unreadable { color: var(--naru-ink-3); text-decoration: line-through; }
 :where(.naru-side-panel) .unreadable-label { color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
@@ -78,7 +76,7 @@
 :where(.naru-side-panel) .translation-status { margin: 0; color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
 :where(.naru-side-panel) .hint { color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
 
-/* 設定、Series Notes 頁（#93：從 ⚙ 選單打開、整個取代 side panel） */
+/* 設定、Series Notes 頁（#93：從 ⚙、作品卡打開，整個取代 side panel） */
 :where(.naru-side-panel) .settings, :where(.naru-side-panel) .notes { margin: var(--naru-space-2) 0; }
 /* 設定頁的小標（翻譯方式、資料） */
 :where(.naru-side-panel) .settings > h2 { margin: var(--naru-space-4) 0 var(--naru-space-1); font-size: var(--naru-text-caption); font-weight: 700; color: var(--naru-ink-3); letter-spacing: 0.04em; }
@@ -118,11 +116,11 @@
 /* 內建翻譯的剩餘頁數（#92）；剩 5 頁以下用警告色 */
 :where(.naru-side-panel) .quota-row { font-size: var(--naru-text-small); color: var(--naru-ink-2); }
 :where(.naru-side-panel) .quota-row--warn { color: var(--naru-warn); }
-/* Transcript 上方的作品卡（#186）：資訊是純文字（灰、無外框），按鈕是 naru-btn；長名稱截斷，不撐出水平捲軸 */
+/* Transcript 上方的作品卡（#186）：白底細框（跟灰色的顯示層級切換分開），資訊是灰字，按鈕是 naru-btn；長名稱截斷，不撐出水平捲軸 */
 :where(.naru-side-panel) .series-card {
   display: flex; flex-direction: column; gap: 2px; min-width: 0;
   padding: var(--naru-space-2) var(--naru-space-3); margin: 0 0 var(--naru-space-2);
-  border-radius: var(--naru-radius-md); background: var(--naru-surface-2);
+  border: 1px solid var(--naru-line); border-radius: var(--naru-radius-md); background: var(--naru-surface);
 }
 /* #191：整張卡（問句列以外）是一顆按鈕，打開作品頁；只有標題＋原名兩行，右邊是 › */
 :where(.naru-side-panel) .series-card__open {
@@ -131,7 +129,7 @@
   width: calc(100% + 2 * var(--naru-space-3)); box-sizing: border-box;
   border: 0; border-radius: var(--naru-radius-md); background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer;
 }
-:where(.naru-side-panel) .series-card__open:hover { background: var(--naru-line); }
+:where(.naru-side-panel) .series-card__open:hover { background: var(--naru-surface-2); }
 :where(.naru-side-panel) .series-card__open:focus-visible { outline: 2px solid var(--naru-accent); outline-offset: -2px; }
 :where(.naru-side-panel) .series-card__chevron { flex: none; font-size: var(--naru-text-body); color: var(--naru-ink-3); }
 :where(.naru-side-panel) .series-card__names, :where(.naru-side-panel) .series-item__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }

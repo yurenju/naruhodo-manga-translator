@@ -4,7 +4,7 @@ import type { PageView } from '../shared/messages.ts';
 import type { RatioRect } from '../shared/page-text.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { SeriesOption } from '../shared/series.ts';
-import { accountPlanView, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView } from './view.ts';
+import { accountPlanView, canTranslate, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView } from './view.ts';
 
 type Transcript = PageView['transcript'];
 type Done = Extract<Transcript, { state: 'done' }>;
@@ -136,7 +136,7 @@ describe('底部的整體狀態列', () => {
 
   it('沒有任何譯文時不顯示', () => {
     expect(overall([])).toBeUndefined();
-    expect(overall([{ state: 'analyzing' }, { state: 'pending' }, { state: 'done', text: TEXT, translated: false }])).toBeUndefined();
+    expect(overall([{ state: 'analyzing' }, { state: 'done', text: TEXT, translated: false }])).toBeUndefined();
   });
 
   it('費用算不出來時顯示「費用未知」', () => {
@@ -195,13 +195,24 @@ describe('翻譯前的設定提示', () => {
   });
 });
 
+describe('送得出翻譯嗎（底部的「翻譯此頁」）', () => {
+  it('目前翻譯模式已登入／有 key，而且同意了才算', () => {
+    expect(canTranslate({ mode: 'hosted', signedIn: true }, true)).toBe(true);
+    expect(canTranslate({ mode: 'ownKey', hasKey: true }, true)).toBe(true);
+    expect(canTranslate({ mode: 'hosted', signedIn: false }, true)).toBe(false);
+    expect(canTranslate({ mode: 'ownKey', hasKey: false }, true)).toBe(false);
+    expect(canTranslate({ mode: 'ownKey', hasKey: true }, false)).toBe(false);
+    expect(canTranslate({ mode: 'hosted', signedIn: true }, undefined)).toBe(false);
+  });
+});
+
 describe('side panel 顯示哪一個畫面', () => {
   it('沒做完 onboarding：只顯示「完成設定」，即使分頁已啟動、或打開過設定頁', () => {
     expect(sidePanelScreen({ setupComplete: false, page: undefined })).toBe('finishSetup');
     expect(sidePanelScreen({ setupComplete: false, page: 'settings' })).toBe('finishSetup');
   });
 
-  it('設定完成：平常是逐字稿；從 ⚙ 選單打開設定、從作品卡打開作品頁時整個換成那一頁', () => {
+  it('設定完成：平常是逐字稿；按 ⚙ 打開設定、從作品卡打開作品頁時整個換成那一頁', () => {
     expect(sidePanelScreen({ setupComplete: true, page: undefined })).toBe('transcript');
     expect(sidePanelScreen({ setupComplete: true, page: 'settings' })).toBe('settings');
     expect(sidePanelScreen({ setupComplete: true, page: 'series' })).toBe('series');

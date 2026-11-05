@@ -15,7 +15,7 @@ import type { Page } from '@playwright/test';
 import { build } from '../../scripts/build.ts';
 import type { TranslationMode } from '../../src/shared/translation-mode.ts';
 import { readTestApiKey, TEST_API_KEY_ENV } from '../../src/testing/test-api-key.ts';
-import { activateOnMockSite, chooseFromPanelMenu, expect, launchWithExtension, openSidePanel, test } from '../fixtures.ts';
+import { activateOnMockSite, expect, launchWithExtension, openSettings, openSidePanel, test } from '../fixtures.ts';
 import { onboardingPage, signInFromPanel } from '../sign-in.ts';
 import { startWorker } from '../worker.ts';
 
@@ -24,7 +24,7 @@ if (!apiKey) console.log(`已跳過：沒有 ${TEST_API_KEY_ENV}（用 npm run s
 test.skip(!apiKey, '沒有測試用 API key');
 
 async function saveKey(panel: Page): Promise<void> {
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
   await settings.getByLabel('Claude API key').fill(apiKey!);
   await settings.getByRole('button', { name: '儲存' }).click();
@@ -46,7 +46,7 @@ test('正式 build（沒有 host_permissions）：「測試連線」成功', asy
       await onboarding.getByRole('button', { name: '同意並儲存' }).click();
       await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
       const panel = await openSidePanel(context, new URL(sw.url()).host);
-      await chooseFromPanelMenu(panel, '設定');
+      await openSettings(panel);
       await panel.getByRole('button', { name: '測試連線' }).click();
       await expect(panel.getByText('連線成功（claude-haiku-5-5）')).toBeVisible({ timeout: 30_000 });
     } finally {
@@ -77,7 +77,7 @@ test.describe('e2e build', () => {
         extensionId,
         mockSite,
         async beforeActivate(panel) {
-          await chooseFromPanelMenu(panel, '設定');
+          await openSettings(panel);
           const settings = panel.getByRole('region', { name: '設定' });
           await settings.getByRole('radio', { name: '內建翻譯' }).check();
           // 在 onboarding 登入時就取得資料使用同意，不另外按說明卡
@@ -93,7 +93,7 @@ test.describe('e2e build', () => {
   });
 });
 
-/** 同意之後才會送出文字。真的 OCR 這時還在跑，自動翻譯是開的，OCR 做完就會翻。 */
+/** 同意之後才會送出文字。真的 OCR 這時還在跑，OCR 做完就會直接翻。 */
 async function acceptConsent(panel: Page): Promise<void> {
   await panel.getByRole('region', { name: '資料使用說明' }).getByRole('button', { name: '同意並啟用翻譯' }).click();
 }

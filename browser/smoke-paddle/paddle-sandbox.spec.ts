@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, FrameLocator, Page } from '@playwright/test';
 import { parseEnvFile } from '../../scripts/paddle-tunnel.ts';
-import { activateOnMockSite, chooseFromPanelMenu, expect, openPanelMenu, test } from '../fixtures.ts';
+import { activateOnMockSite, expect, openSettings, test } from '../fixtures.ts';
 import { signInFromPanel } from '../sign-in.ts';
 import { startWorker } from '../worker.ts';
 
@@ -98,10 +98,9 @@ async function paddleGet<T>(env: Record<string, string>, path: string): Promise<
   return ((await response.json()) as { data: T }).data;
 }
 
-/** 登入一個新帳號（先用免費額度）、關掉自動翻譯（這條不翻譯，env.dev 沒有 Anthropic 的 key）。 */
+/** 登入一個新帳號（先用免費額度）。登入後畫面上的頁會送去翻譯，env.dev 沒有 Anthropic 的 key，翻譯會失敗；這條不看翻譯。 */
 async function signIn(panel: Page, context: BrowserContext, email: string): Promise<void> {
-  await (await openPanelMenu(panel)).getByRole('switch', { name: '自動翻譯' }).uncheck();
-  await chooseFromPanelMenu(panel, '設定');
+  await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
   await settings.getByRole('radio', { name: '內建翻譯' }).check();
   await signInFromPanel(context, () => settings.getByRole('button', { name: '登入' }).click(), email);
@@ -144,7 +143,7 @@ test('Paddle sandbox：side panel 訂閱 → checkout overlay 用測試卡付款
     const email = `smoke-paddle-${Date.now()}@example.com`;
     await signIn(panel, context, email);
     const remaining = panel.getByRole('status', { name: '剩餘額度' });
-    await expect(remaining).toHaveText(/免費額度剩 50 頁/);
+    await expect(remaining).toHaveText(/免費額度剩 \d+ 頁/);
 
     const opened = context.waitForEvent('page');
     await remaining.getByRole('button', { name: '訂閱' }).click();
@@ -166,7 +165,7 @@ test('Paddle sandbox：side panel 訂閱 → checkout overlay 用測試卡付款
 
     // 刪除帳號（#95）：Worker 先對 Paddle 取消訂閱，再刪資料；side panel 回到未登入
     const transactionId = new URL(checkout.url()).searchParams.get('_ptxn')!;
-    await chooseFromPanelMenu(panel, '設定');
+    await openSettings(panel);
     await panel.getByRole('region', { name: '設定' }).getByRole('button', { name: '刪除帳號' }).click();
     await panel.getByRole('region', { name: '刪除帳號' }).getByRole('button', { name: '刪除帳號' }).click();
     await expect(panel.getByRole('region', { name: '設定' }).getByText('尚未登入。')).toBeVisible({ timeout: 30_000 });

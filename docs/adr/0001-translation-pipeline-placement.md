@@ -18,7 +18,7 @@ v1 的流水線（擷取 → 切單頁 → 偵測 Balloon / Loose Text → OCR �
 ## 不直覺的地方
 
 - **LLM 永遠不提供座標。** 看圖模型的框在真實頁面上約有 8% 完全放錯。
-- **讀音一律用 kuromoji，不跟 LLM 要。** 原本讓翻譯呼叫順手回讀音，以為比 kuromoji 準；實測（[#195](https://github.com/yurenju/naruhodo-manga-translator/issues/195)，361 句有漢字或數字的句子盲判）正好相反：翻譯呼叫關了 thinking 又要同時翻譯，回的讀音常留著漢字、換成同義詞或寫進別句的內容，錯誤率 18.6%，kuromoji 是 11.9%。讀音佔翻譯 output 約三分之一，拿掉後右頁譯文從 4.4 s 提早到 3.6 s、左頁從約 8 s 到 6.1 s，費用也少約 9%。最準的是把讀音併進背景的 Notes 呼叫（錯誤率 1.4%），但費用 +48%、讀音比譯文晚約 9 s 才換上，Notes 呼叫也變成同時做兩件事（[ADR 0005](0005-translation-and-notes-in-separate-calls.md) 當初就是為了這個把它們拆開），所以不做。kuromoji 剩下的錯大多是多音字與助數詞的音便（3分、一本、一人），逐字稿標「讀音為推測」。改版之前翻的快取，譯文照用，讀音在命中時換成 kuromoji 的，新舊頁行為一致。
+- **讀音一律用 kuromoji，不跟 LLM 要。** 原本讓翻譯呼叫順手回讀音，以為比 kuromoji 準；實測（[#195](https://github.com/yurenju/naruhodo-manga-translator/issues/195)，361 句有漢字或數字的句子盲判）正好相反：翻譯呼叫關了 thinking 又要同時翻譯，回的讀音常留著漢字、換成同義詞或寫進別句的內容，錯誤率 18.6%，kuromoji 是 11.9%。讀音佔翻譯 output 約三分之一，拿掉後右頁譯文從 4.4 s 提早到 3.6 s、左頁從約 8 s 到 6.1 s，費用也少約 9%。最準的是把讀音併進背景的 Notes 呼叫（錯誤率 1.4%），但費用 +48%、讀音比譯文晚約 9 s 才換上，Notes 呼叫也變成同時做兩件事（[ADR 0005](0005-translation-and-notes-in-separate-calls.md) 當初就是為了這個把它們拆開），所以不做。kuromoji 剩下的錯大多是多音字與助數詞的音便（3分、一本、一人）。讀音全是推測，逐字稿不另外標示（原本標「讀音為推測」，每句都標等於沒標，已拿掉）。改版之前翻的快取，譯文照用，讀音在命中時換成 kuromoji 的，新舊頁行為一致。
 - **LLM 只收文字，不收圖片。** 不做「高品質模式」（Sonnet 看圖每頁約 $0.0135，比 Haiku 文字模式貴約 45 倍）。代價是大型描邊狀聲詞會漏抓，這在 v1 是可以接受的。
 - **OCR 亂碼由 LLM 標記。** 被標成 `unreadable` 的 Balloon 不做覆蓋，保留原圖，並在 side panel 標成「無法辨識」。
 - **Loose Text** 走同一條流水線、同一次翻譯呼叫，但只顯示在 side panel，不做原地覆蓋。

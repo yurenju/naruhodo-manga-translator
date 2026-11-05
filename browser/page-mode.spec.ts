@@ -4,7 +4,7 @@
  * 認頁與快取命中的規則在 page-hash 與 transcribe 的 unit。
  */
 import type { Page, Worker } from '@playwright/test';
-import { activateOnMockSite, chooseFromPanelMenu, expect, openSidePanel, test, testActivate } from './fixtures.ts';
+import { activateOnMockSite, expect, openSidePanel, rescan, test, testActivate } from './fixtures.ts';
 import { overlayTexts, pageMode, shownTranslations } from './overlay-helpers.ts';
 
 test.use({ viewport: null, fakeTranslator: true });
@@ -41,14 +41,14 @@ test('Page Mode 在重開 side panel、新分頁啟動後沿用', async ({ conte
 });
 
 test('學習時重新擷取：頁面上沒蓋東西的截圖也認得是同一頁，不重翻', async ({ context, sw, extensionId, mockSite }) => {
-  const { page, panel } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
+  const { page, panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
   await expect(statusLines(panel)).toHaveText([/^已翻譯・/]);
   await pageMode(panel, '學習').click();
   await expect(shownTranslations(page)).toHaveCount(0);
   expect(await translateCalls(sw)).toBe(1);
 
   const captures = await captureCount(sw);
-  await chooseFromPanelMenu(panel, '重新擷取頁面');
+  await rescan(panel, tabId);
   await expect.poll(() => captureCount(sw)).toBeGreaterThan(captures);
   // 斷言「沒有重翻」：等一段時間確認翻譯次數沒變
   await page.waitForTimeout(1_000);

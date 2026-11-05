@@ -51,7 +51,7 @@ export function Demo({ copy }: { copy: DemoCopy }) {
     return () => clearTimeout(timer);
   }, [phase]);
 
-  // 翻完才畫覆蓋層；停止（再點一次圖示，或 side panel 的「停止」）就整個拿掉
+  // 翻完才畫覆蓋層；停止（再點一次圖示）就整個拿掉
   useEffect(() => {
     const img = image.current;
     if (!view.overlay || !img) return;
@@ -99,7 +99,6 @@ export function Demo({ copy }: { copy: DemoCopy }) {
         hovered={hovered}
         logoSrc={logoSrc}
         onPageModeChange={setPageMode}
-        onStop={() => setPhase('stopped')}
         onScan={noop}
         onTranslate={noop}
         onLineHover={(line) => overlay.current?.highlight(line)}

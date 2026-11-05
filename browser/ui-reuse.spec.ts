@@ -61,7 +61,7 @@ test('SidePanel 放進 shadow root：外觀跟外掛的 side panel 一樣，樣�
   // 網頁上同樣的 main、footer、input、ul[aria-label=Page]，以及 :root 的 tokens 都沒變
   expect(before.tokens).toBe('');
   expect(await site.evaluate(() => globalThis.__testUi.pageStyles())).toEqual(before);
-  await expect(site.locator('.naru-side-panel').getByRole('button', { name: '重新翻譯' })).toBeVisible();
+  await expect(site.locator('.naru-side-panel').getByRole('button', { name: '閱讀', exact: true })).toBeVisible();
 });
 
 test('createOverlay 在一般網頁上獨立呼叫：閱讀畫出譯文，學習滑過 Balloon 出 tooltip', async ({ context }) => {

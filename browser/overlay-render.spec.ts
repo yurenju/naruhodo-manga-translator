@@ -324,7 +324,6 @@ test.describe('覆蓋渲染（ground truth）', () => {
       copy.querySelectorAll('rt, .tip-guess').forEach((rt) => rt.remove());
       return copy.textContent;
     })).toBe(balloon.原文);
-    await expect(tooltip).toContainText('讀音為推測');
     await page.mouse.move(1, 1);
     await expect(tooltip).toBeHidden();
   });

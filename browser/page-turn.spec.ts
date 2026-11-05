@@ -1,10 +1,10 @@
 /**
  * #34：翻頁偵測與自動翻譯的串接。用仿 canvas 網站的翻頁版（一次一頁、RTL、450 ms 動畫）。
  * OCR 用 FakeEngine 重播（ADR 0007），譯文來自 FakeTranslator（SW 的 __translateCalls 記被呼叫幾次）。
- * 翻譯佇列（後進先出、翻走的丟掉）與自動翻譯開關的規則在 transcribe 的 unit。
+ * 翻譯佇列（後進先出、翻走的丟掉）的規則在 transcribe 的 unit。
  */
 import type { Page, Worker } from '@playwright/test';
-import { activateOnMockSite, expect, openPanelMenu, test } from './fixtures.ts';
+import { activateOnMockSite, expect, test } from './fixtures.ts';
 
 test.use({ viewport: null, fakeTranslator: true });
 
@@ -55,21 +55,4 @@ test('翻頁後新 Page 自動翻譯並覆蓋；翻回來命中快取', async ({
   const settled = await captureCount(sw);
   await page.waitForTimeout(2_000);
   expect(await captureCount(sw)).toBeLessThanOrEqual(settled + 1);
-});
-
-test('關掉自動翻譯後翻頁停在未翻譯，按「翻譯此頁」才翻', async ({ context, sw, extensionId, mockSite }) => {
-  const { page, panel } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
-  await expectOverlaid(page, 0);
-
-  const toggle = (await openPanelMenu(panel)).getByRole('switch', { name: '自動翻譯' });
-  await expect(toggle).toBeChecked();
-  await toggle.uncheck();
-  await page.bringToFront();
-  await nextPage(page);
-
-  await expect(panel.getByText('未翻譯（自動翻譯已關閉')).toBeVisible();
-
-  await panel.getByRole('button', { name: '翻譯此頁' }).click();
-  await page.bringToFront();
-  await expectOverlaid(page, 1);
 });

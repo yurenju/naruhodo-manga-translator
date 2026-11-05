@@ -123,7 +123,7 @@
 
 | # | 使用者操作 | 判斷 |
 |---|---|---|
-| I1 | 在 side panel 停止（或再按停止的方式） | trace：`status`（`active: false`），接著 `ctx: content` 的 `content:stop` 是 `overlaysLeft: 0` |
+| I1 | 再點一次外掛圖示停止 | trace：`status`（`active: false`），接著 `ctx: content` 的 `content:stop` 是 `overlaysLeft: 0` |
 | I2 | 停止後翻頁 | trace：沒有新的 `pageTurn`／`scan`／`capture` |
 | I3 | 同上 | **使用者回報**：頁面跟沒裝外掛時一樣，網站功能正常 |
 | I4 | 啟動中換到別的 origin | trace：`status`（`active: false`） |

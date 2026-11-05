@@ -6,8 +6,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, test as base, type BrowserContext, type Locator, type Page, type Worker } from '@playwright/test';
-import type { Message, PipelineConfig, TestConfig } from '../src/shared/messages.ts';
+import { chromium, test as base, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import type { Message, PagesResponse, PipelineConfig, TestConfig } from '../src/shared/messages.ts';
 import { startMockSite, type MockSite } from './mock-site/server.ts';
 
 const EXTENSION_DIR = fileURLToPath(new URL('../dist/e2e', import.meta.url));
@@ -189,22 +189,31 @@ export async function testActivate(fromExtensionPage: Page, tabId: number): Prom
   );
 }
 
-/**
- * side panel 頂部的 ⚙ 選單（#77）：自動翻譯、重新擷取頁面、Series Notes、設定都收在裡面。
- * 已經展開就不再點（再點會收起）。
- */
-export async function openPanelMenu(panel: Page): Promise<Locator> {
-  // 選單展開時，裡面的「設定」也叫這個名字；⚙ 在它前面
-  const toggle = panel.getByRole('button', { name: '設定', exact: true }).first();
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-  const menu = panel.getByRole('group', { name: '設定選單' });
-  await expect(menu).toBeVisible();
-  return menu;
+/** 按頂部的 ⚙ 打開設定頁（整個取代 side panel）。 */
+export async function openSettings(panel: Page): Promise<void> {
+  await panel.getByRole('button', { name: '設定', exact: true }).click();
+  await expect(panel.getByRole('region', { name: '設定' })).toBeVisible();
 }
 
-/** 從 ⚙ 選單按一項（重新擷取頁面、Series Notes、設定）；按了選單就收起，設定與 Series Notes 整個取代 side panel。 */
-export async function chooseFromPanelMenu(panel: Page, item: string): Promise<void> {
-  await (await openPanelMenu(panel)).getByRole('button', { name: item }).click();
+/** e2e 測試入口：等同已啟動時再點一次外掛圖示（停止），但不關掉測試開的 side panel 視窗。 */
+export async function testStop(fromExtensionPage: Page, tabId: number): Promise<void> {
+  await fromExtensionPage.evaluate((message) => chrome.runtime.sendMessage(message), { type: 'test:stop', tabId } satisfies Message);
+}
+
+/**
+ * 畫面上的每一頁都單頁重翻（同過時提示的「重新翻譯」送的訊息）。翻好的頁已經沒有常駐的重翻按鈕，
+ * 測試要讓已翻好的頁再走一次 Translator（帶新的 Notes、換了翻譯方式）時用。
+ */
+export async function retranslateVisible(fromExtensionPage: Page, tabId: number): Promise<void> {
+  await fromExtensionPage.evaluate(async (tabId) => {
+    const { pages } = (await chrome.runtime.sendMessage({ type: 'panel:getPages', tabId })) as PagesResponse;
+    await Promise.all(pages.map((p) => chrome.runtime.sendMessage({ type: 'panel:translate', tabId, pageHash: p.pageHash })));
+  }, tabId);
+}
+
+/** 叫 SW 重新擷取畫面上的 Page（翻頁偵測、模型錯誤的「重試」走的同一條路）；畫面上已經沒有按鈕。 */
+export async function rescan(fromExtensionPage: Page, tabId: number): Promise<void> {
+  await fromExtensionPage.evaluate((message) => chrome.runtime.sendMessage(message), { type: 'panel:scan', tabId } satisfies Message);
 }
 
 /**
