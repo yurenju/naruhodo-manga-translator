@@ -30,7 +30,8 @@ export function resendMailer({ apiKey, from }: { apiKey: string; from: string })
           from,
           to: [email],
           subject: `Naruhodo 登入驗證碼：${code}`,
-          text: `你的 Naruhodo 登入驗證碼是 ${code}，10 分鐘內有效。\n\n如果你沒有要登入 Naruhodo，可以忽略這封信。`,
+          // 驗證碼單獨一行：後面緊接全形標點時，雙擊選取會連標點一起選到
+          text: `你的 Naruhodo 登入驗證碼是：\n\n${code}\n\n10 分鐘內有效。如果你沒有要登入 Naruhodo，可以忽略這封信。`,
         }),
       });
       if (!response.ok) throw new Error(`Resend ${response.status}：${await response.text()}`);
