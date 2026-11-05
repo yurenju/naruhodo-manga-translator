@@ -4,7 +4,7 @@ import type { PageView } from '../shared/messages.ts';
 import type { RatioRect } from '../shared/page-text.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { SeriesOption } from '../shared/series.ts';
-import { accountPlanView, canTranslate, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView } from './view.ts';
+import { accountPageView, accountPlanView, canTranslate, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView } from './view.ts';
 
 type Transcript = PageView['transcript'];
 type Done = Extract<Transcript, { state: 'done' }>;
@@ -223,9 +223,7 @@ describe('side panel 顯示哪一個畫面', () => {
     expect(parentPage('seriesPick')).toBe('series');
   });
 
-  it('刪除帳號是設定頁再進去的一頁：「←」與「取消」回到設定頁；設定、作品頁的「←」回到逐字稿', () => {
-    expect(sidePanelScreen({ setupComplete: true, page: 'deleteAccount' })).toBe('deleteAccount');
-    expect(parentPage('deleteAccount')).toBe('settings');
+  it('設定、作品頁的「←」回到逐字稿', () => {
     expect(parentPage('settings')).toBeUndefined();
     expect(parentPage('series')).toBeUndefined();
   });
@@ -371,3 +369,87 @@ describe('設定頁的方案（#94 畫面定案）', () => {
     });
   });
 });
+
+describe('帳號與訂閱頁（#213）', () => {
+  const hosted = { mode: 'hosted', signedIn: true, justPaid: false, justSignedIn: false, hasOrigin: true } as const;
+
+  it('免費額度用完：warn 說明不提訂閱、進度條是空的、有訂閱段', () => {
+    expect(accountPageView({ ...hosted, quota: free(0) })).toEqual({
+      notice: { tone: 'warn', title: '免費額度已用完', body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。', backToManga: false },
+      plan: { name: '免費', note: '新帳號一次 50 頁，不會過期', quotaLabel: '免費額度', left: '已用完', fraction: 0, warn: true },
+      subscribe: true,
+      ownKeyNote: false,
+      signedOut: undefined,
+    });
+  });
+
+  it('免費還有剩：沒有說明，剩 N / 50 頁，進度條畫剩下的比例；剩 5 頁以下變警告色', () => {
+    expect(accountPageView({ ...hosted, quota: free(30) })).toMatchObject({
+      notice: undefined,
+      plan: { left: '剩 30 / 50 頁', fraction: 0.6, warn: false },
+      subscribe: true,
+    });
+    expect(accountPageView({ ...hosted, quota: free(5) }).plan).toMatchObject({ left: '剩 5 / 50 頁', warn: true });
+  });
+
+  it('訂閱中：方案名「訂閱（年繳）」、本月剩 N / 上限，沒有訂閱段', () => {
+    expect(accountPageView({ ...hosted, quota: subscribed() })).toEqual({
+      notice: undefined,
+      plan: { name: '訂閱（年繳）', note: undefined, quotaLabel: '本月額度', left: '剩 612 / 800 頁', fraction: 0.765, warn: false },
+      subscribe: false,
+      ownKeyNote: false,
+      signedOut: undefined,
+    });
+  });
+
+  it('訂閱者本月用完：warn 說明帶重置日；從漫畫來的才有「回到漫畫」', () => {
+    const view = accountPageView({ ...hosted, quota: subscribed({ remaining: 0 }) });
+    expect(view.notice).toEqual({
+      tone: 'warn',
+      title: '本月額度已用完，11 月 15 日重置',
+      body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音，重置後就會繼續翻。',
+      backToManga: true,
+    });
+    expect(view.plan).toMatchObject({ left: '本月已用完', fraction: 0, warn: true });
+    expect(accountPageView({ ...hosted, hasOrigin: false, quota: subscribed({ remaining: 0 }) }).notice?.backToManga).toBe(false);
+  });
+
+  it('在這頁付完款：info「✓ 訂閱完成」；從漫畫來的才有「回到漫畫」', () => {
+    expect(accountPageView({ ...hosted, justPaid: true, quota: subscribed({ remaining: 800 }) }).notice).toEqual({
+      tone: 'info',
+      title: '✓ 訂閱完成',
+      body: '每月可翻 800 頁。',
+      backToManga: true,
+    });
+    expect(accountPageView({ ...hosted, justPaid: true, hasOrigin: false, quota: subscribed({ remaining: 800 }) }).notice?.backToManga).toBe(false);
+  });
+
+  it('沒登入：說明怎麼登入；正在用自備金鑰的話說不需要登入', () => {
+    expect(accountPageView({ ...hosted, signedIn: false, quota: undefined })).toEqual({
+      notice: undefined,
+      plan: undefined,
+      subscribe: false,
+      ownKeyNote: false,
+      signedOut: '尚未登入。登入後就能用內建翻譯，新帳號有 50 頁免費額度。',
+    });
+    expect(accountPageView({ ...hosted, mode: 'ownKey', signedIn: false, quota: undefined }).signedOut).toBe(
+      '目前用自備金鑰翻譯，不需要登入。想改用內建翻譯的話可以登入，新帳號有 50 頁免費額度。',
+    );
+  });
+
+  it('自備金鑰模式但帳號還登入著：說明不會用到這個帳號的頁數，額度用完也不跳說明', () => {
+    const view = accountPageView({ ...hosted, mode: 'ownKey', quota: free(0) });
+    expect(view).toMatchObject({ ownKeyNote: true, notice: undefined, signedOut: undefined });
+  });
+
+  it('從漫畫來、在這頁登入了還能翻：info「✓ 已登入」與「回到漫畫」', () => {
+    expect(accountPageView({ ...hosted, justSignedIn: true, quota: free(30) }).notice).toEqual({
+      tone: 'info',
+      title: '✓ 已登入',
+      body: '回到漫畫後會接著翻譯。',
+      backToManga: true,
+    });
+    expect(accountPageView({ ...hosted, justSignedIn: true, hasOrigin: false, quota: free(30) }).notice).toBeUndefined();
+  });
+});
+

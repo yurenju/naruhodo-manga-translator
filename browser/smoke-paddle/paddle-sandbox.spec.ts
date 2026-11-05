@@ -3,7 +3,7 @@
  * 本機起三樣東西：Worker（wrangler dev --env dev，Paddle 的 key 由 ~/.config/naruhodo/paddle-sandbox.env 給）、
  * cloudflared quick tunnel（scripts/paddle-tunnel.ts，把 sandbox 的 webhook destination 改成這次的網址）、產品網站（astro dev，checkout 頁）。
  * 流程：登入 → side panel 按「訂閱」→ checkout 頁的 Paddle overlay 用 sandbox 測試卡付款 → 等 webhook → side panel 顯示本月額度 →
- * 設定頁刪除帳號（#95）→ 回到未登入，Paddle sandbox 上那筆訂閱變成排定取消（scheduled_change.action = cancel）。
+ * 帳號與訂閱頁刪除帳號（#95、#213）→ 回到未登入，Paddle sandbox 上那筆訂閱變成排定取消（scheduled_change.action = cancel）。
  * 用真的 checkout（不用 Simulations API）：要驗的就是 custom_data 帶 Account id → webhook → Worker 狀態這一段。
  * Paddle 的付款畫面如果出現 CAPTCHA 或其他真人驗證，測試不代解，直接失敗並說明卡在哪一步。
  * 設定檔不存在時跳過。秘密只寫進只有這個測試用的暫存檔交給 wrangler，不印出。
@@ -163,12 +163,13 @@ test('Paddle sandbox：side panel 訂閱 → checkout overlay 用測試卡付款
       .toMatch(/^本月剩 800 頁・\d+ 月 \d+ 日重置$/);
     console.log('side panel：', await remaining.innerText());
 
-    // 刪除帳號（#95）：Worker 先對 Paddle 取消訂閱，再刪資料；side panel 回到未登入
+    // 刪除帳號（#95）：在帳號與訂閱頁（#213）；Worker 先對 Paddle 取消訂閱，再刪資料；帳號頁回到未登入
     const transactionId = new URL(checkout.url()).searchParams.get('_ptxn')!;
-    await openSettings(panel);
-    await panel.getByRole('region', { name: '設定' }).getByRole('button', { name: '刪除帳號' }).click();
-    await panel.getByRole('region', { name: '刪除帳號' }).getByRole('button', { name: '刪除帳號' }).click();
-    await expect(panel.getByRole('region', { name: '設定' }).getByText('尚未登入。')).toBeVisible({ timeout: 30_000 });
+    const account = await context.newPage();
+    await account.goto(`chrome-extension://${extensionId}/account.html`);
+    await account.getByRole('region', { name: '刪除帳號' }).getByRole('button', { name: '刪除帳號' }).click();
+    await account.getByRole('region', { name: '刪除帳號' }).getByRole('button', { name: '刪除帳號' }).click();
+    await expect(account.getByRole('button', { name: '登入' })).toBeVisible({ timeout: 30_000 });
 
     const { subscription_id: subscriptionId } = await paddleGet<{ subscription_id: string | null }>(env, `/transactions/${transactionId}`);
     expect(subscriptionId).toBeTruthy();
