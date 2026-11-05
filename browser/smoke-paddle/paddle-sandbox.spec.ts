@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, FrameLocator, Page } from '@playwright/test';
 import { parseEnvFile } from '../../scripts/paddle-tunnel.ts';
-import { activateOnMockSite, expect, openSettings, test } from '../fixtures.ts';
+import { activateOnMockSite, expect, openSettings, selectTranslationMode, test } from '../fixtures.ts';
 import { signInFromPanel } from '../sign-in.ts';
 import { startWorker } from '../worker.ts';
 
@@ -102,7 +102,7 @@ async function paddleGet<T>(env: Record<string, string>, path: string): Promise<
 async function signIn(panel: Page, context: BrowserContext, email: string): Promise<void> {
   await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
-  await settings.getByRole('radio', { name: '內建翻譯' }).check();
+  await selectTranslationMode(panel, '內建翻譯');
   await signInFromPanel(context, () => settings.getByRole('button', { name: '登入' }).click(), email);
   await panel.getByRole('button', { name: '返回' }).click();
 }

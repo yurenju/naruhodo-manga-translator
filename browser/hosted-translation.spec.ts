@@ -21,7 +21,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 import { createHostedAccountClient } from '../src/shared/hosted-account-client.ts';
 import { DEV_FREE_PAGES_PATH, FREE_PAGES, PADDLE_WEBHOOK_PATH } from '../src/shared/hosted-api.ts';
 import { PRACTICE_URL } from '../src/ui/links.ts';
-import { activateOnMockSite, expect, openSettings, retranslateVisible, test } from './fixtures.ts';
+import { activateOnMockSite, expect, openSettings, retranslateVisible, selectTranslationMode, test } from './fixtures.ts';
 import { VERTICAL_VIEW_HEIGHT } from './mock-site/vertical-scroll.ts';
 import { finishOnboarding, lastCode, onboardingPage, signInFromPanel, signInWithEmail } from './sign-in.ts';
 import { WORKER_URL } from './worker.ts';
@@ -70,7 +70,7 @@ test.describe('全新安裝', () => {
     // 自備金鑰：設定頁切換（不會登出），同一頁重新翻譯改走 offscreen
     await openSettings(panel);
     const settings = panel.getByRole('region', { name: '設定' });
-    await settings.getByRole('radio', { name: '自備金鑰' }).check();
+    await selectTranslationMode(panel, '自備金鑰');
     await expect(settings).toContainText(`帳號 ${email} 仍然登入著`);
     await settings.getByLabel('Claude API key').fill('sk-ant-e2e-not-a-real-key-WXYZ');
     await settings.getByRole('button', { name: '儲存' }).click();
@@ -160,7 +160,7 @@ async function sendSubscriptionCreated(accountId: string, customerId = `ctm_brow
 async function signInOnPanel(panel: Page, context: BrowserContext, email: string): Promise<void> {
   await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
-  await settings.getByRole('radio', { name: '內建翻譯' }).check();
+  await selectTranslationMode(panel, '內建翻譯');
   // 設定頁的「登入」打開 onboarding 的第 2 步
   await signInFromPanel(context, () => settings.getByRole('button', { name: '登入' }).click(), email);
   await expect(settings.getByText(email)).toBeVisible();

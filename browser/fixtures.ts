@@ -195,6 +195,16 @@ export async function openSettings(panel: Page): Promise<void> {
   await expect(panel.getByRole('region', { name: '設定' })).toBeVisible();
 }
 
+/**
+ * 在設定頁選翻譯方式。radio 是 controlled：寫進 chrome.storage、watch 回來才勾上，中間 side panel 重新 render
+ * （例如畫面上的頁正在辨識）會先把它改回去，所以不用 check()（點完立刻要看到勾上），改成點了等它勾上。
+ */
+export async function selectTranslationMode(panel: Page, name: '內建翻譯' | '自備金鑰'): Promise<void> {
+  const radio = panel.getByRole('region', { name: '設定' }).getByRole('radio', { name });
+  await radio.click();
+  await expect(radio).toBeChecked();
+}
+
 /** e2e 測試入口：等同已啟動時再點一次外掛圖示（停止），但不關掉測試開的 side panel 視窗。 */
 export async function testStop(fromExtensionPage: Page, tabId: number): Promise<void> {
   await fromExtensionPage.evaluate((message) => chrome.runtime.sendMessage(message), { type: 'test:stop', tabId } satisfies Message);
