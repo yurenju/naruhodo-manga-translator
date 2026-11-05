@@ -290,7 +290,7 @@ test('免費額度用完：Worker 回額度不足後，side panel 顯示用完�
   // 不是「翻譯失敗」：原文、kuromoji 推測的讀音與「未翻譯」
   const transcript = firstTranscript(panel);
   await expect(panel.getByText(/翻譯失敗/)).toHaveCount(0);
-  await expect(transcript.getByText('讀音為推測').first()).toBeVisible();
+  await expect(transcript.locator('rt').first()).toBeVisible();
   await expect(transcript.getByText('未翻譯').first()).toBeVisible();
 
   // 沒開側邊欄的讀者看的是 Page 右上角（#185）：紅標籤點了打開 onboarding 的選擇方案，完成後回到這個分頁

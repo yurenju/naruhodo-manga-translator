@@ -268,7 +268,7 @@ const PAGE_MODES: readonly SegmentOption<PageMode>[] = [
  * 學習時頁面不擦字、不畫譯文，翻譯照常進行。
  */
 function PageModeSwitch({ mode, choose }: { mode: PageMode; choose: (mode: PageMode) => void }) {
-  return <SegmentedControl label="頁面模式" size="lg" options={PAGE_MODES} value={mode} onChange={choose} />;
+  return <SegmentedControl label="頁面模式" variant="tabs" options={PAGE_MODES} value={mode} onChange={choose} />;
 }
 
 /** 標題：logo（外掛 icon 的小尺寸母檔）＋名稱。 */

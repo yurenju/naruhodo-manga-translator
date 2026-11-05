@@ -32,21 +32,20 @@ test('閱讀時切換三種顯示層級，逐字稿內容正確', async ({ conte
   await expect(panel.getByRole('group', { name: '顯示層級' }).getByRole('button')).toHaveText(['只看譯文', '原文＋譯文', '加振り仮名']);
   await expect(panel.getByText('ルビ為 LLM 推測')).toHaveCount(0);
 
-  // 預設：加振り仮名（原文帶ルビ＋譯文），讀音是推測的那行標徽章
+  // 預設：加振り仮名（原文帶ルビ＋譯文）；讀音全是推測，不另外標徽章
   await expect(level(panel, '加振り仮名')).toHaveAttribute('aria-pressed', 'true');
   await expect(original(greeting).locator('rt')).toHaveText(['きょう', 'はや']);
   await expect(original(greeting).locator('ruby').first()).toContainText('今日');
-  await expect(greeting.getByText('讀音為推測', { exact: true })).toBeVisible();
+  await expect(transcript.getByText('讀音為推測')).toHaveCount(0);
   await expect(translation(greeting)).toHaveText(GREETING_ZH);
-  // 字級：日文約 17px、中文約 15px
+  // 字級：日文約 17px、中文退一階 14px
   await expect(original(greeting)).toHaveCSS('font-size', '17px');
-  await expect(translation(greeting)).toHaveCSS('font-size', '15px');
+  await expect(translation(greeting)).toHaveCSS('font-size', '14px');
 
   await level(panel, '原文＋譯文').click();
   await expect(level(panel, '原文＋譯文')).toHaveAttribute('aria-pressed', 'true');
   await expect(level(panel, '加振り仮名')).toHaveAttribute('aria-pressed', 'false');
   await expect(transcript.locator('rt')).toHaveCount(0);
-  await expect(transcript.getByText('讀音為推測')).toHaveCount(0);
   await expect(original(greeting)).toContainText('今日は早いね');
   await expect(translation(greeting)).toHaveText(GREETING_ZH);
 
@@ -76,7 +75,6 @@ test('學習時逐字稿藏譯文，滑過「譯」區塊才出現；振り仮�
   const furigana = panel.getByRole('switch', { name: '逐字稿加振り仮名' });
   await expect(furigana).toBeChecked();
   await expect(original(greeting).locator('rt')).toHaveText(['きょう', 'はや']);
-  await expect(greeting.getByText('讀音為推測', { exact: true })).toBeVisible();
   // 譯文藏在「譯」區塊後面
   await expect(transcript).not.toContainText(GREETING_ZH);
   const reveal = greeting.getByRole('group', { name: '譯' });
@@ -88,11 +86,10 @@ test('學習時逐字稿藏譯文，滑過「譯」區塊才出現；振り仮�
   await expect(transcript).not.toContainText(GREETING_ZH);
   await expect(reveal).toContainText('滑過這裡看譯文');
 
-  // 關掉振り仮名：ルビ與推測徽章都不見，原文還在、譯文仍藏著
+  // 關掉振り仮名：ルビ不見，原文還在、譯文仍藏著
   await furigana.click();
   await expect(furigana).not.toBeChecked();
   await expect(transcript.locator('rt')).toHaveCount(0);
-  await expect(transcript.getByText('讀音為推測')).toHaveCount(0);
   await expect(original(greeting)).toContainText('今日は早いね');
   await expect(transcript).not.toContainText(GREETING_ZH);
   await furigana.click();
@@ -135,7 +132,6 @@ test('滑過頁面 Balloon：頁面出 tooltip、panel 對應行高亮；滑過 
   await page.mouse.move(center.x, center.y);
   await expect(tooltip).toHaveCount(1);
   await expect(tooltip).toContainText(GREETING_ZH);
-  await expect(tooltip).toContainText('讀音為推測');
   await expect(tooltip.locator('rt')).toHaveText(['きょう', 'はや']);
   await expect(line).toHaveClass(/\bhl\b/);
   await expect(panel.locator('[aria-label="逐字稿"] li.hl')).toHaveCount(1);
@@ -193,7 +189,6 @@ test('Page Mode 學習：頁面保留日文；滑過 Balloon 的 tooltip 有原�
   await expect(tooltip).toHaveCount(1);
   await expect(tooltip.locator('rt')).toHaveText(['きょう', 'はや']);
   await expect(tooltip).toContainText('今日');
-  await expect(tooltip).toContainText('讀音為推測');
   await expect(tooltip).not.toContainText(GREETING_ZH);
   await expect(line).toHaveClass(/\bhl\b/);
 

@@ -65,9 +65,6 @@ function Ruby({ ja, display }: { ja: string; display: RubyDisplay }) {
   );
 }
 
-/** 畫出來有沒有讀音（全是假名的句子沒有ルビ，也就不標「讀音為推測」）。 */
-const hasReading = (display: RubyDisplay) => 'fallback' in display || display.segments.some((s) => s.rt !== undefined);
-
 export interface TranscriptProps {
   text: PageText;
   translated: boolean;
@@ -100,14 +97,13 @@ export function Transcript({ text, translated, display, hoveredId, onHover }: Tr
         const unreadable = translated && line.unreadable;
         const hasTranslation = translated && line.譯文 !== '';
         const showOriginal = unreadable || !translationOnly || !hasTranslation;
-        // 要畫ルビ的句子才對齊讀音，結果同時拿來畫ルビ與判斷要不要標「讀音為推測」
+        // 要畫ルビ的句子才對齊讀音（讀音全是 LLM 推測，不另外標示）
         const ruby = showRuby && !unreadable ? rubyDisplay(line.原文, line.讀音) : undefined;
         const shownTranslation = (
           <span lang="zh-Hant" class="translation">
             {line.譯文}
           </span>
         );
-        const guessed = ruby !== undefined && line.讀音 !== '' && hasReading(ruby);
         return (
           <li
             key={line.id}
@@ -120,10 +116,9 @@ export function Transcript({ text, translated, display, hoveredId, onHover }: Tr
                 {ruby ? <Ruby ja={line.原文} display={ruby} /> : line.原文}
               </span>
             )}
-            {(line.loose || guessed) && (
+            {line.loose && (
               <span class="badges">
-                {line.loose && <Badge tone="loose">框外文字</Badge>}
-                {guessed && <Badge tone="warn">讀音為推測</Badge>}
+                <Badge tone="loose">框外文字</Badge>
               </span>
             )}
             {unreadable && <span class="unreadable-label">無法辨識 · 未覆蓋</span>}
