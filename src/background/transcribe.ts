@@ -573,8 +573,9 @@ export function createTranscriber(deps: TranscriberDeps) {
         return job;
       });
       for (const { record, page, index } of slices) requestSlice(record, page, capture!, { tab, batch, index, group: groupOf(record) });
-      // 這一批記成最近看過的（之後的頁拿來當 Prior Pages）。排程時 Prior Pages 的位置取自 Series 決定前的紀錄：
-      // 猜到另一部（see 從頭記）就不帶上一部的頁（#222）。在 seriesDecided 之前跑（先接上 seriesPending），① 送出前就換好。
+      // 這一批記成最近看過的（之後的頁拿來當 Prior Pages）。上面排程時 Prior Pages 的位置取自 Series 決定前的紀錄；
+      // 猜到另一部時 see() 換成新的紀錄，不在裡面的（上一部的頁）就不帶（#222）。這個 then 比 seriesDecided 的 await
+      // 先接上，所以 ① 送出前就篩好了。tab 已停止時紀錄是空的、全部篩掉也無妨：那些工作不會送出。
       void seriesPending.then((seriesId) => {
         if (isCurrent(tab)) see(tab, seriesId, pages);
         const history = seen.get(tab.tabId)?.pages ?? [];
