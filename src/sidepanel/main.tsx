@@ -15,19 +15,17 @@ import type {
   StatusResponse,
   TestConnectionResponse,
 } from '../shared/messages.ts';
-import { deleteAccount, signOut, type AccountExitDeps } from '../shared/account-exit.ts';
+import { accountUrl } from '../shared/account-page.ts';
 import type { SeriesOption } from '../shared/series.ts';
-import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
+import { subscribe, useHostedQuota, useHostedSession, usePaymentAction, useTranslationMode } from '../shared/hosted-account-hooks.ts';
 import type { Quota } from '../shared/hosted-api.ts';
-import { clearHostedSession, HOSTED_API_URL, loadHostedSession, type HostedSession } from '../shared/hosted-session.ts';
+import type { HostedSession } from '../shared/hosted-session.ts';
 import { dismissHostedHint, onboardingUrl, watchHostedHint, watchOnboarding, type OnboardingProgress } from '../shared/onboarding.ts';
 import { DEFAULT_PAGE_MODE, savePageMode, watchPageMode, type PageMode } from '../shared/page-mode.ts';
-import { dismissSubscribedNotice, openPayment, watchSubscribedNotice } from '../shared/payment-return.ts';
-import { saveTranslationMode, watchTranslationMode, type TranslationMode } from '../shared/translation-mode.ts';
+import { dismissSubscribedNotice, watchSubscribedNotice } from '../shared/payment-return.ts';
+import { saveTranslationMode, type TranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, RadioCard } from '../ui/components.tsx';
-import { DeleteAccount } from '../ui/delete-account.tsx';
 import { SidePanel, type SeriesPage } from '../ui/side-panel.tsx';
-import { PaymentUnavailable, SubscribeButton } from '../ui/subscribe-button.tsx';
 import { accountPlanView, seriesActions } from '../ui/view.ts';
 import { ClearCache, SeriesNotesSection } from './series-notes.tsx';
 
@@ -43,8 +41,6 @@ function readTabId(): number | undefined {
 const send = <R,>(message: Message) => chrome.runtime.sendMessage<Message, R>(message);
 
 const apiKeys = indexedDbApiKeyStore();
-
-const hostedAccount = createHostedAccountClient({ apiUrl: HOSTED_API_URL, fetch: (url, init) => fetch(url, init) });
 
 /**
  * 匯出／匯入 JSON（#38）：全部 Series、網址模式、Series Notes、翻譯快取，給兩台電腦之間搬資料；不含 API key。
@@ -127,65 +123,10 @@ function useSubscribedNotice(): boolean {
 const openOnboarding = (step?: 'signIn') => void chrome.tabs.create({ url: onboardingUrl(step) });
 
 /**
- * 「訂閱」：向 Worker 建立 checkout，請 SW 用新分頁打開產品網站的 checkout 頁（#94），付款後 SW 帶讀者回到 tabId（#176）。
- * 已經訂閱中就重讀額度。失敗回 false。tabId＝這個 side panel 跟著的分頁；設定頁沒有傳，用這個視窗正在看的分頁。
+ * 設定頁的帳號摘要（#213）：已登入時是 email＋方案 Badge、剩餘說明與「管理帳號 →」（打開帳號與訂閱頁；訂閱、管理訂閱、登出、刪除帳號都在那裡）；
+ * 沒登入時是「登入」，打開 onboarding 的第 2 步。
  */
-async function subscribe(session: HostedSession, tabId?: number): Promise<boolean> {
-  const result = await hostedAccount.checkout(session.token, 'zh-tw');
-  if (result.ok) void openPayment(result.url, 'panel', tabId);
-  else if (result.reason === 'alreadySubscribed') void chrome.runtime.sendMessage({ type: 'quota:changed' } satisfies Message).catch(() => {});
-  else {
-    console.error('建立 checkout 失敗', result.message);
-    return false;
-  }
-  return true;
-}
-
-/** 「管理訂閱」：向 Worker 建立 Paddle customer portal session，用新分頁打開（取消訂閱、更新付款方式、收據）。失敗回 false。 */
-async function managePlan(session: HostedSession): Promise<boolean> {
-  const result = await hostedAccount.portal(session.token);
-  if (result.ok) void chrome.tabs.create({ url: result.url });
-  else console.error('打開 customer portal 失敗', result.message);
-  return result.ok;
-}
-
-/** 「訂閱」「管理訂閱」的按鈕：失敗時記下來讓畫面顯示錯誤（#156），再按一次先清掉。 */
-function usePaymentAction(): [failed: boolean, run: (action: () => Promise<boolean>) => void] {
-  const [failed, setFailed] = useState(false);
-  const run = (action: () => Promise<boolean>) => {
-    setFailed(false);
-    void action().then((ok) => setFailed(!ok));
-  };
-  return [failed, run];
-}
-
-/** 這個 side panel 自己改了 session：runtime 訊息不會送回給發送的一方，自己的 useHostedSession 另外通知。 */
-const sessionChangedHere = new EventTarget();
-
-/** 登出、刪除帳號之後：清掉本機的 session，廣播給 SW 與其他 side panel，也通知自己。 */
-const accountExit: AccountExitDeps = {
-  auth: hostedAccount,
-  clearSession: () => clearHostedSession().then(() => {}),
-  broadcast: () => {
-    sessionChangedHere.dispatchEvent(new Event('change'));
-    void chrome.runtime.sendMessage({ type: 'session:changed' } satisfies Message).catch(() => {});
-  },
-};
-
-/**
- * 設定頁「內建翻譯」卡片展開的內容（#93、#94、#95 畫面定案）：已登入時是 email＋方案 Badge、剩餘說明，免費是「訂閱」、訂閱者是「管理訂閱」，
- * 再來是「登出」（直接登出，不確認）與 ghost 紅字「刪除帳號」（換到確認頁）；沒登入時是「登入」，打開 onboarding 的第 2 步。
- */
-function HostedAccount({
-  session,
-  quota,
-  onDeleteAccount,
-}: {
-  session: HostedSession | null;
-  quota: Quota | undefined;
-  onDeleteAccount: () => void;
-}) {
-  const [paymentFailed, runPayment] = usePaymentAction();
+function HostedAccount({ session, quota }: { session: HostedSession | null; quota: Quota | undefined }) {
   if (!session)
     return (
       <>
@@ -212,50 +153,18 @@ function HostedAccount({
           ))}
         </p>
       )}
-      {paymentFailed && <PaymentUnavailable />}
       <div class="actions">
-        {plan?.subscribed ? (
-          <Button onClick={() => runPayment(() => managePlan(session))}>管理訂閱</Button>
-        ) : (
-          <SubscribeButton variant="primary" onSubscribe={plan && (() => runPayment(() => subscribe(session)))} />
-        )}
-        <Button onClick={() => void signOut(accountExit, session.token)}>登出</Button>
-        <Button variant="ghost" class="naru-text-danger" onClick={onDeleteAccount}>
-          刪除帳號
-        </Button>
+        <Button onClick={() => void chrome.tabs.create({ url: accountUrl() })}>管理帳號 →</Button>
       </div>
     </>
   );
-}
-
-/** 刪除帳號的確認頁（#95）：刪除成功後回到設定頁，那時已經是未登入。 */
-function DeleteAccountPage({ session, onDone }: { session: HostedSession | null; onDone: () => void }) {
-  const [deleting, setDeleting] = useState(false);
-  const [failed, setFailed] = useState(false);
-  // 別的 side panel 已經登出、或刪除成功之後：這一頁沒有帳號可以刪了
-  useEffect(() => {
-    if (!session) onDone();
-  }, [session]);
-  if (!session) return null;
-
-  async function confirm(token: string) {
-    setDeleting(true);
-    setFailed(false);
-    const result = await deleteAccount(accountExit, token);
-    setDeleting(false);
-    if (result.ok) return;
-    console.error('刪除帳號失敗', result.message);
-    setFailed(true);
-  }
-
-  return <DeleteAccount email={session.email} deleting={deleting} failed={failed} onConfirm={() => void confirm(session.token)} onCancel={onDone} />;
 }
 
 /**
  * 設定頁「自備金鑰」卡片展開的內容（spec #27 第 5 節）：API key 存在外掛 origin 的 IndexedDB，只顯示末四碼。
  * side panel 自己讀寫 key；「測試連線」由 offscreen 讀 key 呼叫 API，訊息裡不帶 key。
  */
-function OwnKey({ session, onKeyChanged }: { session: HostedSession | null; onKeyChanged: (hasKey: boolean) => void }) {
+function OwnKey({ onKeyChanged }: { onKeyChanged: (hasKey: boolean) => void }) {
   /** undefined＝還在讀；''＝沒有 key */
   const [suffix, setSuffix] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState('');
@@ -324,7 +233,6 @@ function OwnKey({ session, onKeyChanged }: { session: HostedSession | null; onKe
       <p class="hint">
         建議在 Anthropic Console 為這個外掛建立專用的 API key，並為它的 workspace 設定花費上限。key 只存在這台電腦的外掛裡，不會交給網頁，也不會出現在匯出檔。
       </p>
-      {session && <p class="hint">帳號 {session.email} 仍然登入著；切回內建翻譯就能接著用。</p>}
     </>
   );
 }
@@ -338,13 +246,11 @@ function Settings({
   session,
   quota,
   onKeyChanged,
-  onDeleteAccount,
 }: {
   mode: TranslationMode;
   session: HostedSession | null;
   quota: Quota | undefined;
   onKeyChanged: (hasKey: boolean) => void;
-  onDeleteAccount: () => void;
 }) {
   return (
     <section aria-label="設定" class="settings">
@@ -357,7 +263,7 @@ function Settings({
           checked={mode === 'hosted'}
           onSelect={() => void saveTranslationMode('hosted')}
         >
-          <HostedAccount session={session} quota={quota} onDeleteAccount={onDeleteAccount} />
+          <HostedAccount session={session} quota={quota} />
         </RadioCard>
         <RadioCard
           name="translation-mode"
@@ -366,80 +272,24 @@ function Settings({
           checked={mode === 'ownKey'}
           onSelect={() => void saveTranslationMode('ownKey')}
         >
-          <OwnKey session={session} onKeyChanged={onKeyChanged} />
+          <OwnKey onKeyChanged={onKeyChanged} />
         </RadioCard>
       </div>
+      {mode === 'ownKey' && session && (
+        // 自備金鑰時內建翻譯的卡片收著：還登入著的帳號另外列出來，才找得到「管理帳號」與登出（#213）
+        <>
+          <h2>帳號</h2>
+          <div class="naru-radio-card">
+            <HostedAccount session={session} quota={quota} />
+          </div>
+          <p class="hint">目前用自備金鑰翻譯，不會用到這個帳號的頁數；切回內建翻譯就能接著用。</p>
+        </>
+      )}
       <h2>資料</h2>
       <p class="hint">在兩台電腦之間搬作品、角色與用語與翻譯快取（不含 API key 與帳號）。</p>
       <Backup />
     </section>
   );
-}
-
-/** undefined＝還在讀。 */
-function useTranslationMode(): TranslationMode | undefined {
-  const [mode, setMode] = useState<TranslationMode | undefined>(undefined);
-  useEffect(() => watchTranslationMode(setMode), []);
-  return mode;
-}
-
-/**
- * Hosted Translation 的 session（IndexedDB）；undefined＝還在讀，null＝沒登入。
- * onboarding 頁登入、或 SW 發現 token 失效而清掉時，收到 session:changed 重新讀；這個 side panel 自己登出、刪除帳號時也重新讀。
- */
-function useHostedSession(): HostedSession | null | undefined {
-  const [session, setSession] = useState<HostedSession | null | undefined>(undefined);
-  useEffect(() => {
-    const refresh = () => void loadHostedSession().then((s) => setSession(s ?? null));
-    const onMessage = (message: Message) => {
-      if (message.type === 'session:changed') refresh();
-    };
-    chrome.runtime.onMessage.addListener(onMessage);
-    sessionChangedHere.addEventListener('change', refresh);
-    refresh();
-    return () => {
-      chrome.runtime.onMessage.removeListener(onMessage);
-      sessionChangedHere.removeEventListener('change', refresh);
-    };
-  }, []);
-  return session;
-}
-
-/**
- * 內建翻譯的剩餘額度（#92）：登入後向 Worker 讀；SW 說額度變了（翻譯扣了一頁、Worker 說用完）就重新讀。
- * side panel 重新取得焦點、或重新變成可見時也重讀（#94）：在新分頁付完款回來，就看到已訂閱。side panel 跟著漫畫分頁，
- * 切到付款分頁時它被隱藏，切回來時不一定有 focus 事件，所以兩個都聽。
- * 沒登入或讀不到時是 undefined（token 失效由 SW 的 Hosted Translator 處理，這裡不管）。
- */
-function useHostedQuota(session: HostedSession | null | undefined): Quota | undefined {
-  const [quota, setQuota] = useState<Quota | undefined>(undefined);
-  const token = session?.token;
-  useEffect(() => {
-    setQuota(undefined);
-    if (!token) return;
-    let current = true;
-    const refresh = () =>
-      void hostedAccount.account(token).then((r) => {
-        if (current && r.ok) setQuota(r.account.quota);
-      });
-    const onMessage = (message: Message) => {
-      if (message.type === 'quota:changed') refresh();
-    };
-    chrome.runtime.onMessage.addListener(onMessage);
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') refresh();
-    };
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', onVisible);
-    refresh();
-    return () => {
-      current = false;
-      chrome.runtime.onMessage.removeListener(onMessage);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [token]);
-  return quota;
 }
 
 /** 目前的 Page Mode 與切換函式；別的 side panel 切了也跟著變。只在 App 訂閱一次，往下傳。 */
@@ -796,7 +646,7 @@ function App({ tabId }: { tabId: number | undefined }) {
       hostedHint={hostedHint}
       onDismissHostedHint={() => void dismissHostedHint()}
       quota={translationMode === 'hosted' ? quota : undefined}
-      onSubscribe={session ? () => runPayment(() => subscribe(session, tabId)) : undefined}
+      onSubscribe={session ? () => runPayment(() => subscribe(session, 'panel', tabId)) : undefined}
       paymentFailed={paymentFailed}
       subscribedNotice={subscribedNotice}
       onDismissSubscribedNotice={() => void dismissSubscribedNotice()}
@@ -811,10 +661,7 @@ function App({ tabId }: { tabId: number | undefined }) {
           />
         )
       }
-      renderSettings={(_close, openDeleteAccount) => (
-        <Settings mode={translationMode} session={session} quota={quota} onKeyChanged={setHasKey} onDeleteAccount={openDeleteAccount} />
-      )}
-      renderDeleteAccount={(back) => <DeleteAccountPage session={session} onDone={back} />}
+      renderSettings={() => <Settings mode={translationMode} session={session} quota={quota} onKeyChanged={setHasKey} />}
       renderSeries={(page, navigate) => {
         if (tabId === undefined) return null;
         if (page === 'seriesPick') return <SeriesPickView tabId={tabId} navigate={navigate} />;

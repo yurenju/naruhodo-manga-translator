@@ -7,13 +7,14 @@
  * 安裝時怎麼決定翻譯模式與 onboarding 在 src/background/install.test.ts。
  * 兩條路的譯文都來自同一份 ground truth，所以用 __translateCalls（只有走 offscreen 時才加）分辨走了哪一條。
  * 免費額度用完（#92）：Worker 回 402 → SW 的 Hosted Translator → side panel 重新向 Worker 讀額度，這串訊息與 API 契約只有這裡測得到；
- * Page 上的紅標籤（#185）：402 → transcript 的 quotaExhausted → content script 的小標籤 → 點了 SW 打開 onboarding 的選擇方案；
+ * Page 上的紅標籤（#185）：402 → transcript 的 quotaExhausted → content script 的小標籤 → 點了 SW 打開帳號與訂閱頁（#213）；
  * 顯示規則（哪一行文字、警告色、按鈕）在 src/ui/view.test.ts。
  * 訂閱（#94、#176）：side panel 的「訂閱」向 Worker 建立 checkout、請 SW 用新分頁打開 checkout 頁 → Paddle 的 webhook 送到 Worker →
  * SW 查到訂閱中就關掉付款分頁、side panel 重讀額度、顯示本月額度。Worker 的 Paddle 是假的（env.test），webhook 由測試用 env.test 的 secret 簽好送出；
  * 真的 Paddle sandbox 只在 `npm run smoke:paddle`。webhook 與額度的規則在 worker/src/subscription.test.ts。
  * 已訂閱的帳號（#167）：onboarding 的第 3 步一進來就向 Worker 讀方案，訂閱中就不顯示方案選擇。
- * 刪除帳號（#95）：設定頁 → 確認頁 → Worker 的 DELETE /v1/account → 清掉 session → side panel 回到未登入。刪除的規則在
+ * 帳號與訂閱頁（#213）：設定頁的「管理帳號 →」打開帳號頁；刪除帳號（#95）在帳號頁 → 確認畫面 → Worker 的 DELETE /v1/account →
+ * 清掉 session → 帳號頁與 side panel 都回到未登入。帳號頁顯示什麼在 src/ui/view.test.ts，刪除的規則在
  * worker/src/account-deletion.test.ts，清掉 session 的流程在 src/shared/account-exit.test.ts。
  */
 import { createHmac } from 'node:crypto';
@@ -71,7 +72,9 @@ test.describe('全新安裝', () => {
     await openSettings(panel);
     const settings = panel.getByRole('region', { name: '設定' });
     await settings.getByRole('radio', { name: '自備金鑰' }).check();
-    await expect(settings).toContainText(`帳號 ${email} 仍然登入著`);
+    // 內建翻譯的卡片收起來了：還登入著的帳號另外列出來，看得到「管理帳號 →」（#213）
+    await expect(settings).toContainText(`帳號${email}`);
+    await expect(settings.getByRole('button', { name: '管理帳號 →' })).toBeVisible();
     await settings.getByLabel('Claude API key').fill('sk-ant-e2e-not-a-real-key-WXYZ');
     await settings.getByRole('button', { name: '儲存' }).click();
     await panel.getByRole('button', { name: '返回' }).click();
@@ -199,8 +202,16 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   await openSettings(panel);
   const settings = panel.getByRole('region', { name: '設定' });
   await expect(settings.getByText('訂閱中', { exact: true })).toBeVisible();
-  await expect(settings.getByRole('button', { name: '管理訂閱' })).toBeVisible();
+  await expect(settings.getByRole('button', { name: '管理帳號 →' })).toBeVisible();
 });
+
+/** 設定頁的「管理帳號 →」打開帳號與訂閱頁（#213）。 */
+async function openAccountFromSettings(panel: Page, context: BrowserContext): Promise<Page> {
+  await openSettings(panel);
+  const opened = context.waitForEvent('page');
+  await panel.getByRole('region', { name: '設定' }).getByRole('button', { name: '管理帳號 →' }).click();
+  return opened;
+}
 
 /** 本機 Worker 的開發端點：把這個 email 的 Account 的免費額度設成 remaining。 */
 async function setFreePages(email: string, remaining: number): Promise<void> {
@@ -254,9 +265,9 @@ async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId
   await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/^本月剩 800 頁/);
 }
 
-// unit 測不到的：Worker 的 502 經過 hosted-account-client 回到 side panel，畫面真的出現錯誤、沒有打開新分頁（#156）。
+// unit 測不到的：Worker 的 502 經過 hosted-account-client 回到帳號頁，畫面真的出現錯誤、沒有打開新分頁（#156）。
 // 「訂閱」失敗走同一個 usePaymentAction 與 PaymentUnavailable，只留「管理訂閱」這一條代表路徑。
-test('管理訂閱：Paddle 拒絕建立 customer portal 時，設定頁顯示付款服務暫時無法使用，不打開新分頁', async ({
+test('管理訂閱：設定頁的「管理帳號 →」打開帳號頁；Paddle 拒絕建立 customer portal 時，帳號頁顯示付款服務暫時無法使用，不打開新分頁', async ({
   context,
   sw,
   extensionId,
@@ -265,16 +276,17 @@ test('管理訂閱：Paddle 拒絕建立 customer portal 時，設定頁顯示�
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   await signInOnPanel(panel, context, freshEmail(testInfo.workerIndex));
   await subscribeOnPanel(panel, context, PORTAL_FORBIDDEN_CUSTOMER);
-  await openSettings(panel);
-  const settings = panel.getByRole('region', { name: '設定' });
+  const account = await openAccountFromSettings(panel, context);
+  await expect.poll(() => account.url()).toBe(`chrome-extension://${extensionId}/account.html`);
+  await expect(account.getByRole('region', { name: '目前方案' })).toContainText('訂閱（年繳）');
 
   const pagesBefore = context.pages().length;
-  await settings.getByRole('button', { name: '管理訂閱' }).click();
-  await expect(settings.getByRole('alert')).toHaveText('付款服務暫時無法使用，請稍後再試。');
+  await account.getByRole('button', { name: '管理訂閱（付款方式、取消）' }).click();
+  await expect(account.getByRole('alert')).toHaveText('付款服務暫時無法使用，請稍後再試。');
   expect(context.pages()).toHaveLength(pagesBefore);
 });
 
-test('免費額度用完：Worker 回額度不足後，side panel 顯示用完的狀態，逐字稿仍有原文與讀音；Page 上的紅標籤打開選擇方案', async ({
+test('免費額度用完：Worker 回額度不足後，side panel 顯示用完的狀態，逐字稿仍有原文與讀音；Page 上的紅標籤打開帳號與訂閱頁', async ({
   context,
   sw,
   extensionId,
@@ -306,14 +318,16 @@ test('免費額度用完：Worker 回額度不足後，side panel 顯示用完�
   await expect(transcript.locator('rt').first()).toBeVisible();
   await expect(transcript.getByText('未翻譯').first()).toBeVisible();
 
-  // 沒開側邊欄的讀者看的是 Page 右上角（#185）：紅標籤點了打開 onboarding 的選擇方案，完成後回到這個分頁
+  // 沒開側邊欄的讀者看的是 Page 右上角（#185）：紅標籤點了打開帳號與訂閱頁（#213），說明用完了、可以訂閱
   const opened = context.waitForEvent('page');
   await page.locator('[data-naruhodo-overlay] .st-chip').getByText('免費額度用完了・查看方案').first().click();
-  const onboarding = await opened;
-  await expect.poll(() => onboarding.url()).toBe(`chrome-extension://${extensionId}/onboarding.html?step=plan&from=${tabId}`);
+  const account = await opened;
+  await expect.poll(() => account.url()).toBe(`chrome-extension://${extensionId}/account.html?from=${tabId}`);
+  await expect(account.getByRole('status').filter({ hasText: '免費額度已用完' })).toBeVisible();
+  await expect(account.getByRole('region', { name: '訂閱' }).getByRole('button', { name: '訂閱' })).toBeVisible();
 });
 
-test('刪除帳號：設定頁的「刪除帳號」換到確認頁 → 確定刪除 → 回到設定頁是未登入，side panel 顯示「尚未登入」', async ({
+test('刪除帳號：帳號頁的「刪除帳號」換到確認畫面 → 確定刪除 → 帳號頁是未登入，side panel 顯示「尚未登入」', async ({
   context,
   sw,
   extensionId,
@@ -322,17 +336,16 @@ test('刪除帳號：設定頁的「刪除帳號」換到確認頁 → 確定刪
   const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   const email = freshEmail(testInfo.workerIndex);
   await signInOnPanel(panel, context, email);
-  await openSettings(panel);
-  await panel.getByRole('region', { name: '設定' }).getByRole('button', { name: '刪除帳號' }).click();
+  const account = await openAccountFromSettings(panel, context);
+  await account.getByRole('region', { name: '刪除帳號' }).getByRole('button', { name: '刪除帳號' }).click();
 
-  const confirm = panel.getByRole('region', { name: '刪除帳號' });
+  const confirm = account.getByRole('region', { name: '刪除帳號' });
   await expect(confirm).toContainText(`確定要刪除 ${email} 的帳號？`);
   await confirm.getByRole('button', { name: '刪除帳號' }).click();
 
-  // Worker 刪除成功 → 外掛清掉 session → 回到設定頁，內建翻譯卡片是未登入
-  const settings = panel.getByRole('region', { name: '設定' });
-  await expect(settings.getByText('尚未登入。')).toBeVisible();
-  await expect(settings.getByRole('button', { name: '登入' })).toBeVisible();
+  // Worker 刪除成功 → 外掛清掉 session → 帳號頁是未登入，廣播之後 side panel 也是
+  await expect(account.getByText('尚未登入。登入後就能用內建翻譯，新帳號有 50 頁免費額度。')).toBeVisible();
+  await expect(account.getByRole('button', { name: '登入' })).toBeVisible();
   await panel.getByRole('button', { name: '返回' }).click();
   await expect(panel.getByRole('group', { name: '尚未登入' })).toBeVisible();
 });

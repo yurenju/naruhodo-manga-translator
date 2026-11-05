@@ -19,7 +19,7 @@ import { downloadNotice, downloadPill } from '../shared/model-download.ts';
 import { loadOnboarding, onboardingRequest, saveOnboarding, startStep, type OnboardingProgress, type OnboardingStep, type RequestedStep } from '../shared/onboarding.ts';
 import { savePageMode } from '../shared/page-mode.ts';
 import { saveSidePanelOnActivation } from '../shared/side-panel-setting.ts';
-import { onboardingPaymentChange, openPayment, watchPendingPayment, type PendingPayment } from '../shared/payment-return.ts';
+import { openPayment, paymentChange, watchPendingPayment, type PendingPayment } from '../shared/payment-return.ts';
 import { saveTranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, Callout } from '../ui/components.tsx';
 import { OwnKeyDataFlow, PolicyLinks } from '../ui/data-flow.tsx';
@@ -170,7 +170,7 @@ function Plan({
 
     let previous: PendingPayment | undefined;
     const stop = watchPendingPayment((next) => {
-      const { mine, action } = onboardingPaymentChange(previous, next);
+      const { mine, action } = paymentChange('onboarding', previous, next);
       if (action === 'wait') {
         paying = true;
         setState((s) => (s.kind === 'choose' || s.kind === 'loading' ? { kind: 'waitingPayment', url: '' } : s));
