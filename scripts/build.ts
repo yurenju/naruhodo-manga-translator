@@ -23,6 +23,8 @@ const STATIC_FILES: [string, string][] = [
   ['src/sidepanel/sidepanel.html', 'sidepanel.html'],
   // design tokens（#71）：side panel 直接載入；content script 另外把它打包成字串放進 shadow DOM
   ['src/shared/tokens.css', 'tokens.css'],
+  // 外掛頁面的 Noto Sans CJK（字型檔見 copyFonts）
+  ['src/shared/cjk-font.css', 'cjk-font.css'],
   // side panel 的畫面樣式（src/ui/，#108）；sidepanel.css 只剩外掛整頁的 html／body
   ['src/ui/components.css', 'components.css'],
   ['src/ui/side-panel.css', 'side-panel.css'],
@@ -49,6 +51,10 @@ const STATIC_DIRS: [string, string][] = [
  * 原樣複製到 fonts/；子集與範圍的對照在 700.css，由 content script 打包成字串（src/content/overlay-font.ts）。
  */
 const FONT_DIR = 'node_modules/@fontsource/noto-sans-tc';
+
+/** side panel、onboarding 的 Noto Sans CJK Variable（一個檔案，日文與繁中字形都在裡面）。 */
+export const CJK_FONT_SRC = 'src/fonts';
+export const CJK_FONT_FILE = 'NotoSansCJKjp-VF.woff2';
 
 /** 700.css 引用的 woff2（同一個目錄還有沒被引用的合併檔，不打包）。 */
 export async function overlayFontFiles(): Promise<string[]> {
@@ -82,6 +88,9 @@ async function copyFonts(outDir: string): Promise<void> {
   await Promise.all([
     ...files.map((f) => copyFile(join(root, FONT_DIR, 'files', f), join(outDir, 'fonts', f))),
     copyFile(join(root, FONT_DIR, 'LICENSE'), join(outDir, 'fonts', 'LICENSE')),
+    // 外掛頁面的 Noto Sans CJK（src/shared/cjk-font.css，scripts/cjk-font.ts 產生）
+    copyFile(join(root, CJK_FONT_SRC, CJK_FONT_FILE), join(outDir, 'fonts', CJK_FONT_FILE)),
+    copyFile(join(root, CJK_FONT_SRC, 'LICENSE'), join(outDir, 'fonts', 'LICENSE-NotoSansCJK')),
   ]);
 }
 

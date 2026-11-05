@@ -54,6 +54,47 @@ test('窄寬度下 side panel 沒有水平捲軸', async ({ context, sw, extensi
   await expectNoHorizontalScroll(panel);
 });
 
+/**
+ * 字型：side panel 用打包的 Noto Sans CJK（src/shared/cjk-font.css）。unit 只看得到 CSS 怎麼寫；
+ * 實際畫字用了哪個字型（缺字時 Chrome 會改用系統字型補）與 lang 有沒有切換字形，要真的 Chrome 才看得到。
+ */
+test('逐字稿的日文與中文都用打包的 Noto Sans CJK 畫，跟著 lang 顯示日文與繁中字形', async ({ context, sw, extensionId, mockSite }) => {
+  const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
+  const transcript = panel.getByRole('list', { name: 'Page' }).getByRole('listitem', { name: '第 1 頁' }).getByRole('list', { name: '逐字稿' });
+  await expect(transcript.locator('[lang="zh-Hant"]').first()).toBeVisible();
+  await panel.evaluate(() => document.fonts.ready);
+
+  // 每個字實際用哪個字型畫（含缺字時補上的系統字型）：CDP 的 CSS.getPlatformFontsForNode
+  const cdp = await context.newCDPSession(panel);
+  await cdp.send('DOM.enable');
+  await cdp.send('CSS.enable');
+  const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+  for (const lang of ['ja', 'zh-Hant']) {
+    const { nodeIds } = await cdp.send('DOM.querySelectorAll', { nodeId: root.nodeId, selector: `ol[aria-label="逐字稿"] [lang="${lang}"]` });
+    expect(nodeIds.length).toBeGreaterThan(0);
+    const used = new Set<string>();
+    for (const nodeId of nodeIds) {
+      const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+      for (const f of fonts) used.add(`${f.familyName}${f.isCustomFont ? '（打包）' : '（系統）'}`);
+    }
+    expect([...used], lang).toEqual(['Noto Sans CJK JP（打包）']);
+  }
+
+  // 同一個字在 lang="ja" 與 lang="zh-Hant" 畫出不同字形（OpenType locl）：「骨」的內部筆畫日文與繁中寫法不同
+  const glyph = async (lang: string) => {
+    const el = await panel.evaluateHandle((lang) => {
+      const span = document.createElement('span');
+      span.lang = lang;
+      span.textContent = '骨';
+      span.style.cssText = 'display:inline-block;font:400 64px var(--naru-font-sans);line-height:1;background:#fff;color:#000';
+      document.querySelector('.naru-side-panel')!.append(span);
+      return span;
+    }, lang);
+    return el.asElement()!.screenshot();
+  };
+  expect((await glyph('ja')).equals(await glyph('zh-Hant'))).toBe(false);
+});
+
 test.describe('逐字稿出來之前', () => {
   // 顯示層級的按鈕要等逐字稿出來才有；FakeEngine 幾乎不花時間，讓它慢到測試結束都還沒出來
   test.use({ fakeOcrDelayMs: 60_000 });

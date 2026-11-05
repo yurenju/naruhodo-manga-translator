@@ -57,9 +57,12 @@
   --naru-tooltip-chip-on-bg: #3A362E;
   --naru-tooltip-chip-on-line: #5C564B;
 
-  /* 字型：系統字型堆疊，不從網路載入 */
-  --naru-font-sans: 'Noto Sans TC', 'Noto Sans JP', system-ui, -apple-system, 'Segoe UI', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
-  --naru-font-ja: 'Noto Sans JP', 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', 'Yu Gothic UI', 'Hiragino Sans', sans-serif;
+  /*
+   * 字型：外掛頁面先用打包的 Noto Sans CJK（cjk-font.css），日文與中文是同一個字型、跟著 lang 換字形；
+   * 沒載入它的地方（網頁上的覆蓋層 tooltip、產品網站）用後面的系統字型堆疊，不從網路載入
+   */
+  --naru-font-sans: 'Naruhodo Noto Sans CJK', 'Noto Sans TC', 'Noto Sans JP', system-ui, -apple-system, 'Segoe UI', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
+  --naru-font-ja: 'Naruhodo Noto Sans CJK', 'Noto Sans JP', 'Noto Sans TC', system-ui, -apple-system, 'Segoe UI', 'Yu Gothic UI', 'Hiragino Sans', sans-serif;
   --naru-font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
   /* 字級 */

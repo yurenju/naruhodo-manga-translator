@@ -6,6 +6,8 @@
     <title>Naruhodo</title>
     <script type="module" src="sidepanel.js"></script>
     <!-- 同一份 tokens 也打包進覆蓋層的 shadow DOM（src/content/overlay.ts） -->
+    <!-- 打包進外掛的 Noto Sans CJK（src/shared/cjk-font.css）；tokens 的字型堆疊第一個就是它 -->
+    <link rel="stylesheet" href="cjk-font.css" />
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="components.css" />
     <link rel="stylesheet" href="side-panel.css" />
