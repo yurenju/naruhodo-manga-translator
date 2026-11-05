@@ -44,9 +44,10 @@ import { BACKUP_KEYS, createBackup } from './backup.ts';
 import { indexedDbPageCache } from './cache-store.ts';
 import { createHostedTranslator } from './hosted-translator.ts';
 import { installPlan } from './install.ts';
-import { MODEL_SETS, modelSetBytes, modelSetFiles } from '../offscreen/models/model-files.ts';
+import { modelSetFiles } from '../offscreen/models/model-files.ts';
 import { isCached, MODEL_CACHE } from '../offscreen/models/model-store.ts';
-import { currentModelStatus } from './model-status.ts';
+import { createExecutionProviderDetector } from './execution-provider.ts';
+import { modelStatusResponse } from './model-status.ts';
 import { ensureOffscreenDocument } from './offscreen.ts';
 import { createOverlaySync } from './overlay-sync.ts';
 import { createPageStatusSync } from './page-status-sync.ts';
@@ -363,25 +364,22 @@ const overlaySync = createOverlaySync({
 
 let modelStatus: ModelStatus = { state: 'idle' };
 
-/** 回答目前的模型狀態（#169）：不知道時查快取裡會用的那一組（照翻譯流程的選法）齊不齊全；也帶上那一組的大小。 */
-/** 偵測結果在這台電腦上不會變，問過一次就記住；失敗了下次再問。 */
-let detected: Promise<ExecutionProvider> | undefined;
+const detectExecutionProvider = createExecutionProviderDetector(async () => {
+  await ensureOffscreenDocument();
+  return chrome.runtime.sendMessage<Message, unknown>({ type: 'offscreen:detectExecutionProvider' });
+});
 
 function executionProvider(): Promise<ExecutionProvider> {
   if (pipelineConfig.executionProvider) return Promise.resolve(pipelineConfig.executionProvider);
-  detected ??= ensureOffscreenDocument()
-    .then(() => chrome.runtime.sendMessage<Message, ExecutionProvider>({ type: 'offscreen:detectExecutionProvider' }))
-    .catch((e: unknown) => {
-      detected = undefined;
-      throw e;
-    });
-  return detected;
+  return detectExecutionProvider();
 }
 
-async function modelStatusResponse(): Promise<ModelStatusResponse> {
-  const set = MODEL_SETS[await executionProvider()];
-  const cached = async () => isCached(await caches.open(MODEL_CACHE), modelSetFiles(set));
-  return { status: await currentModelStatus(modelStatus, cached), downloadBytes: modelSetBytes(set) };
+/** 回答目前的模型狀態（#169、#221）。 */
+function getModelStatus(): Promise<ModelStatusResponse> {
+  return modelStatusResponse(modelStatus, {
+    executionProvider,
+    isCached: async (set) => isCached(await caches.open(MODEL_CACHE), modelSetFiles(set)),
+  });
 }
 
 /** onboarding 按下「開始設定」：offscreen 在背景把模型下載進快取，進度照常走 models:status。 */
@@ -757,7 +755,7 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
       accessChanged();
       return false;
     case 'panel:getModelStatus':
-      void modelStatusResponse().then(sendResponse);
+      void getModelStatus().then(sendResponse);
       return true;
     case 'payment:open':
       void paymentReturn.open(message).then(() => {
