@@ -1,12 +1,12 @@
 /**
  * 匯出／匯入 JSON（spec #27 第 4.2、8 節、#38）：兩台電腦之間不同步，靠這個搬 Series、網址模式、Series Notes 與翻譯快取。
- * **不含 API key**：只讀這五個 store，apiKeys store 碰都不碰（spec 第 5 節）。翻譯快取裡的擦除小圖也不帶（#149）。
+ * **不含 API key**：只讀這六個 store（含不記的詞，#214），apiKeys store 碰都不碰（spec 第 5 節）。翻譯快取裡的擦除小圖也不帶（#149）。
  *
  * 匯入＝合併，本機優先（跟 #36 合併 Series 同一套規則）：本機沒有的 Series／網址模式才加；Notes 照只能新增規則併入，
  * 譯文衝突變成建議修改；同一個 Page 的快取保留本機那份。Notes 經過 notes-ledger 寫，不會跟翻譯中的套用互相蓋掉。
  */
 import { forBackup, type PageTranslation } from '../shared/page-text.ts';
-import { mergeImportedNotes, type NotesSuggestion, type SeriesNotes } from '../shared/series-notes.ts';
+import { mergeImportedNotes, type ExcludedTerm, type NotesSuggestion, type SeriesNotes } from '../shared/series-notes.ts';
 import type { Series, UrlPattern } from '../shared/series.ts';
 import type { NotesEntry } from '../shared/translator.ts';
 import { mergeTranslations } from './series.ts';
@@ -19,6 +19,8 @@ export interface BackupData {
   urlPatterns: UrlPattern[];
   seriesNotes: NotesEntry[];
   notesSuggestions: NotesSuggestion[];
+  /** 不記的詞（#214）。之前的匯出檔沒有這個陣列，匯入時當成空的。 */
+  excludedTerms: ExcludedTerm[];
   pageTranslations: PageTranslation[];
 }
 
@@ -29,7 +31,7 @@ export interface BackupFile extends BackupData {
 }
 
 export interface BackupRepo {
-  /** 五個 store 的全部內容。 */
+  /** 六個 store 的全部內容。 */
   dump(): Promise<BackupData>;
   getSeries(id: string): Promise<Series | undefined>;
   putSeries(series: Series): Promise<void>;
@@ -39,15 +41,18 @@ export interface BackupRepo {
   putTranslations(translations: PageTranslation[]): Promise<void>;
 }
 
-/** 匯出檔裡的五個陣列（BackupData 的欄位）。 */
-export const BACKUP_KEYS = ['series', 'urlPatterns', 'seriesNotes', 'notesSuggestions', 'pageTranslations'] as const;
+/** 匯出檔裡的六個陣列（BackupData 的欄位）。 */
+export const BACKUP_KEYS = ['series', 'urlPatterns', 'seriesNotes', 'notesSuggestions', 'excludedTerms', 'pageTranslations'] as const;
+
+/** #214 才加的陣列：之前的匯出檔沒有，當成空的。 */
+const OPTIONAL_KEYS: readonly (typeof BACKUP_KEYS)[number][] = ['excludedTerms'];
 
 /** 不是這個外掛的匯出檔就丟錯（訊息直接顯示在 side panel）。 */
 function parse(data: unknown): BackupFile {
   const file = data as Partial<BackupFile> | null;
-  if (file?.format !== FORMAT || file.version !== 1 || !BACKUP_KEYS.every((key) => Array.isArray(file[key])))
-    throw new Error('不是漫畫翻譯的匯出檔');
-  return file as BackupFile;
+  const present = (key: (typeof BACKUP_KEYS)[number]) => Array.isArray(file?.[key]) || (OPTIONAL_KEYS.includes(key) && file?.[key] === undefined);
+  if (file?.format !== FORMAT || file.version !== 1 || !BACKUP_KEYS.every(present)) throw new Error('不是漫畫翻譯的匯出檔');
+  return { ...file, excludedTerms: file.excludedTerms ?? [] } as BackupFile;
 }
 
 /** 沒有用 Map.groupBy（Chrome 117）：寫這段時 minimum_chrome_version 還是 116。 */
@@ -68,8 +73,8 @@ export function createBackup(deps: BackupDeps) {
   const { repo } = deps;
   return {
     async exportAll(): Promise<BackupFile> {
-      // 只挑這五個陣列：repo 多讀了別的 store（例如 apiKeys）也不會跟著寫進檔案
-      const { series, urlPatterns, seriesNotes, notesSuggestions, pageTranslations } = await repo.dump();
+      // 只挑這六個陣列：repo 多讀了別的 store（例如 apiKeys）也不會跟著寫進檔案
+      const { series, urlPatterns, seriesNotes, notesSuggestions, excludedTerms, pageTranslations } = await repo.dump();
       return {
         format: FORMAT,
         version: 1,
@@ -78,6 +83,7 @@ export function createBackup(deps: BackupDeps) {
         urlPatterns,
         seriesNotes,
         notesSuggestions,
+        excludedTerms,
         // 擦除小圖（#149）與長 Page 的扣頁紀錄只留在本機
         pageTranslations: pageTranslations.map(forBackup),
       };
@@ -91,9 +97,14 @@ export function createBackup(deps: BackupDeps) {
 
       const notes = groupBySeries(file.seriesNotes);
       const suggestions = groupBySeries(file.notesSuggestions);
-      const touched = [...new Set([...notes.keys(), ...suggestions.keys()])];
+      const excluded = groupBySeries(file.excludedTerms);
+      const touched = [...new Set([...notes.keys(), ...suggestions.keys(), ...excluded.keys()])];
       for (const seriesId of touched) {
-        const incoming = { entries: notes.get(seriesId) ?? [], suggestions: suggestions.get(seriesId) ?? [] };
+        const incoming = {
+          entries: notes.get(seriesId) ?? [],
+          suggestions: suggestions.get(seriesId) ?? [],
+          excluded: (excluded.get(seriesId) ?? []).map((t) => t.原文),
+        };
         await deps.updateNotes(seriesId, (local) => mergeImportedNotes(local, incoming, seriesId));
       }
 

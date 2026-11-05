@@ -92,10 +92,18 @@ export type Message =
   | { type: 'panel:mergeSeries'; tabId: number; targetId: string }
   /** SW → side panel：這個 tab 的 Series 或 Series 清單變了，重新 panel:getSeries。 */
   | { type: 'series:changed'; tabId: number }
+  /** side panel → SW：刪除這個 tab 目前的 Series（#214），顯示它的 tab 都停用。 */
+  | { type: 'panel:deleteSeries'; tabId: number }
+  /** SW → side panel：這部 Series 刪掉了，tabIds 是因此停用的 tab（它們的 side panel 顯示「這部作品已刪除」）。 */
+  | { type: 'series:deleted'; seriesId: string; tabIds: number[] }
   /** side panel → SW：這個 tab 目前 Series 的 Notes 條目與要列出的建議修改（#38）。回應 NotesResponse。 */
   | { type: 'panel:getNotes'; tabId: number }
   /** side panel → SW：修正一個條目（之後 locked）。 */
   | { type: 'panel:editNote'; tabId: number; 原文: string; fields: EditableFields }
+  /** side panel → SW：刪除一個條目（#214）；exclude＝原文變成不記的詞。 */
+  | { type: 'panel:deleteNote'; tabId: number; 原文: string; exclude: boolean }
+  /** side panel → SW：恢復一個不記的詞（#214）。 */
+  | { type: 'panel:restoreExcluded'; tabId: number; 原文: string }
   /** side panel → SW：接受／忽略一個建議修改。 */
   | { type: 'panel:acceptSuggestion' | 'panel:ignoreSuggestion'; tabId: number; suggestion: SuggestionRef }
   /** side panel → SW：清除這個 tab 目前 Series 的翻譯快取。 */
@@ -198,6 +206,8 @@ export interface NotesResponse {
   entries: NotesEntry[];
   /** 已去重、沒忽略、跟目前譯文不同的建議修改。 */
   suggestions: NotesSuggestion[];
+  /** 不記的詞的原文（#214）。 */
+  excluded: string[];
 }
 
 export type ImportResponse = { ok: true } | { ok: false; error: string };

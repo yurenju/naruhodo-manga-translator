@@ -5,13 +5,27 @@
 import type { Page } from '@playwright/test';
 import type { PageTranslation } from '../src/shared/page-text.ts';
 import type { NotesEntry } from '../src/shared/translator.ts';
-import { activateOnMockSite, configuredServiceWorker, expect, launchWithExtension, openSettings, openSidePanel, readStore, retranslateVisible, test } from './fixtures.ts';
+import {
+  activateOnMockSite,
+  configuredServiceWorker,
+  expect,
+  isContentScriptInjected,
+  launchWithExtension,
+  openSettings,
+  openSidePanel,
+  readStore,
+  retranslateVisible,
+  test,
+} from './fixtures.ts';
 
 const パン = { 原文: 'パン', 讀音: 'ぱん', 譯文: '麵包', 類別: '用語' };
 const 霧島湊 = { 原文: '霧島湊', 讀音: 'きりしまみなと', 譯文: '霧島湊', 類別: '人名' };
 
 // 陣列第二個元素是物件時，Playwright 會把它當成 [值, 選項]，所以要用 tuple 寫法
 test.use({ viewport: null, fakeTranslator: true, fakeNotes: [[パン, 霧島湊], { scope: 'test' }] });
+
+/** 斷言 Notes「沒有」被寫入時等的時間（CODING_STANDARDS：只有斷言沒發生的事才用固定等待）。 */
+const NOTES_SETTLE_MS = 1000;
 
 const statusLine = (panel: Page) => panel.getByRole('status', { name: '翻譯狀態' });
 const staleHint = (panel: Page) => panel.getByRole('group', { name: '過時提示' });
@@ -122,4 +136,50 @@ test('匯出 JSON 真的下載得到檔案，在乾淨的 profile 選檔匯入�
   } finally {
     await clean.close();
   }
+});
+
+// #214：刪除條目、不記的詞、刪除作品。規則（不記的詞擋住 LLM／合併／匯入、刪除的資料、停用哪些 tab、翻譯中的結果丟掉）
+// 在 series-notes、notes-ledger、series-catalog、activation、transcribe 的 unit；這裡只確認 side panel ↔ SW ↔ IndexedDB 接得起來。
+
+test('刪除條目（預設勾「之後不要再記」）：條目消失、記成不記的詞，重新翻譯 LLM 也不加回來；恢復後拿掉', async ({ context, sw, extensionId, mockSite }) => {
+  const { panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
+  await expect.poll(async () => (await entryOf(sw, 'パン'))?.譯文).toBe('麵包');
+  await openNotes(panel);
+  const section = notesSection(panel);
+
+  await section.getByRole('button', { name: '編輯 パン' }).click();
+  await expect(section.getByRole('checkbox', { name: '之後不要再記這個詞' })).toBeChecked();
+  await section.getByRole('button', { name: '刪除' }).click();
+
+  await expect(section.getByRole('row', { name: /パン/ })).toHaveCount(0);
+  await expect.poll(() => readStore(sw, 'excludedTerms')).toEqual([expect.objectContaining({ 原文: 'パン' })]);
+
+  // FakeTranslator 在 p01 看到パン就會新增：不記的詞擋住它。斷言「沒有發生」，所以等背景整理（②）送出後再等一段時間
+  const sent = await sw.evaluate(() => globalThis.__notesInputs?.length ?? 0);
+  await retranslateVisible(panel, tabId);
+  await expect.poll(() => sw.evaluate(() => globalThis.__notesInputs?.length ?? 0)).toBeGreaterThan(sent);
+  await panel.waitForTimeout(NOTES_SETTLE_MS);
+  expect(await entryOf(sw, 'パン')).toBeUndefined();
+
+  await section.getByText('不記的詞（1）').click();
+  await section.getByRole('button', { name: '恢復 パン' }).click();
+  await expect.poll(() => readStore(sw, 'excludedTerms')).toEqual([]);
+  await expect(section.getByText(/不記的詞/)).toHaveCount(0);
+});
+
+test('刪除作品：先確認，刪完資料都不在、tab 停用、side panel 顯示「這部作品已刪除」', async ({ context, sw, extensionId, mockSite }) => {
+  const { panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: mockSite.canvasSitePagedUrl });
+  await expect(statusLine(panel)).toHaveText([/^已翻譯・/]);
+  await expect.poll(async () => (await entryOf(sw, 'パン'))?.譯文).toBe('麵包');
+  await openNotes(panel);
+
+  await panel.getByRole('button', { name: '刪除這部作品' }).click();
+  const confirm = panel.getByRole('group', { name: '確認刪除作品' });
+  await expect(confirm).toContainText('無法復原');
+  await confirm.getByRole('button', { name: '刪除' }).click();
+
+  await expect(panel.getByText('這部作品已刪除。重新啟動外掛會當成新的作品開始翻譯。')).toBeVisible();
+  await expect.poll(() => isContentScriptInjected(sw, tabId)).toBe(false);
+  for (const store of ['series', 'pageTranslations', 'seriesNotes', 'notesSuggestions', 'urlPatterns', 'excludedTerms'])
+    expect(await readStore(sw, store), store).toEqual([]);
 });

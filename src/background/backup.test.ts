@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { eraseFill } from '../content/overlay-layout.ts';
 import type { BalloonText, PageTranslation } from '../shared/page-text.ts';
-import type { NotesSuggestion, SeriesNotes } from '../shared/series-notes.ts';
+import type { ExcludedTerm, NotesSuggestion, SeriesNotes } from '../shared/series-notes.ts';
 import type { Series, UrlPattern } from '../shared/series.ts';
 import type { NotesEntry } from '../shared/translator.ts';
 import { createBackup, type BackupData, type BackupRepo } from './backup.ts';
@@ -15,10 +15,11 @@ function memoryDb() {
   let translations: PageTranslation[] = [];
   let notes: NotesEntry[] = [];
   let suggestions: NotesSuggestion[] = [];
+  let excluded: ExcludedTerm[] = [];
   const apiKeys = [API_KEY];
   const repo: BackupRepo = {
     // 刻意把 apiKeys 也讀出來：匯出不能只靠 repo 自己不讀它
-    dump: async () => ({ series: [...series.values()], urlPatterns: [...patterns.values()], seriesNotes: notes, notesSuggestions: suggestions, pageTranslations: translations, apiKeys }) as BackupData,
+    dump: async () => ({ series: [...series.values()], urlPatterns: [...patterns.values()], seriesNotes: notes, notesSuggestions: suggestions, excludedTerms: excluded, pageTranslations: translations, apiKeys }) as BackupData,
     getSeries: async (id) => series.get(id),
     putSeries: async (s) => void series.set(s.id, s),
     getPattern: async (p) => patterns.get(p),
@@ -32,9 +33,14 @@ function memoryDb() {
   };
   /** 跟 notes-ledger 一樣：讀出這部 Series 的 Notes、套用改動、整份寫回。 */
   async function updateNotes(seriesId: string, change: (n: SeriesNotes) => SeriesNotes) {
-    const next = change({ entries: notes.filter((n) => n.seriesId === seriesId), suggestions: suggestions.filter((s) => s.seriesId === seriesId) });
+    const next = change({
+      entries: notes.filter((n) => n.seriesId === seriesId),
+      suggestions: suggestions.filter((s) => s.seriesId === seriesId),
+      excluded: excluded.filter((t) => t.seriesId === seriesId).map((t) => t.原文),
+    });
     notes = [...notes.filter((n) => n.seriesId !== seriesId), ...next.entries];
     suggestions = [...suggestions.filter((s) => s.seriesId !== seriesId), ...next.suggestions];
+    excluded = [...excluded.filter((t) => t.seriesId !== seriesId), ...next.excluded.map((原文) => ({ seriesId, 原文 }))];
   }
   const backup = createBackup({ repo, updateNotes, now: () => 1000 });
   return {
@@ -44,9 +50,10 @@ function memoryDb() {
       for (const p of data.urlPatterns) patterns.set(p.pattern, p);
       notes = [...data.seriesNotes];
       suggestions = [...data.notesSuggestions];
+      excluded = [...data.excludedTerms];
       translations = [...data.pageTranslations];
     },
-    stores: (): BackupData => ({ series: [...series.values()], urlPatterns: [...patterns.values()], seriesNotes: notes, notesSuggestions: suggestions, pageTranslations: translations }),
+    stores: (): BackupData => ({ series: [...series.values()], urlPatterns: [...patterns.values()], seriesNotes: notes, notesSuggestions: suggestions, excludedTerms: excluded, pageTranslations: translations }),
   };
 }
 
@@ -75,18 +82,19 @@ const SAMPLE: BackupData = {
     { seriesId: 's2', 原文: '霧島湊', 讀音: 'きりしまみなと', 譯文: '霧島湊', 類別: '人名', locked: false },
   ],
   notesSuggestions: [{ seriesId: 's1', 原文: 'パン', 建議譯文: '胖', 來源: { pageHash: 'aaaa' } }],
+  excludedTerms: [{ seriesId: 's2', 原文: 'ドーン' }],
   pageTranslations: [translation('s1', 'aaaa', '麵包'), translation('s2', 'bbbb', '霧島湊')],
 };
 
 describe('exportAll', () => {
-  it('匯出檔不含 API key，只有五個 store 與檔頭', async () => {
+  it('匯出檔不含 API key，只有六個 store 與檔頭', async () => {
     const db = memoryDb();
     db.seed(SAMPLE);
 
     const file = await db.backup.exportAll();
 
     expect(JSON.stringify(file)).not.toContain(API_KEY);
-    expect(Object.keys(file).sort()).toEqual(['exportedAt', 'format', 'notesSuggestions', 'pageTranslations', 'series', 'seriesNotes', 'urlPatterns', 'version']);
+    expect(Object.keys(file).sort()).toEqual(['excludedTerms', 'exportedAt', 'format', 'notesSuggestions', 'pageTranslations', 'series', 'seriesNotes', 'urlPatterns', 'version']);
   });
 });
 
@@ -102,9 +110,31 @@ describe('importAll', () => {
 
     const sorted = (rows: readonly unknown[]) => rows.map((r) => JSON.stringify(r)).sort();
     const imported = clean.stores();
-    for (const key of ['series', 'urlPatterns', 'seriesNotes', 'notesSuggestions', 'pageTranslations'] as const)
+    for (const key of ['series', 'urlPatterns', 'seriesNotes', 'notesSuggestions', 'excludedTerms', 'pageTranslations'] as const)
       expect(sorted(imported[key]), key).toEqual(sorted(SAMPLE[key]));
     expect(touched.sort()).toEqual(['s1', 's2']);
+  });
+
+  it('#214 以前的匯出檔沒有不記的詞：照樣能匯入', async () => {
+    const source = memoryDb();
+    source.seed(SAMPLE);
+    const { excludedTerms: _, ...old } = JSON.parse(JSON.stringify(await source.backup.exportAll()));
+
+    const clean = memoryDb();
+    await clean.backup.importAll(old);
+
+    expect(clean.stores().seriesNotes).toHaveLength(2);
+    expect(clean.stores().excludedTerms).toEqual([]);
+  });
+
+  it('只有不記的詞的 Series 也會寫入（#214）', async () => {
+    const source = memoryDb();
+    source.seed({ ...SAMPLE, seriesNotes: [], notesSuggestions: [] });
+    const file = JSON.parse(JSON.stringify(await source.backup.exportAll()));
+
+    const clean = memoryDb();
+    expect(await clean.backup.importAll(file)).toEqual(['s2']);
+    expect(clean.stores().excludedTerms).toEqual([{ seriesId: 's2', 原文: 'ドーン' }]);
   });
 });
 

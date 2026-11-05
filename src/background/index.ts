@@ -27,7 +27,7 @@ import type {
   TranslateResponse,
   ProposeNotesResponse,
 } from '../shared/messages.ts';
-import { acceptSuggestion, editEntry, ignoreSuggestion, pendingSuggestions, type SeriesNotes, type TranslatorVersion } from '../shared/series-notes.ts';
+import { acceptSuggestion, deleteEntry, editEntry, ignoreSuggestion, pendingSuggestions, restoreExcluded, type SeriesNotes, type TranslatorVersion } from '../shared/series-notes.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { accountUrl, blockedPageUrl } from '../shared/account-page.ts';
 import { onboardingUrl, saveInstallState, saveOnboarding } from '../shared/onboarding.ts';
@@ -413,9 +413,9 @@ const backup = createBackup({ repo: backupRepo, updateNotes: (seriesId, change) 
 
 async function notesResponse(tabId: number): Promise<NotesResponse> {
   const seriesId = await activation.getSeriesId(tabId);
-  if (seriesId === undefined) return { seriesId, entries: [], suggestions: [] };
+  if (seriesId === undefined) return { seriesId, entries: [], suggestions: [], excluded: [] };
   const notes = await notesStore.load(seriesId);
-  return { seriesId, entries: notes.entries, suggestions: pendingSuggestions(notes) };
+  return { seriesId, entries: notes.entries, suggestions: pendingSuggestions(notes), excluded: notes.excluded };
 }
 
 /** side panel 改這個 tab 目前 Series 的 Notes（#38）。沒啟動就不動。action＋detail 記進 trace（#40 驗收）。 */
@@ -476,6 +476,19 @@ async function switchSeries(tabId: number, action: string, choose: (url: string,
 async function updateSeries(tabId: number, action: string, change: (url: string, current: string) => Promise<string>): Promise<void> {
   const next = await applySeriesChange(tabId, action, change);
   if (next !== undefined) transcriber.reassignSeries(tabId, next);
+}
+
+/**
+ * 刪除這個 tab 目前的 Series（#214）：先停用顯示它的 tab（不再開始新的翻譯），再排在 Notes 寫入後面一次刪掉全部資料。
+ * 還在翻的頁回來時看到 Series 不在，不寫快取也不寫 Notes。
+ */
+async function deleteSeries(tabId: number): Promise<void> {
+  const seriesId = await activation.getSeriesId(tabId);
+  if (seriesId === undefined) return;
+  const tabIds = await activation.stopSeries(seriesId);
+  await transcriber.removeSeries(seriesId, () => seriesCatalog.remove(seriesId).then(() => {}));
+  trace('panel:deleteSeries', { tabId, seriesId, tabIds });
+  notifyPanel({ type: 'series:deleted', seriesId, tabIds });
 }
 
 /** 這個 tab 專屬的 side panel：帶 tabId，知道自己跟著哪個分頁。 */
@@ -790,6 +803,19 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
       );
       return true;
     }
+    case 'panel:deleteNote': {
+      const { 原文, exclude } = message;
+      changeNotes(message.tabId, 'panel:deleteNote', { 原文, exclude }, (notes) => deleteEntry(notes, 原文, { exclude })).then(() => sendResponse());
+      return true;
+    }
+    case 'panel:restoreExcluded': {
+      const { 原文 } = message;
+      changeNotes(message.tabId, 'panel:restoreExcluded', { 原文 }, (notes) => restoreExcluded(notes, 原文)).then(() => sendResponse());
+      return true;
+    }
+    case 'panel:deleteSeries':
+      deleteSeries(message.tabId).then(() => sendResponse());
+      return true;
     case 'panel:acceptSuggestion':
     case 'panel:ignoreSuggestion': {
       const { suggestion } = message;

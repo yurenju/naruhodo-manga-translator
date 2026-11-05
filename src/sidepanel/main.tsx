@@ -27,7 +27,7 @@ import { saveTranslationMode, type TranslationMode } from '../shared/translation
 import { Badge, Button, RadioCard } from '../ui/components.tsx';
 import { SidePanel, type SeriesPage } from '../ui/side-panel.tsx';
 import { accountPlanView, seriesActions } from '../ui/view.ts';
-import { ClearCache, SeriesNotesSection } from './series-notes.tsx';
+import { ClearCache, DeleteSeries, SeriesNotesSection } from './series-notes.tsx';
 
 /**
  * 點圖示啟動時，SW 用 sidepanel.html?tabId=N 打開這個 tab 專屬的 side panel。
@@ -481,6 +481,7 @@ function SeriesPageView({
       <SeriesNotesSection tabId={tabId} />
       <div class="series-danger">
         <ClearCache tabId={tabId} />
+        <DeleteSeries tabId={tabId} name={current.title} />
       </div>
     </>
   );
@@ -597,6 +598,8 @@ function App({ tabId }: { tabId: number | undefined }) {
   const [paymentFailed, runPayment] = usePaymentAction();
   /** 作品卡的「取名字」：打開作品頁時直接顯示取名字表單（#191）。 */
   const [renameOnOpen, setRenameOnOpen] = useState(false);
+  /** 這個 tab 的作品剛被刪掉（#214，不管是在哪個 side panel 刪的）：停用的畫面顯示「這部作品已刪除」，再啟動就不再顯示。 */
+  const [seriesDeleted, setSeriesDeleted] = useState(false);
 
   useEffect(() => {
     void apiKeys.get().then((key) => setHasKey(Boolean(key)));
@@ -607,7 +610,11 @@ function App({ tabId }: { tabId: number | undefined }) {
     const onMessage = (message: Message, sender: chrome.runtime.MessageSender) => {
       if (message.type === 'content:hover' && sender.tab?.id === tabId)
         setHovered(message.line ?? undefined);
-      if (message.type === 'status:changed' && message.tabId === tabId) setActive(message.active);
+      if (message.type === 'status:changed' && message.tabId === tabId) {
+        setActive(message.active);
+        if (message.active) setSeriesDeleted(false);
+      }
+      if (message.type === 'series:deleted' && message.tabIds.includes(tabId)) setSeriesDeleted(true);
       if (message.type === 'pages:updated' && message.tabId === tabId) setPages(message.pages);
       if (message.type === 'models:status') setModelStatus(message.status);
     };
@@ -624,6 +631,7 @@ function App({ tabId }: { tabId: number | undefined }) {
   return (
     <SidePanel
       running={running}
+      seriesDeleted={!running && seriesDeleted}
       pages={pages}
       modelStatus={modelStatus}
       access={translationMode === 'hosted' ? { mode: 'hosted', signedIn: session !== null } : { mode: 'ownKey', hasKey }}

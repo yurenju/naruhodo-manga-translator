@@ -171,7 +171,8 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
     const translated = applyTranslation(text, output);
     const page = whole(translated);
     const { model, latencyMs, usage } = output;
-    if (seriesId !== undefined) {
+    // 翻譯中作品被刪掉了（#214）：結果照樣回給畫面（tab 已經停用，不會顯示），但不寫快取、不整理 Notes
+    if (seriesId !== undefined && (await getSeries(seriesId))) {
       // 過時提示（#38）拿它跟目前的版本比，所以兩個欄位都記送出時的版本（同一個來源）。API 回報的模型 ID 可能跟送出的
       // 不同（例如帶日期），用它比對會讓每頁都過時；沒有版本資訊時才退回 API 回報的。
       const version = await translatorVersion?.();

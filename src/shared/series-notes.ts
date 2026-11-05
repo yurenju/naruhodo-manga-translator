@@ -16,10 +16,18 @@ export interface NotesSuggestion {
   ignored?: true;
 }
 
-/** 一部 Series 的 Notes 條目與建議修改。 */
+/** 存在 IndexedDB／匯出檔裡的一筆 Excluded Term（#214）。 */
+export interface ExcludedTerm {
+  seriesId: string;
+  原文: string;
+}
+
+/** 一部 Series 的 Notes 條目、建議修改與 Excluded Term（不記的詞，#214）。 */
 export interface SeriesNotes {
   entries: NotesEntry[];
   suggestions: NotesSuggestion[];
+  /** Excluded Term 的原文：LLM 的新增、合併、匯入都不會把它們加回這部 Series。 */
+  excluded: string[];
 }
 
 /** 一個建議修改的身分：同一個原文、同一個建議譯文就是同一個建議，不管是哪一頁提的。 */
@@ -60,12 +68,15 @@ export interface MergedNotes {
 export function mergeNotes(
   target: readonly NotesEntry[],
   incoming: readonly NotesEntry[],
-  into: { seriesId: string; 來源: SuggestionSource },
+  into: { seriesId: string; 來源: SuggestionSource; excluded?: readonly string[] },
 ): MergedNotes {
   const entries = target.map((e) => ({ ...e }));
   const byOriginal = new Map(entries.map((e) => [e.原文, e]));
   const suggestions: NotesSuggestion[] = [];
+  const isExcluded = excludedTest(into.excluded ?? []);
   for (const next of incoming) {
+    // 目標不記的詞（#214）：不加、不補、也不變成建議
+    if (isExcluded(next.原文)) continue;
     const existing = byOriginal.get(next.原文);
     if (!existing) {
       const added = { ...next, seriesId: into.seriesId };
@@ -97,10 +108,18 @@ export interface NotesPage {
    * 這頁對它們的「新增」只補空欄位，譯名不同也不變成建議：這頁根本沒看到那個譯名，不是想改它。
    */
   unseen?: ReadonlySet<string>;
+  /** 這部 Series 的 Excluded Term（#214）：這些原文的新增、補空欄位與建議修改都不採用。 */
+  excluded?: readonly string[];
 }
 
 /** 比對原文用：忽略全形半形與空白。 */
 export const normalizeText = (s: string) => s.normalize('NFKC').replace(/\s/g, '');
+
+/** 這個原文是不是 Excluded Term 之一（忽略全形半形與空白）。 */
+export function excludedTest(excluded: readonly string[]): (原文: string) => boolean {
+  const set = new Set(excluded.map(normalizeText));
+  return (原文) => set.has(normalizeText(原文));
+}
 
 /** 原文有沒有出現在某一段文字裡（忽略全形半形與空白）。空的原文不算出現。 */
 function appearsIn(texts: readonly string[], 原文: string): boolean {
@@ -130,7 +149,7 @@ function isVariantOf(others: readonly Pick<NotesEntry, '原文' | '讀音'>[], a
 
 /** 套用 notes_changes 的結果，加上沒採用的新增（trace 用，#40 驗收）。 */
 export interface AppliedNotes extends MergedNotes {
-  /** 沒採用的新增：原文不在這頁任何 Balloon 裡（OCR 錯字防護）、是既有條目換個說法、或譯文是空的。 */
+  /** 沒採用的新增：原文不在這頁任何 Balloon 裡（OCR 錯字防護）、是既有條目換個說法、譯文是空的、或是 Excluded Term。 */
   rejected: string[];
   /** 同一個 Spread 先套用的頁剛新增、這頁看不到而給了不同譯名：丟掉的譯名（其他空欄位照補）。 */
   dropped: UsedNote[];
@@ -141,9 +160,16 @@ export interface AppliedNotes extends MergedNotes {
  * OCR 錯字防護：新條目的原文必須出現在這頁某個 Balloon 的原文裡才採用。封面、扉頁的設計字與署名多半是
  * Loose Text 而且常被 OCR 讀錯，照先到先贏規則，錯的版本一旦進來就會卡住之後正確的版本（#37、#48 的觀察）。
  * 雜訊防護（#64）：既有條目（或同一次回應裡的其他新增）加上敬稱或寫成讀音的假名、以及譯文是空的新條目，也不採用。
- * 自稱、語氣、稱呼一律不採用，只由人填（ADR 0005）。
+ * 自稱、語氣、稱呼一律不採用，只由人填（ADR 0005）。Excluded Term（#214）的任何變更都不採用。
  */
-export function applyNotesChanges(notes: readonly NotesEntry[], changes: NotesChanges, page: NotesPage): AppliedNotes {
+export function applyNotesChanges(notes: readonly NotesEntry[], proposed: NotesChanges, page: NotesPage): AppliedNotes {
+  const isExcluded = excludedTest(page.excluded ?? []);
+  const rejected: string[] = proposed.added.filter((a) => isExcluded(a.原文)).map((a) => a.原文);
+  const changes: NotesChanges = {
+    added: proposed.added.filter((a) => !isExcluded(a.原文)),
+    filled: proposed.filled.filter((f) => !isExcluded(f.原文)),
+    suggestions: proposed.suggestions.filter((s) => !isExcluded(s.原文)),
+  };
   const known = new Map(notes.map((e) => [e.原文, e]));
   const asEntry = (e: Partial<NotesEntry> & { 原文: string }): NotesEntry => ({
     讀音: '',
@@ -153,7 +179,6 @@ export function applyNotesChanges(notes: readonly NotesEntry[], changes: NotesCh
     seriesId: page.seriesId,
     locked: false,
   });
-  const rejected: string[] = [];
   const dropped: UsedNote[] = [];
   const adopted = changes.added.filter((a) => {
     const isNew = normalizeText(a.譯文) !== '' && appearsIn(page.balloonTexts, a.原文) && !isVariantOf([...notes, ...changes.added], a);
@@ -208,9 +233,27 @@ export function pendingSuggestions({ entries, suggestions }: SeriesNotes): Notes
   return suggestions.filter((s) => !s.ignored && byOriginal.has(s.原文) && byOriginal.get(s.原文)!.譯文 !== s.建議譯文);
 }
 
+/**
+ * 人在 side panel 刪除一個條目（#214）：條目與它的建議修改（含忽略過的）一起拿掉。locked 的也能刪。
+ * exclude：原文變成 Excluded Term，之後不再記；否則 LLM 下次遇到時可以重新記。
+ */
+export function deleteEntry(notes: SeriesNotes, 原文: string, { exclude }: { exclude: boolean }): SeriesNotes {
+  return {
+    entries: notes.entries.filter((e) => e.原文 !== 原文),
+    suggestions: notes.suggestions.filter((s) => s.原文 !== 原文),
+    excluded: exclude && !notes.excluded.includes(原文) ? [...notes.excluded, 原文] : notes.excluded,
+  };
+}
+
+/** 恢復一個 Excluded Term：只讓它可以再被記，刪掉的條目不會回來。 */
+export function restoreExcluded(notes: SeriesNotes, 原文: string): SeriesNotes {
+  return { ...notes, excluded: notes.excluded.filter((t) => t !== 原文) };
+}
+
 /** 接受建議：條目改成建議譯文並 locked（等於人改過），這個建議拿掉。 */
 export function acceptSuggestion(notes: SeriesNotes, ref: SuggestionRef): SeriesNotes {
   return {
+    ...notes,
     entries: editEntry(notes.entries, ref.原文, { 譯文: ref.建議譯文 }),
     suggestions: notes.suggestions.filter((s) => !sameSuggestion(ref)(s)),
   };
@@ -219,7 +262,7 @@ export function acceptSuggestion(notes: SeriesNotes, ref: SuggestionRef): Series
 /** 忽略建議：條目不動，建議留著但標成忽略，同樣的建議之後不會再加進來。 */
 export function ignoreSuggestion(notes: SeriesNotes, ref: SuggestionRef): SeriesNotes {
   return {
-    entries: notes.entries,
+    ...notes,
     suggestions: notes.suggestions.map((s) => (sameSuggestion(ref)(s) ? { ...s, ignored: true } : s)),
   };
 }
@@ -247,7 +290,7 @@ export function staleReason(
   current: TranslatorVersion | undefined,
 ): StaleReason | undefined {
   const byOriginal = new Map(entries.map((e) => [e.原文, e]));
-  // 條目不在了（不會發生：條目不能刪）就當沒改
+  // 條目被刪了（#214）就當沒改：刪掉的多半是雜訊，不值得叫讀者花錢重翻
   const changed = (u: UsedNote) => {
     const now = byOriginal.get(u.原文);
     return now !== undefined && now.譯文 !== u.譯文 && (u.譯文 !== '' || now.locked);
@@ -261,9 +304,26 @@ export function staleReason(
 /**
  * 匯入 JSON（#38）時把檔案裡這部 Series 的 Notes 併進本機的：跟合併 Series 同一套只能新增規則，本機已有的條目優先，
  * 譯文衝突變成建議修改。本機沒有的條目照原樣加進來（另一台電腦上人改過的仍是 locked）。檔案裡的建議去重後加進來。
+ * 本機不記的詞（#214）不會被加回來；檔案裡不記的詞也併進本機。
  */
 export function mergeImportedNotes(local: SeriesNotes, incoming: SeriesNotes, seriesId: string): SeriesNotes {
-  const merged = mergeNotes(local.entries, incoming.entries, { seriesId, 來源: { imported: true } });
-  const imported = incoming.suggestions.map((s) => ({ ...s, seriesId }));
-  return { entries: merged.entries, suggestions: addSuggestions(addSuggestions(local.suggestions, imported), merged.suggestions) };
+  const merged = mergeNotes(local.entries, incoming.entries, { seriesId, 來源: { imported: true }, excluded: local.excluded });
+  const isExcluded = excludedTest(local.excluded);
+  const imported = incoming.suggestions.filter((s) => !isExcluded(s.原文)).map((s) => ({ ...s, seriesId }));
+  return {
+    entries: merged.entries,
+    suggestions: addSuggestions(addSuggestions(local.suggestions, imported), merged.suggestions),
+    excluded: mergeExcluded(local, incoming.excluded),
+  };
+}
+
+/**
+ * 併進來的 Series（合併、匯入）不記的詞加到目標上（#214）。目標已有這個原文的條目就不加：目標優先，
+ * 跟條目的先到先贏一樣。
+ */
+export function mergeExcluded(target: Pick<SeriesNotes, 'entries' | 'excluded'>, incoming: readonly string[]): string[] {
+  const taken = excludedTest([...target.excluded, ...target.entries.map((e) => e.原文)]);
+  const result = [...target.excluded];
+  for (const 原文 of incoming) if (!taken(原文) && !result.includes(原文)) result.push(原文);
+  return result;
 }

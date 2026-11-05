@@ -304,6 +304,8 @@ function SettingsButton({ onOpen }: { onOpen: () => void }) {
 export interface SidePanelProps {
   /** 有已啟動的 tab：顯示 Page Mode 與逐字稿；false＝只顯示「請點外掛圖示啟動」。 */
   running: boolean;
+  /** 沒啟動的原因是這個 tab 的作品剛被刪掉（#214）：顯示「這部作品已刪除」取代「請點外掛圖示啟動」。 */
+  seriesDeleted?: boolean;
   pages: PageView[];
   modelStatus: ModelStatus;
   /** 翻譯模式與能不能翻（內建翻譯有沒有登入、自備金鑰有沒有 key）；不能翻時顯示提示。 */
@@ -403,8 +405,14 @@ export function SidePanel(props: SidePanelProps) {
   // 逐字稿譯文的標點字型（side-panel.css 的 .translation）；外掛、產品網站的展示都 render 這個元件，所以在這裡載入
   useEffect(() => void loadPunctuationFont(), []);
 
+  // 作品頁跟著已啟動的 tab：停用了（停止、作品被刪掉，#214）就回到主畫面，之後再啟動也不會停在舊的作品頁
+  const onSeriesPage = page === 'series' || page === 'seriesPick';
+  useEffect(() => {
+    if (!running && onSeriesPage) setPage(undefined);
+  }, [running, onSeriesPage]);
+
   const close = () => setPage(undefined);
-  const screen = sidePanelScreen({ setupComplete: props.setupComplete ?? true, page });
+  const screen = sidePanelScreen({ setupComplete: props.setupComplete ?? true, page: !running && onSeriesPage ? undefined : page });
   if (screen === 'finishSetup') return <FinishSetup logoSrc={props.logoSrc} onFinishSetup={props.onFinishSetup} />;
   if (screen !== 'transcript') {
     const back = () => setPage(parentPage(screen));
@@ -456,7 +464,11 @@ export function SidePanel(props: SidePanelProps) {
           {header}
           {consentCard}
           {subscribedNotice}
-          <p>請點外掛圖示啟動</p>
+          {props.seriesDeleted ? (
+            <Callout role="status">這部作品已刪除。重新啟動外掛會當成新的作品開始翻譯。</Callout>
+          ) : (
+            <p>請點外掛圖示啟動</p>
+          )}
         </main>
       </div>
     );

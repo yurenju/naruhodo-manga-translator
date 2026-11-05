@@ -16,10 +16,11 @@ const note = (原文: string, 譯文: string, more: Partial<NotesEntry> = {}): N
 const noChanges = (): NotesChanges => ({ added: [], filled: [], suggestions: [] });
 
 /** 記憶體裡的 Notes；每次讀寫都隔一個 tick，像 IndexedDB 一樣會跟別的操作交錯。 */
-function memoryStore(initial: NotesEntry[] = []): NotesStore & { state: SeriesNotes } {
+function memoryStore(initial: NotesEntry[] = []): NotesStore & { state: SeriesNotes; saves: number } {
   const tick = () => new Promise((resolve) => setTimeout(resolve));
   const store = {
-    state: { entries: structuredClone(initial), suggestions: [] } as SeriesNotes,
+    state: { entries: structuredClone(initial), suggestions: [], excluded: [] } as SeriesNotes,
+    saves: 0,
     async list() {
       await tick();
       return structuredClone(store.state.entries);
@@ -30,6 +31,7 @@ function memoryStore(initial: NotesEntry[] = []): NotesStore & { state: SeriesNo
     },
     async save(_seriesId: string, notes: SeriesNotes) {
       await tick();
+      store.saves++;
       store.state = structuredClone(notes);
     },
   };
@@ -79,5 +81,29 @@ describe('notes-ledger：人的編輯與 LLM 的變更', () => {
     await ledger.checkout('s').commit(suggest, { ...page, pageHash: 'h2' });
 
     expect(store.state.suggestions).toEqual([{ seriesId: 's', 原文: 'パン', 建議譯文: '胖', 來源: { pageHash: 'h1' } }]);
+  });
+
+  it('Excluded Term（#214）：LLM 又提到不記的詞也不加回來', async () => {
+    const store = memoryStore();
+    store.state.excluded = ['パン'];
+    const ledger = createNotesLedger({ store });
+
+    await ledger.checkout('s').commit({ ...noChanges(), added: [{ 原文: 'パン', 讀音: 'ぱん', 譯文: '麵包', 類別: '用語' }] }, page);
+
+    expect(store.state.entries).toEqual([]);
+  });
+
+  it('作品刪除後（#214）：還在翻的頁回來、人的修改都不寫，不會把刪掉的 Notes 寫回去', async () => {
+    const store = memoryStore([note('パン', '麵包')]);
+    let exists = true;
+    const ledger = createNotesLedger({ store, seriesExists: async () => exists });
+
+    const turn = ledger.checkout('s');
+    await turn.notes;
+    exists = false;
+    await turn.commit({ ...noChanges(), added: [{ 原文: 'お店', 讀音: '', 譯文: '店', 類別: '用語' }] }, { ...page, balloonTexts: ['お店'] });
+    await ledger.update('s', (notes) => ({ ...notes, entries: [] }));
+
+    expect(store.saves).toBe(0);
   });
 });
