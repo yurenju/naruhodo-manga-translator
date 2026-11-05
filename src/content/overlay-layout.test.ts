@@ -21,26 +21,33 @@ describe('verticalize（直書前的文字處理）', () => {
       { text: 'ラ', form: 'plain' },
       { text: 'ー', form: 'sideways' },
       { text: 'メン', form: 'plain' },
-      { text: '！？', form: 'upright' },
+      { text: '！？', form: 'combine' },
     ]);
   });
 
-  it('... 與連續的 … 換成直書的刪節號', () => {
-    expect(verticalize('結果...')).toEqual([{ text: '結果……', form: 'plain' }]);
-    expect(verticalize('喂…聽得到嗎')).toEqual([{ text: '喂……聽得到嗎', form: 'plain' }]);
+  it('... 與連續的 … 換成兩個 …，用字型的直書字形（不轉，點才在欄的中間）', () => {
+    expect(verticalize('結果...')).toEqual([
+      { text: '結果', form: 'plain' },
+      { text: '……', form: 'upright' },
+    ]);
+    expect(verticalize('喂…聽得到嗎')).toEqual([
+      { text: '喂', form: 'plain' },
+      { text: '……', form: 'upright' },
+      { text: '聽得到嗎', form: 'plain' },
+    ]);
   });
 
   it('短英數字（1～3 字）與 !? 組合縱中橫', () => {
     expect(verticalize('7點在車站前')).toEqual([
-      { text: '7', form: 'upright' },
+      { text: '7', form: 'combine' },
       { text: '點在車站前', form: 'plain' },
     ]);
     expect(verticalize('你是認真的嗎!?')).toEqual([
       { text: '你是認真的嗎', form: 'plain' },
-      { text: '！？', form: 'upright' },
+      { text: '！？', form: 'combine' },
     ]);
     expect(verticalize('OK！')).toEqual([
-      { text: 'OK', form: 'upright' },
+      { text: 'OK', form: 'combine' },
       { text: '！', form: 'plain' },
     ]);
   });

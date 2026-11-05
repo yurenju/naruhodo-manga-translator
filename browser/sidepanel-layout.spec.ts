@@ -77,8 +77,8 @@ test('逐字稿的日文全部用日文系統字型、中文全部用中文系�
     for (const nodeId of nodeIds) for (const f of (await cdp.send('CSS.getPlatformFontsForNode', { nodeId })).fonts) used.add(f.familyName);
     return [...used];
   };
-  const japanese = ['Noto Sans JP', 'Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic'];
-  const chinese = ['Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei'];
+  const japanese = ['Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic'];
+  const chinese = ['PingFang TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei'];
   const ja = await fontsFor('ja');
   const zh = await fontsFor('zh-Hant');
   expect(ja.filter((f) => !japanese.includes(f)), `日文用了 ${ja.join('、')}`).toEqual([]);

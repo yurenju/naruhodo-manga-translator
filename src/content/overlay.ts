@@ -23,6 +23,7 @@ import { rubyDisplay } from '../shared/ruby.ts';
 import TOKENS from '../shared/tokens.css';
 import { createTrace } from '../shared/trace.ts';
 import { headingToward, HOVER_DWELL_MS, type Point } from './hover-intent.ts';
+import { PUNCTUATION_UNICODE_RANGE, PUNCTUATION_WOFF2_BASE64 } from './punctuation-font.ts';
 import { eraseFill, estimateFontPx, estimateOriginalLines, fitText, isVertical, layerTransform, layoutText, looseTextRegions, minLayerFontPx, pageSize, ratioToBox, separateRegions, textRegions, verticalize, type Box } from './overlay-layout.ts';
 
 /**
@@ -40,6 +41,24 @@ const LINE_HEIGHT = 1.15;
 /** Loose Text 譯文的反色描邊（#151）：paint-order: stroke 讓一半壓在字下面，字外側露出約字級的 1/8。 */
 const LOOSE_STROKE_EM = 0.25;
 
+/**
+ * 譯文的「。，、；：．」用打包的 Noto Sans TC 標點（src/content/punctuation-font.ts，2.6 KB）：系統字型的位置不對
+ * （微軟正黑體橫書在左下、直書在右上），台灣的直書標點在格子中間。其餘的字照舊用系統字型（--naru-font-sans）。
+ */
+export const PUNCTUATION_FAMILY = 'Naruhodo Punctuation TC';
+
+let punctuationLoaded: Promise<void> | undefined;
+
+/** 載入一次；FontFace 直接吃位元組，不經過網址，所以不受網頁 CSP 的 font-src 限制。失敗就用系統字型的標點。 */
+function loadPunctuationFont(): Promise<void> {
+  punctuationLoaded ??= (async () => {
+    const bytes = Uint8Array.from(atob(PUNCTUATION_WOFF2_BASE64), (c) => c.charCodeAt(0));
+    const face = new FontFace(PUNCTUATION_FAMILY, bytes, { weight: '100 900', unicodeRange: PUNCTUATION_UNICODE_RANGE });
+    document.fonts.add(await face.load());
+  })().catch((e: unknown) => console.warn('punctuation font failed, falling back to system punctuation', e));
+  return punctuationLoaded;
+}
+
 /** tooltip 與高亮框的顏色、字型取自 design tokens（跟 side panel 同一份，#71）；擦字與譯文的顏色跟著原稿算。 */
 const STYLE = `${TOKENS}
 :host { all: initial; }
@@ -47,10 +66,11 @@ const STYLE = `${TOKENS}
 .er { position: absolute; border-radius: 3px; }
 .er.img { border-radius: 0; }
 .tx { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center;
-  text-align: center; line-height: ${LINE_HEIGHT}; overflow: hidden; font-family: var(--naru-font-sans); font-weight: 700; overflow-wrap: anywhere; }
+  text-align: center; line-height: ${LINE_HEIGHT}; overflow: hidden; font-family: '${PUNCTUATION_FAMILY}', var(--naru-font-sans); font-weight: 700; overflow-wrap: anywhere; }
 .tx.v { writing-mode: vertical-rl; text-orientation: mixed; }
 .tx .u { text-combine-upright: all; }
 .tx .s { text-orientation: sideways; }
+.tx .r { text-orientation: upright; }
 .tx > span { white-space: nowrap; }
 .tx[data-wrap] > span { white-space: normal; }
 .tx[data-fit="3"] { align-items: flex-start; justify-content: flex-start; }
@@ -391,12 +411,14 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     }
   }
 
+  const RUN_CLASS = { combine: 'u', sideways: 's', upright: 'r' } as const;
+
   function appendRuns(inner: HTMLElement, text: string, vertical: boolean): void {
     for (const run of vertical ? verticalize(text) : [{ text, form: 'plain' as const }]) {
       if (run.form === 'plain') inner.append(run.text);
       else {
         const span = document.createElement('span');
-        span.className = run.form === 'upright' ? 'u' : 's';
+        span.className = RUN_CLASS[run.form];
         span.textContent = run.text;
         inner.append(span);
       }
@@ -406,6 +428,9 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
   /** 把一個 Page 的譯文覆蓋在 anchor 上；同一個 Page（subRect）再呼叫就換成新的。pageHash＝hover 同步用的 Page 身分。 */
   async function show(anchor: HTMLElement, sub: RatioRect = WHOLE_PAGE, text: PageText, pageHash = ''): Promise<void> {
     const { balloons, looseText } = overlaidTexts(text);
+    // 字型好了才量縮字
+    await loadPunctuationFont();
+    if (stopped) return;
     const entry = entryFor(anchor);
     const size = pageSize(intrinsicSize(anchor), sub, anchor);
     const element = document.createElement('div');

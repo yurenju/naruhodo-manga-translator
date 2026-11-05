@@ -5,12 +5,12 @@
 import type { RatioRect } from '../shared/page-text.ts';
 
 /**
- * 一段譯文怎麼直排：plain 照字型（text-orientation: mixed）、upright＝縱中橫（text-combine-upright）、
- * sideways＝轉 90 度（text-orientation: sideways）。
+ * 一段譯文怎麼直排：plain 照字型（text-orientation: mixed）、combine＝縱中橫（text-combine-upright）、
+ * sideways＝由 Chrome 轉 90 度、upright＝不轉、用字型的直書字形（text-orientation: upright）。
  */
 export interface TextRun {
   text: string;
-  form: 'plain' | 'upright' | 'sideways';
+  form: 'plain' | 'combine' | 'sideways' | 'upright';
 }
 
 const HALF_TO_FULL: Record<string, string> = { '!': '！', '?': '？', '~': '～', ',': '，' };
@@ -18,23 +18,29 @@ const HALF_TO_FULL: Record<string, string> = { '!': '！', '?': '？', '~': '～
 /**
  * 直排時一律轉 90 度的字：～〜ー 要靠字型的直書字形（vert）才會變直，系統字型常常沒有
  * （微軟正黑體沒有 ～、Bold 也沒有 ー），Chrome 也不會自己轉。sideways 由 Chrome 轉，不管字型有沒有。
- * …、— 不用：它們本來就由 Chrome 轉（Unicode Vertical_Orientation=R）。
  */
 const SIDEWAYS = /[～〜ー]+/;
 
-/** 1～3 字的英數字（前後不接英數字），或兩個全形驚嘆號／問號的組合。 */
-const UPRIGHT = /(?<![0-9A-Za-z])[0-9A-Za-z]{1,3}(?![0-9A-Za-z])|[！？]{2}/;
+/**
+ * 直排時不轉、用字型直書字形的字：…‥ 在 mixed 下 Chrome 會把橫書字形轉 90 度（Unicode Vertical_Orientation=R），
+ * 微軟正黑體、Yu Gothic 的橫書刪節號點在底線上，轉了就偏到欄的左邊；它們的直書字形是置中的。
+ */
+const UPRIGHT = /[…‥]+/;
 
-const SPECIAL = new RegExp(`(?<upright>${UPRIGHT.source})|(?<sideways>${SIDEWAYS.source})`, 'g');
+/** 縱中橫：1～3 字的英數字（前後不接英數字），或兩個全形驚嘆號／問號的組合。 */
+const COMBINE = /(?<![0-9A-Za-z])[0-9A-Za-z]{1,3}(?![0-9A-Za-z])|[！？]{2}/;
 
-/** 直書前：半形 !?~, 與 ... 換成全形，短英數字縱中橫，～〜ー 轉 90 度。 */
+const SPECIAL = new RegExp(`(?<combine>${COMBINE.source})|(?<sideways>${SIDEWAYS.source})|(?<upright>${UPRIGHT.source})`, 'g');
+
+/** 直書前：半形 !?~, 與 ... 換成全形，短英數字縱中橫，～〜ー 轉 90 度，刪節號用直書字形。 */
 export function verticalize(text: string): TextRun[] {
   const full = text.replace(/\.{2,}|…+/g, '……').replace(/[!?~,]/g, (c) => HALF_TO_FULL[c]!);
   const runs: TextRun[] = [];
   let last = 0;
   for (const match of full.matchAll(SPECIAL)) {
     if (match.index > last) runs.push({ text: full.slice(last, match.index), form: 'plain' });
-    runs.push({ text: match[0], form: match.groups!.upright ? 'upright' : 'sideways' });
+    const { combine, sideways } = match.groups!;
+    runs.push({ text: match[0], form: combine ? 'combine' : sideways ? 'sideways' : 'upright' });
     last = match.index + match[0].length;
   }
   if (last < full.length) runs.push({ text: full.slice(last), form: 'plain' });

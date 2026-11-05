@@ -18,7 +18,8 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 /**
  * 原樣複製進外掛的檔案：[來源（相對 repo 根目錄）, 輸出路徑]。
  * ONNX 模型不在這裡：第一次使用時才下載（spec #27 第 3.3 節）。
- * 字型不打包：side panel 與覆蓋層都用系統字型（src/shared/tokens.css）。
+ * 字型檔不打包：side panel 與覆蓋層都用系統字型（src/shared/tokens.css）；覆蓋層只有幾個標點用 Noto Sans TC，
+ * 以 base64 打包在 content script 裡（src/content/punctuation-font.ts）。
  */
 const STATIC_FILES: [string, string][] = [
   ['src/sidepanel/sidepanel.html', 'sidepanel.html'],

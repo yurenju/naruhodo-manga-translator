@@ -74,38 +74,36 @@ test.describe('覆蓋渲染（ground truth）', () => {
     });
   }
 
-  test('p05 的「～」直書時是直的', async ({ context, extensionId }) => {
-    const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+  /**
+   * 量某句譯文裡第一個 char 的墨跡（只讓它留下墨跡）。Windows 上把系統字型換成微軟正黑體：Windows 繁中的預設字型，
+   * 直書標點最常出問題的就是它（裝了 Noto Sans TC 的電腦也量它）；打包的標點字型照舊排第一。ink 是在字的 em 正方形裡的範圍。
+   */
+  async function glyphInk(page: Page, synthetic: string, id: string, char: string) {
     // 原尺寸顯示，字形才夠大到能量
-    await render(page, 'p05-dense', 880);
-
-    const clip = await page.evaluate(() => {
+    await render(page, synthetic, 880);
+    const clip = await page.evaluate(({ id, char }) => {
       const host = document.querySelector('[data-naruhodo-overlay]')!;
-      const tx = host.shadowRoot!.querySelector('[data-balloon-id="t4"]')!;
+      const tx = host.shadowRoot!.querySelector<HTMLElement>(`[data-balloon-id="${id}"], [data-loose-id="${id}"]`)!;
       const walker = document.createTreeWalker(tx, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        const i = node.textContent!.indexOf('～');
+        const i = node.textContent!.indexOf(char);
         if (i < 0) continue;
         const range = document.createRange();
         range.setStart(node, i);
         range.setEnd(node, i + 1);
-        // 只讓 ～ 留下墨跡：其他字透明，～ 包一層只改顏色的 span（不影響它怎麼直排）
-        (tx as HTMLElement).style.color = 'transparent';
-        // Windows 繁中的預設字型微軟正黑體沒有 ～ 的直書字形：指定它，量的就是最常出問題的情況（裝了 Noto Sans TC 的電腦也一樣）
-        if (navigator.userAgent.includes('Windows')) (tx as HTMLElement).style.fontFamily = "'Microsoft JhengHei'";
+        tx.style.color = 'transparent';
+        // 第一個是打包的標點字型，留著；後面的系統字型換成微軟正黑體
+        if (navigator.userAgent.includes('Windows')) tx.style.fontFamily = `${getComputedStyle(tx).fontFamily.split(',')[0]}, 'Microsoft JhengHei'`;
+        // 包一層只改顏色的 span（不影響它怎麼直排）
         const only = document.createElement('span');
         only.style.color = '#000';
         range.surroundContents(only);
         const r = only.getBoundingClientRect();
         return { vertical: getComputedStyle(tx).writingMode, orientation: getComputedStyle(only).textOrientation, x: r.x, y: r.y, width: r.width, height: r.height };
       }
-      throw new Error('no ～');
-    });
-    expect(clip.vertical).toBe('vertical-rl');
-    // 不靠字型的直書字形，由 Chrome 轉 90 度
-    expect(clip.orientation).toBe('sideways');
-    // 直書時字框的寬是行高，左右會碰到隔壁欄；只量中間的 em 正方形（邊長＝字框高）
+      throw new Error(`no ${char}`);
+    }, { id, char });
+    // 直書時字框的寬是行高；只量中間的 em 正方形（邊長＝字框高）
     const em = { x: clip.x + (clip.width - clip.height) / 2, y: clip.y, width: clip.height, height: clip.height };
     const png = await page.screenshot({ clip: em });
     const ink = await page.evaluate(async (url) => {
@@ -125,11 +123,44 @@ test.describe('覆蓋渲染（ground truth）', () => {
             bottom = Math.max(bottom, y);
           }
         }
-      return { width: right - left + 1, height: bottom - top + 1 };
+      return { left, right, top, bottom, width: right - left + 1, height: bottom - top + 1, box: width };
     }, `data:image/png;base64,${png.toString('base64')}`);
-    console.log('～ 的字形墨跡', JSON.stringify(ink), '字框', JSON.stringify(clip));
-    // 橫書的 ～ 是扁的；直書時要是直的。系統字型常常沒有 ～ 的直書字形（微軟正黑體就沒有），靠 text-orientation: sideways 轉
+    console.log(`${char} 的字形墨跡`, JSON.stringify(ink), '字框', JSON.stringify(clip));
+    return { ...clip, ink };
+  }
+
+  test('p05 的「～」直書時是直的', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    const { vertical, orientation, ink } = await glyphInk(page, 'p05-dense', 't4', '～');
+    expect(vertical).toBe('vertical-rl');
+    // 系統字型常常沒有 ～ 的直書字形（微軟正黑體就沒有），由 Chrome 轉 90 度
+    expect(orientation).toBe('sideways');
+    // 橫書的 ～ 是扁的；直書時要是直的
     expect(ink.height).toBeGreaterThan(ink.width * 1.5);
+  });
+
+  test('p05 的「……」直書時點在欄的中間', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    const { vertical, orientation, ink } = await glyphInk(page, 'p05-dense', 't9', '…');
+    expect(vertical).toBe('vertical-rl');
+    // 不轉、用字型的直書字形：微軟正黑體的橫書刪節號點在底線上，轉 90 度會偏到欄的左邊
+    expect(orientation).toBe('upright');
+    expect(ink.height).toBeGreaterThan(ink.width * 1.5);
+    const center = (ink.left + ink.right + 1) / 2;
+    expect(Math.abs(center - ink.box / 2)).toBeLessThan(ink.box * 0.12);
+  });
+
+  test('p01 的「，」直書時在格子正中間（台灣標點）', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    const { vertical, ink } = await glyphInk(page, 'p01-basic', 't2', '，');
+    expect(vertical).toBe('vertical-rl');
+    // 微軟正黑體的直書「，」在右上角（日式）；打包的 Noto Sans TC 標點在中間
+    const [cx, cy] = [(ink.left + ink.right + 1) / 2, (ink.top + ink.bottom + 1) / 2];
+    expect(Math.abs(cx - ink.box / 2)).toBeLessThan(ink.box * 0.15);
+    expect(Math.abs(cy - ink.box / 2)).toBeLessThan(ink.box * 0.15);
   });
 
   // unit test 驗不到：content script 真的把 PNG data URL 貼在 Page 層的正確位置、縮放跟著 Page 層走

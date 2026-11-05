@@ -10,8 +10,8 @@ function stack(name: string): string[] {
 }
 
 /** 只有某一種語言字形的系統字型：排進另一種語言的清單，那個語言的字就會用錯字形、缺的字再被別的字型補。 */
-const CHINESE_FONTS = ['Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei'];
-const JAPANESE_FONTS = ['Noto Sans JP', 'Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic'];
+const CHINESE_FONTS = ['PingFang TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei'];
+const JAPANESE_FONTS = ['Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic'];
 
 describe('字型 token（系統字型，不打包）', () => {
   it('中文與日文的清單各自只有自己語言的字型', () => {

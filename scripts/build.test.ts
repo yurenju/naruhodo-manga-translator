@@ -106,7 +106,7 @@ describe('正式 build', () => {
     expect(files.filter((f) => f.endsWith('.onnx'))).toEqual([]);
   });
 
-  it('不打包字型、不對網頁開放任何外掛檔案（side panel 與覆蓋層都用系統字型）', async () => {
+  it('不打包字型檔、不對網頁開放任何外掛檔案（系統字型；覆蓋層的標點字型以 base64 在 content script 裡）', async () => {
     const manifest = await readJson(prodDir, 'manifest.json');
     const files = await readdir(prodDir, { recursive: true });
 
