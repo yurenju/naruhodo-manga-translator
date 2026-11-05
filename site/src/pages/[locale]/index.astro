@@ -1,6 +1,7 @@
 ---
 /** 首頁就是價格頁（#89 A 版）：大標題 → 展示 → 怎麼用 → 方案 → 常見問題。 */
 import Copy from '../../components/Copy.astro';
+import StepBody from '../../components/StepBody.astro';
 import Base from '../../layouts/Base.astro';
 import '../../styles/demo.css';
 import { copy } from '../../copy.ts';
@@ -40,7 +41,7 @@ const t = copy[locale];
         {t.how.steps.map((step) => (
           <li class="card">
             <h3>{step.title}</h3>
-            <p>{step.body}</p>
+            <p><StepBody body={step.body} /></p>
           </li>
         ))}
       </ol>

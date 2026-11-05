@@ -1,0 +1,13 @@
+---
+/** 步驟內文：`{shortcut}` 換成外掛快捷鍵的按鍵，`{puzzle}` 換成 Chrome 工具列的拼圖圖示（要給 `puzzleLabel`）。 */
+import PuzzleIcon from './PuzzleIcon.astro';
+import Shortcut from './Shortcut.astro';
+
+interface Props {
+  body: string;
+  puzzleLabel?: string;
+}
+const { body, puzzleLabel = '' } = Astro.props;
+const parts = body.split(/(\{puzzle\}|\{shortcut\})/);
+---
+{parts.map((part) => (part === '{puzzle}' ? <PuzzleIcon label={puzzleLabel} /> : part === '{shortcut}' ? <Shortcut /> : part))}
