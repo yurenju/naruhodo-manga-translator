@@ -1,13 +1,15 @@
 """
-重新產生覆蓋層的標點字型（src/content/punctuation-font.ts）。平常不用跑：產出的檔案已經 commit。
+重新產生譯文的標點字型（src/shared/punctuation-font.ts）。平常不用跑：產出的檔案已經 commit。
 
-用法：pip install fonttools brotli，然後 python -I scripts/punctuation-font.py
+用法：pip install fonttools brotli，然後 python scripts/punctuation-font.py（不要加 -I：會讀不到 pip install --user 裝的 fonttools）
 
-為什麼要這個字型：覆蓋層的譯文用系統字型（微軟正黑體、PingFang TC），但微軟正黑體沒有置中的「。，、」：
-橫書字形在左下角、直書字形在右上角（日式）。台灣的直書標點在格子正中間，所以只把這幾個標點換成
+為什麼要這個字型：譯文（覆蓋層、tooltip、side panel）用系統字型（微軟正黑體、PingFang TC），但微軟正黑體沒有置中的標點：
+「。，、；：．」橫書字形在左下角、直書字形在右上角（日式）；「！？」直書時靠右；破折號 ― 只有半格寬，
+橫書時偏上、直書時靠右，兩個 ―― 連起來還不到一格。台灣的標點在格子正中間，所以只把這幾個標點換成
 Noto Sans TC 的字形（繁中子集的預設字形就是置中的），其餘的字照舊用系統字型。
 刪節號 …‥ 直書時用字型的直書字形（text-orientation: upright），但不是每個系統字型都有（CI 的 Linux 就沒有，
 會變成橫的一排點），所以也放進來。
+括號「」『』（）不放：兩種字型都貼著字的一側，本來就該這樣。— U+2014 也不放：Noto 的直書字形比微軟正黑體更偏。
 
 來源是 notofonts/noto-cjk 固定 commit（Sans2.004）的 NotoSansTC-VF.otf（Variable，字重 100–900），
 只留 PUNCTUATION 的字，轉成 woff2 後以 base64 寫進 TS：content script 與產品網站直接 import，
@@ -26,10 +28,10 @@ COMMIT = '523d033d6cb47f4a80c58a35753646f5c3608a78'  # tag Sans2.004
 URL = f'https://raw.githubusercontent.com/notofonts/noto-cjk/{COMMIT}/Sans/Variable/OTF/Subset/NotoSansTC-VF.otf'
 SHA256 = 'a080726eee9d78ec74fd95184a79c58c3085f10713e26876aab0130f543e9120'
 
-# 直書位置會因系統字型而跑掉的標點：。，、；：．與刪節號 …‥
-PUNCTUATION = [0x2025, 0x2026, 0x3001, 0x3002, 0xFF0C, 0xFF0E, 0xFF1A, 0xFF1B]
+# 位置會因系統字型而跑掉的標點：。，、；：．！？、刪節號 …‥ 與破折號 ―（有時寫成框線 ─━，微軟正黑體的也不滿格）
+PUNCTUATION = [0x2015, 0x2025, 0x2026, 0x2500, 0x2501, 0x3001, 0x3002, 0xFF01, 0xFF0C, 0xFF0E, 0xFF1A, 0xFF1B, 0xFF1F]
 
-OUT = os.path.join(os.path.dirname(__file__), '..', 'src', 'content', 'punctuation-font.ts')
+OUT = os.path.join(os.path.dirname(__file__), '..', 'src', 'shared', 'punctuation-font.ts')
 
 
 def unicode_range(codepoints):

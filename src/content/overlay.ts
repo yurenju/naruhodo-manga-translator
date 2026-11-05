@@ -23,7 +23,7 @@ import { rubyDisplay } from '../shared/ruby.ts';
 import TOKENS from '../shared/tokens.css';
 import { createTrace } from '../shared/trace.ts';
 import { headingToward, HOVER_DWELL_MS, type Point } from './hover-intent.ts';
-import { PUNCTUATION_UNICODE_RANGE, PUNCTUATION_WOFF2_BASE64 } from './punctuation-font.ts';
+import { loadPunctuationFont, PUNCTUATION_FAMILY } from '../shared/punctuation-face.ts';
 import { eraseFill, estimateFontPx, estimateOriginalLines, fitText, isVertical, layerTransform, layoutText, looseTextRegions, minLayerFontPx, pageSize, ratioToBox, separateRegions, textRegions, verticalize, type Box } from './overlay-layout.ts';
 
 /**
@@ -40,24 +40,6 @@ export const HOST_ATTRIBUTE = 'data-naruhodo-overlay';
 const LINE_HEIGHT = 1.15;
 /** Loose Text 譯文的反色描邊（#151）：paint-order: stroke 讓一半壓在字下面，字外側露出約字級的 1/8。 */
 const LOOSE_STROKE_EM = 0.25;
-
-/**
- * 譯文的「。，、；：．」與刪節號用打包的 Noto Sans TC 標點（src/content/punctuation-font.ts，約 3 KB）：系統字型的位置不對
- * （微軟正黑體的「。」橫書在左下、直書在右上；有的字型沒有 … 的直書字形），台灣的直書標點在格子中間。其餘的字照舊用系統字型（--naru-font-sans）。
- */
-export const PUNCTUATION_FAMILY = 'Naruhodo Punctuation TC';
-
-let punctuationLoaded: Promise<void> | undefined;
-
-/** 載入一次；FontFace 直接吃位元組，不經過網址，所以不受網頁 CSP 的 font-src 限制。失敗就用系統字型的標點。 */
-function loadPunctuationFont(): Promise<void> {
-  punctuationLoaded ??= (async () => {
-    const bytes = Uint8Array.from(atob(PUNCTUATION_WOFF2_BASE64), (c) => c.charCodeAt(0));
-    const face = new FontFace(PUNCTUATION_FAMILY, bytes, { weight: '100 900', unicodeRange: PUNCTUATION_UNICODE_RANGE });
-    document.fonts.add(await face.load());
-  })().catch((e: unknown) => console.warn('punctuation font failed, falling back to system punctuation', e));
-  return punctuationLoaded;
-}
 
 /** tooltip 與高亮框的顏色、字型取自 design tokens（跟 side panel 同一份，#71）；擦字與譯文的顏色跟著原稿算。 */
 const STYLE = `${TOKENS}
@@ -85,14 +67,14 @@ const STYLE = `${TOKENS}
 .tip-ja rt { font-size: 0.6em; font-weight: 400; }
 .tip-guess { font-size: 0.75em; }
 .tip-unreadable { color: var(--naru-tooltip-ink-3); text-decoration: line-through dotted; }
-.tip-zh { font-size: 1.15em; }
+.tip-zh { font-size: 1.15em; font-family: '${PUNCTUATION_FAMILY}', var(--naru-font-sans); }
 .tip.learn .tip-ja { font-size: 1.4em; color: var(--naru-tooltip-ink); }
 .tip-reveal { display: flex; align-items: center; gap: 0.6em; box-sizing: border-box; min-height: 3em; margin: 0.3em 0;
   padding: 0.6em 0.75em; border-radius: 0.6em; background: var(--naru-tooltip-chip-bg); border: 1px dashed var(--naru-tooltip-chip-line); }
 .tip-reveal.on { background: var(--naru-tooltip-chip-on-bg); border: 1px solid var(--naru-tooltip-chip-on-line); }
 .tip-reveal-label { flex: none; display: flex; align-items: center; justify-content: center; width: 1.7em; height: 1.7em;
   border-radius: 0.45em; background: var(--naru-tooltip-ink); color: var(--naru-tooltip-bg); font-weight: 700; }
-.tip-reveal-body { color: var(--naru-tooltip-chip-hint); }
+.tip-reveal-body { color: var(--naru-tooltip-chip-hint); font-family: '${PUNCTUATION_FAMILY}', var(--naru-font-sans); }
 .tip-reveal.on .tip-reveal-body { color: var(--naru-on-accent); font-size: 1.15em; }
 .hl { position: absolute; display: none; box-sizing: border-box; border-style: solid; border-color: var(--naru-highlight);
   background: var(--naru-highlight-fill); }
