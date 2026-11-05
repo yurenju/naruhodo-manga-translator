@@ -18,10 +18,11 @@ disable-model-invocation: true
 
 ## 工具
 
-`tools/` 裡兩個 node 小工具，直接 `node .claude/skills/audit-extension/tools/<檔名>` 執行，用法寫在各檔開頭：
+`tools/` 裡三個 node 小工具，直接 `node .claude/skills/audit-extension/tools/<檔名>` 執行，用法寫在各檔開頭：
 
-- `cdp.ts`：開分頁、導航、翻頁（按鍵、滾輪、點擊）、截圖、放大截某一塊。
-- `trace.ts`：查最新 trace session、**等**某個事件出現、把 LLM 的 request／response 配成「原文 → 譯文」、列出每次翻譯帶了哪些上下文、找出行數選擇害字被縮小的框。
+- `cdp.ts`：開分頁、導航、翻頁（按鍵、滾輪、點擊）、截圖、放大截某一塊；`panel` 讀外掛 side panel 的文字、截圖、重新載入時的例外（其他指令只看得到網頁分頁）。
+- `trace.ts`：查最新 trace session、**等**某個事件出現、把 LLM 的 request／response 配成「原文 → 譯文」、列出每次翻譯帶了哪些上下文、找出行數選擇害字被縮小的框、列出每頁實際蓋上與沒蓋的項目和原因（`shown`）。
+- `turn.ts`：一部作品連續翻頁、等蓋好、截圖，一頁一行回報；翻頁鍵、滾輪、每次等幾頁都用參數指定。
 
 在頁面裡跑程式（找連結、量 canvas 尺寸）用 `npm run debug:eval -- page --url <urlPart> -e "<運算式>"`。
 
@@ -52,6 +53,12 @@ disable-model-invocation: true
 
 每部作品開**新分頁**（`cdp.ts open`），然後 `npm run debug:activate -- --url <urlPart>`。先摸清楚這個 viewer 怎麼翻頁（方向鍵哪一邊是下一頁、要不要捲動、跨頁還是單頁），記進 `operation-log.md`。
 
+`debug:activate` 說 10 秒內沒看到「已啟動」，或第一頁辨識完卻一直沒有 `translate:request`：外掛本身卡住了，先查清楚再讀，這是整輪最嚴重的那種 finding。
+
+- `cdp.ts panel text --tab <tabId>` 看 side panel 是不是空白；`cdp.ts panel reload --tab <tabId>` 看載入時丟了什麼例外。
+- 在 SW 開外掛的 IndexedDB，4 秒沒有任何回應就是資料庫升級卡住，讀 API key、Series 的動作全都跟著卡：`npm run debug:eval -- sw -e "new Promise(r=>{const q=indexedDB.open('naruhodo');setTimeout(()=>r('HANG'),4000);q.onsuccess=()=>r('OK v'+q.result.version);q.onblocked=()=>r('BLOCKED');q.onerror=()=>r(String(q.error))})"`
+- 證據記完後在 Terminal 面板跑 `npm run debug:reload`、重新整理分頁、再 `debug:activate`，看重新載入之後還會不會發生。
+
 每翻一頁：
 
 1. 記下目前的 trace 行數，翻頁。
@@ -60,11 +67,11 @@ disable-model-invocation: true
 4. 照下面的**分類**逐項看這一頁，有問題就當場寫一行草稿到 `findings.md`，附截圖路徑與 trace 行號。
 5. 譯文只有半句、意思接不上，或截圖上框裡還露著日文：打開這頁 `analyze` 的偵測圖，看紅框（text）有沒有框滿泡泡、數字順序對不對、有沒有整個框沒抓到。看起來像翻譯錯的，常常是上游送錯。
 
-每翻幾頁就把迴圈寫成一個小腳本（翻頁 → 等 → 截圖 → `trace.ts pairs --since`）放在 scratchpad，一次跑一部的全部頁，再逐頁看結果。
+前一兩頁照上面手動翻，摸清楚翻頁方式後改用 `turn.ts` 一次跑完這部剩下的頁（例：跨頁 `turn.ts <urlPart> a 2 8`，單頁加 `--count 1`，直式捲動用 `--wheel 800 --count 1`），再逐頁看截圖。逾時那一行會附上停在哪一層。
 
 廣告頁、標題頁、目錄頁也要看（OCR 亂讀、亂句被蓋上去常出在這裡），但不算進「每部頁數」；頁數只算正文。
 
-一部讀完後，`trace.ts pairs --since <這部開始的行數>` 撈出這部的全部譯文，存成 `<audit>\<作品代號>-pairs.txt`，再照「翻譯」那一類整批評。評性別、語氣時對照 trace 的 `crop` 圖看角色。再跑 `trace.ts context --since <同一行>` 看每頁送給 LLM 的上下文：前一頁有沒有在 `priorPages` 裡、同一個角色的暱稱和本名在 Series Notes 是不是分成互不相干的兩條。最後跑 `trace.ts shrunk --since <同一行>`：列出的每個框都是「覆蓋版面」的一條 finding（字被縮小），照它給的行號、字級、行數寫證據；這類框畫面上看不出錯、只看得出字小，靠截圖很容易漏掉。
+一部讀完後，`trace.ts pairs --since <這部開始的行數>` 撈出這部的全部譯文，存成 `<audit>\<作品代號>-pairs.txt`，再照「翻譯」那一類整批評。評性別、語氣時對照 trace 的 `crop` 圖看角色。再跑 `trace.ts context --since <同一行>` 看每頁送給 LLM 的上下文：前一頁有沒有在 `priorPages` 裡、同一個角色的暱稱和本名在 Series Notes 是不是分成互不相干的兩條。最後跑 `trace.ts shrunk --since <同一行>`：列出的每個框都是「覆蓋版面」的一條 finding（字被縮小），照它給的行號、字級、行數寫證據；這類框畫面上看不出錯、只看得出字小，靠截圖很容易漏掉。再跑 `trace.ts shown --since <同一行>`：pairs 裡有譯文、shown 卻列在「沒蓋」的項目，看原因分辨是 OCR 信心太低被擋（對照 `analyze` 的 `ocrConfidence`）還是 LLM 自己回 unreadable；兩者歸到不同分類。
 
 完成條件：每部都讀滿指定的正文頁數，或寫下讀不滿的原因（例如整部抓不到 Page）。讀不到翻譯的作品不能補頁數，就多挑一部補上。
 
@@ -100,6 +107,6 @@ disable-model-invocation: true
 | OCR | 框對了但原文讀錯：標題、小字、招牌、專有名詞、手寫字、對白裡的濁音半濁音 | `trace.ts pairs` 的原文欄對照截圖；LLM 自己修回的錯字也記下來當對照 |
 | 翻譯 | 誤譯、性別（他／她、你／妳、先生／小姐）、語氣、稱呼不一致、生硬、作品名或專有名詞亂譯、雙關翻死、上下文缺漏 | `trace.ts pairs`、`trace.ts context`、`crop` 圖（判斷角色） |
 | 覆蓋版面 | 白框太大或超出泡泡、角跑出黑框、字被截斷、字太小或排版擠、行數選擇害字被縮小（譯文比原文少排行，字級縮到起始字級 85% 以下） | 放大截圖；`overlay:show` 的 `fits.truncated`；`trace.ts shrunk` |
-| 框外文字 | 框外的獨白、旁白、說明字沒翻或沒蓋 | pairs 裡的 `[loose]` 項對照截圖：trace 有譯文、頁面還是日文就是沒蓋 |
+| 框外文字 | 框外的獨白、旁白、說明字沒翻或沒蓋 | pairs 裡的 `[loose]` 項對照 `trace.ts shown`：pairs 有譯文、shown 沒蓋上，再對照截圖 |
 | 當場發現 | 不屬於上面任何一層、要看到畫面或操作才知道的問題 | 操作步驟＋trace 行號 |
 

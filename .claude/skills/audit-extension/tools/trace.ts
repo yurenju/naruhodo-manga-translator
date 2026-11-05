@@ -6,6 +6,8 @@
  *   pairs [--since n]                        每組 translate:request／response 配成「原文 → 譯文」，附行號
  *   context [--since n]                      每個 translate:request 帶的 priorPages（每頁頭尾一句）與 Series Notes
  *   shrunk [--since n]                       overlay:show 裡「譯文比原文少排行、字又被縮小」的框（#129），最後一行是符合數／總框數
+ *   shown [--since n]                        每個 overlay:show 實際蓋上的框外字（loose）與沒蓋的項目和原因（unreadable、sfx）；
+ *                                            pairs 有譯文、這裡沒蓋上，才是「框外文字有譯文卻沒蓋」
  * 都可以加 --session <名稱> 指定別的 session。
  */
 import { readdirSync, readFileSync } from 'node:fs';
@@ -112,6 +114,26 @@ function shrunk(): string[] {
   return out;
 }
 
+/**
+ * 每個 overlay:show 蓋了什麼、沒蓋什麼。Balloon 只列數量（幾乎都蓋上），框外字（id 以 l 開頭）逐項列，
+ * skipped 逐項列原因：unreadable 包括 OCR 信心太低被擋、LLM 自己回 unreadable 兩種，要對照 analyze 的 ocrConfidence 分。
+ */
+function shown(): string[] {
+  const out: string[] = [];
+  for (const { line, event, data } of records()) {
+    if (event !== 'overlay:show') continue;
+    const fits = data.fits as { id: string; 譯文: string }[];
+    const skipped = (data.skipped ?? []) as { id: string; 譯文: string; unreadable?: boolean; sfx?: boolean }[];
+    out.push(`L${line} ${String(data.pageHash).slice(0, 8)}  蓋上 ${fits.length}（Balloon ${fits.filter((f) => !f.id.startsWith('l')).length}）  沒蓋 ${skipped.length}`);
+    for (const f of fits.filter((f) => f.id.startsWith('l'))) out.push(`   蓋上 ${f.id} ${f.譯文}`);
+    for (const s of skipped) {
+      const why = [s.unreadable && 'unreadable', s.sfx && 'sfx'].filter(Boolean).join('+') || '?';
+      out.push(`   沒蓋 ${s.id} [${why}] ${s.譯文 || '(空)'}`);
+    }
+  }
+  return out;
+}
+
 async function wait(event: string): Promise<string> {
   const deadline = Date.now() + Number(option('--timeout') ?? 60) * 1000;
   const count = Number(option('--count') ?? 1);
@@ -139,6 +161,9 @@ switch (args[0]) {
     break;
   case 'shrunk':
     console.log(shrunk().join('\n'));
+    break;
+  case 'shown':
+    console.log(shown().join('\n'));
     break;
   default:
     throw new Error(`未知指令 ${args[0]}；用法見 ${import.meta.filename} 開頭`);
