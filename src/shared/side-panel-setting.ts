@@ -1,6 +1,6 @@
 /**
  * Side Panel on Activation（#185）：全域設定，啟動外掛時要不要一起打開 side panel。跟 Page Mode 一樣存在 chrome.storage.local。
- * onboarding 的「看漫畫／學日文」一次設好它與 Page Mode（不另外存「使用目的」）；之後在圖示的右鍵選單改。
+ * 走完 onboarding 的新讀者一律設成關（看漫畫）；之後在圖示的右鍵選單改。
  * 沒有值＝沒經過新 onboarding 的既有讀者：開著，行為跟以前一樣。
  */
 import { watchLocal } from './watch-local.ts';
