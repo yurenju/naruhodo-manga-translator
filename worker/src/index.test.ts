@@ -25,7 +25,7 @@ beforeEach(async () => {
 /** 帶這個測試登入拿到的 token；token: null＝不帶。 */
 const post = (path: string, body: unknown, as: string | null = token) => postAs(path, body, as === null ? {} : { token: as });
 
-const answer = { items: [{ id: 'b1', reading: 'おはよう！きょうははやいね', zh: '早安！今天好早喔', unreadable: false, sfx: false }] };
+const answer = { items: [{ id: 'b1', zh: '早安！今天好早喔', unreadable: false, sfx: false }] };
 
 const ok = reply(answer);
 
@@ -54,14 +54,14 @@ describe('驗證身分', () => {
 });
 
 describe('翻譯', () => {
-  it('用 Worker 的 key 呼叫 Anthropic，回傳每一句的讀音與譯文、用量與模型', async () => {
+  it('用 Worker 的 key 呼叫 Anthropic，回傳每一句的譯文、用量與模型', async () => {
     const anthropic = fakeAnthropic([ok]);
 
     const response = await post(TRANSLATE_PATH, input);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      items: [{ id: 'b1', 讀音: 'おはよう！きょうははやいね', 譯文: '早安！今天好早喔', unreadable: false }],
+      items: [{ id: 'b1', 譯文: '早安！今天好早喔', unreadable: false }],
       model: CLAUDE_MODEL,
       usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 700 },
     });
@@ -70,6 +70,14 @@ describe('翻譯', () => {
     expect(call!.url).toBe('https://api.anthropic.com/v1/messages');
     expect(new Headers(call!.init.headers).get('x-api-key')).toBe('sk-ant-worker-test');
     expect(call!.body).toEqual(translateRequest(input));
+  });
+
+  it('每一句照樣帶空的讀音：舊版外掛還讀這個欄位，讀音改由外掛自己的 kuromoji 產生（#195）', async () => {
+    fakeAnthropic([ok]);
+
+    const response = await post(TRANSLATE_PATH, input);
+
+    expect(((await response.json()) as { items: unknown[] }).items).toEqual([{ id: 'b1', 讀音: '', 譯文: '早安！今天好早喔', unreadable: false, sfx: false }]);
   });
 
   it('client 送的 model、max_tokens、system prompt 與 Notes 條目多出來的欄位都被忽略', async () => {

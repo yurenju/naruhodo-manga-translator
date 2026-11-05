@@ -12,7 +12,7 @@ import { freshEmail, get, post, signIn } from './test/http.ts';
 
 const input: TranslateInput = { seriesNotes: [], priorPages: [], items: [{ id: 'b1', kind: 'balloon', 原文: 'おはよう', orientation: 'vertical' }] };
 
-const ok = reply({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false, sfx: false }] });
+const ok = reply({ items: [{ id: 'b1', zh: '早安', unreadable: false, sfx: false }] });
 
 const failed = () => Response.json({ error: { message: 'invalid x-api-key' } }, { status: 401 });
 

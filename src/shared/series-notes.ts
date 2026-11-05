@@ -228,6 +228,8 @@ export function ignoreSuggestion(notes: SeriesNotes, ref: SuggestionRef): Series
 export interface TranslatorVersion {
   model: string;
   promptVersion: string;
+  /** 譯文跟目前版本一樣能用的舊 prompt 版本（例如只拿掉讀音，#195）：快取的頁是這些版本也不算過時。 */
+  compatiblePromptVersions?: readonly string[];
 }
 
 /** 過時的原因：這頁用到的條目譯文被改了（notes），或模型／prompt 版本不同（version）。 */
@@ -251,7 +253,8 @@ export function staleReason(
     return now !== undefined && now.譯文 !== u.譯文 && (u.譯文 !== '' || now.locked);
   };
   if (page.usedNotes.some(changed)) return 'notes';
-  if (current && (current.model !== page.model || current.promptVersion !== page.promptVersion)) return 'version';
+  const samePrompt = (v: string) => v === current?.promptVersion || (current?.compatiblePromptVersions ?? []).includes(v);
+  if (current && (current.model !== page.model || !samePrompt(page.promptVersion))) return 'version';
   return undefined;
 }
 

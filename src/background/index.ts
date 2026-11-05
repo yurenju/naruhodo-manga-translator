@@ -1,4 +1,4 @@
-import { CLAUDE_MODEL, PROMPT_VERSION } from '../shared/claude-request.ts';
+import { CLAUDE_MODEL, COMPATIBLE_PROMPT_VERSIONS, PROMPT_VERSION } from '../shared/claude-request.ts';
 import { indexedDbApiKeyStore } from '../shared/api-key-store.ts';
 import { hasDataConsent, watchDataConsent } from '../shared/data-consent.ts';
 import { FAKE_VERSION } from '../shared/fake-translator.ts';
@@ -12,6 +12,7 @@ import type {
   FakeTranslatorConfig,
   GuessSeriesResponse,
   ImportResponse,
+  KuromojiReadingsResponse,
   Message,
   ModelStatus,
   ModelStatusResponse,
@@ -250,7 +251,7 @@ async function guessSeries(signals: TitleSignals): Promise<TitleGuess | undefine
 /** 目前會用來翻譯的模型與 prompt 版本（過時提示比對用）；沒有 key 時不比。 */
 async function translatorVersion(): Promise<TranslatorVersion | undefined> {
   if (!(await getTranslator())) return undefined;
-  return __E2E__ && fakeTranslator ? FAKE_VERSION : { model: CLAUDE_MODEL, promptVersion: PROMPT_VERSION };
+  return __E2E__ && fakeTranslator ? FAKE_VERSION : { model: CLAUDE_MODEL, promptVersion: PROMPT_VERSION, compatiblePromptVersions: COMPATIBLE_PROMPT_VERSIONS };
 }
 
 const notesStore = indexedDbNotesStore();
@@ -266,6 +267,12 @@ const transcriber = createTranscriber({
     });
     if ('error' in response) throw new Error(response.error);
     return response.text;
+  },
+  async kuromojiReadings(texts) {
+    await ensureOffscreenDocument();
+    const response = await chrome.runtime.sendMessage<Message, KuromojiReadingsResponse>({ type: 'offscreen:kuromojiReadings', texts });
+    if ('error' in response) throw new Error(response.error);
+    return response.readings;
   },
   getTranslator,
   translatorVersion,

@@ -93,6 +93,21 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
     expect(text).toMatch(/變體表記不是亂碼（只適用於 kind 是 balloon[^\n]*loose 照上面的規則[^\n]*假名[^\n]*照常翻譯[^\n]*改字[^\n]*不算/);
   });
 
+  it('翻譯不回讀音（#195）：schema 沒有 reading，指示也不要求讀音', () => {
+    const body = translateRequest(input);
+    const item = (body.output_config.format.schema as { properties: { items: { items: { properties: Record<string, unknown>; required: string[] } } } }).properties.items.items;
+
+    expect(Object.keys(item.properties)).toEqual(['id', 'zh', 'unreadable', 'sfx']);
+    expect(body.system[0]?.text).not.toMatch(/reading|讀音/);
+  });
+
+  it('指示要求片假名的專有名詞翻成中文、完整的句子句尾有全形標點（#195）', () => {
+    const text = translateRequest(input).system[0]?.text;
+
+    expect(text).toMatch(/片假名寫的人名[^\n]*不要在譯文裡留下片假名/);
+    expect(text).toMatch(/完整的句子[^\n]*句尾要有全形標點[^\n]*狀聲詞不用加/);
+  });
+
   it('整理 Notes 的 request body：沒有 Series Notes 時 system 只有指示一段', () => {
     const body = notesRequest(notesInput);
 
@@ -101,13 +116,11 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
     expect(body.messages[0]?.content[0]?.text).toBe('[{"kind":"balloon","ja":"パン屋に行こう","zh":"去麵包店吧"}]');
   });
 
-  it('解析翻譯回應：譯文、讀音、用量與模型', () => {
-    const out = parseTranslateResponse(
-      apiResponse({ items: [{ id: 'b1', reading: 'おはよう', zh: '早安', unreadable: false, sfx: false }] }),
-    );
+  it('解析翻譯回應：譯文、用量與模型', () => {
+    const out = parseTranslateResponse(apiResponse({ items: [{ id: 'b1', zh: '早安', unreadable: false, sfx: false }] }));
 
     expect(out).toEqual({
-      items: [{ id: 'b1', 讀音: 'おはよう', 譯文: '早安', unreadable: false, sfx: false }],
+      items: [{ id: 'b1', 譯文: '早安', unreadable: false, sfx: false }],
       usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 700, costUsd: 0.000137 },
       model: CLAUDE_MODEL,
     });
@@ -134,7 +147,7 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
   it('回應被截斷或不符合 schema 時丟錯', () => {
     expect(() => parseTranslateResponse(apiResponse({ items: [] }, 'max_tokens'))).toThrow('stop_reason: max_tokens');
     expect(() => parseNotesResponse(apiResponse({ items: [] }))).toThrow('不符合 schema');
-    expect(() => parseTranslateResponse(apiResponse({ items: [{ id: 'b1', reading: '', zh: '', unreadable: false }] }))).toThrow('不符合 schema');
+    expect(() => parseTranslateResponse(apiResponse({ items: [{ id: 'b1', zh: '', unreadable: false }] }))).toThrow('不符合 schema');
   });
 });
 

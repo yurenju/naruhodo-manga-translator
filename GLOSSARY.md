@@ -44,6 +44,10 @@ _Avoid_: SFX (in the UI), onomatopoeia
 One Balloon or one Loose Text entry on a Page, as the transcript lists it in reading order; the unit that hover sync and furigana work on. Its id (b1, l1…) is only unique within its Page, so a Line is always named together with its Page.
 _Avoid_: item, sentence (one Balloon can hold several sentences)
 
+**Reading** (讀音)
+The kana pronunciation of a whole Line, shown as furigana over each run of kanji (or as a separate line when it cannot be aligned). Always guessed on the device by a morphological analyzer, never printed on the Page and never asked of the LLM, so every Page gets the same Reading whether or not it is translated and whichever translation path it took. Readings of words with several pronunciations and of counters (3分, 一本) can be wrong, so the transcript marks them as a guess.
+_Avoid_: furigana (that is how a Reading is shown), ruby, pronunciation
+
 **Unreadable** (無法辨識)
 A Line whose original cannot be trusted or cannot be read: OCR turned it into garble, or the Page draws it to be illegible even to a Japanese reader (a scrawled letter, an invented script). Listed in the side panel with its original but never covered or translated, so the reader sees the Japanese instead of a plausible wrong translation. Stylized Spelling in a Balloon is not Unreadable.
 _Avoid_: garbled, OCR error (only one cause), low confidence (only one cause)

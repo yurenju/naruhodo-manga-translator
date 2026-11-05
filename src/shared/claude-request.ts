@@ -25,7 +25,12 @@ import type {
 
 export const CLAUDE_MODEL = 'claude-haiku-5-5';
 /** 寫進快取判斷過時用（#33）；改 ① 的 prompt 或 schema 就要改這個。② 的 prompt 不影響已快取的譯文，不用改。 */
-export const PROMPT_VERSION = 'claude-text-v7';
+export const PROMPT_VERSION = 'claude-text-v8';
+/**
+ * 譯文跟 PROMPT_VERSION 一樣能用的舊版本：快取的頁不算過時（#38）。v7 → v8 只拿掉讀音、加了兩條譯文規則（#195），
+ * 舊頁的譯文照用；讀音在命中快取時一律換成 kuromoji（page-translation.ts）。
+ */
+export const COMPATIBLE_PROMPT_VERSIONS: readonly string[] = ['claude-text-v7'];
 
 const MAX_TOKENS = 16_000;
 
@@ -72,9 +77,8 @@ const TRANSLATE_TEXT = `你是日文漫畫翻譯助手，幫助讀者一邊看�
 - ja：OCR 讀到的原文。OCR 偶爾會有錯字、漏字或多出符號，請依上下文推測原本的意思。
 
 請對每一項回傳：
-- reading：整句的假名讀音，漢字一律寫成平假名；原文的片假名維持片假名，標點照原文。
 - zh：自然、口語的台灣繁體中文譯文，符合角色的語氣；狀聲詞翻成中文讀者習慣的狀聲詞。
-- unreadable：如果 ja 明顯是 OCR 亂碼（例如設計字體被讀成一串不成句的字），或原文在劇情上本來就是讓人看不懂的字（潦草到認不出的筆跡、虛構的文字），沒辦法判斷原本寫什麼，就設為 true，reading 與 zh 留空字串。不要硬翻亂碼，也不要自己編一句通順的話。
+- unreadable：如果 ja 明顯是 OCR 亂碼（例如設計字體被讀成一串不成句的字），或原文在劇情上本來就是讓人看不懂的字（潦草到認不出的筆跡、虛構的文字），沒辦法判斷原本寫什麼，就設為 true，zh 留空字串。不要硬翻亂碼，也不要自己編一句通順的話。
   - 變體表記不是亂碼（只適用於 kind 是 balloon 的台詞；loose 照上面的規則判斷）：作者為了表現角色口吻，故意用不標準寫法寫的台詞，例如平假名與片假名混用（アなタ だレ）、整句片假名（ワタシ ハ ロボット デス）、拉長音（すごーーい）。判斷方法：只把假名統一成平假名或片假名、去掉拉長音，每個字就都還原得出原本的詞，而且整句是合理的台詞，才是變體表記，照常翻譯、unreadable 設為 false；zh 可以保留那種生硬或怪腔的口吻，但要讓讀者看得懂。要靠改字、補字或猜字才拼得出句子的，不算變體表記。
 - sfx：這段是狀聲詞（Sound Effect）就設為 true：擬音（聲音，例如ドン、ぱち）與擬態（動作或狀態，例如ニコリ、ドキドキ）都算。角色自己發出的感嘆（あ…、あっ、うっ）是台詞，不算，設為 false。狀聲詞的 zh 照樣要翻。
 
@@ -89,6 +93,10 @@ const TRANSLATE_TEXT = `你是日文漫畫翻譯助手，幫助讀者一邊看�
 敬稱（さん、君、ちゃん等）依場景翻：同學之間的さん可以翻成「同學」，熟人之間只叫名字，不影響語意時可以省略；不要一律死板地翻成「先生／小姐」。
 
 使用者可能先給你前面幾頁的原文與譯文（context），讓你知道前後劇情、誰在說話、語氣與已經用過的譯名。context 只用來理解，不要翻譯、也不要回傳；譯名與語氣請跟 context 保持一致。
+
+片假名寫的人名、地名、作品裡特有的名稱，zh 一律音譯或意譯成中文，不要在譯文裡留下片假名（上面說的真實世界名稱除外）。
+
+台詞或旁白是完整的句子時，zh 句尾要有全形標點（。！？…），即使原文句尾沒有寫標點；只有一個詞的招牌、標題、狀聲詞不用加。
 
 只輸出符合 schema 的 JSON。`;
 
@@ -136,7 +144,6 @@ const TRANSLATE_SCHEMA = obj({
     type: 'array',
     items: obj({
       id: str(),
-      reading: str('整句假名讀音'),
       zh: str('繁體中文（台灣）譯文'),
       unreadable: { type: 'boolean', description: '原文是無法判斷的 OCR 亂碼' },
       sfx: { type: 'boolean', description: '狀聲詞（擬音、擬態）；角色自己的感嘆不算' },
@@ -258,7 +265,7 @@ export function notesRequest(input: NotesInput): MessagesRequest {
 type NotesFields = Record<keyof typeof NOTES_FIELDS, string>;
 
 interface TranslateAnswer {
-  items: { id: string; reading: string; zh: string; unreadable: boolean; sfx: boolean }[];
+  items: { id: string; zh: string; unreadable: boolean; sfx: boolean }[];
 }
 
 interface NotesAnswer {
@@ -289,7 +296,7 @@ const isNotesFields = (v: unknown): v is NotesFields =>
 function isTranslateAnswer(v: unknown): v is TranslateAnswer {
   if (typeof v !== 'object' || v === null) return false;
   const a = v as Partial<TranslateAnswer>;
-  return Array.isArray(a.items) && a.items.every((i) => isStr(i?.id) && isStr(i.reading) && isStr(i.zh) && typeof i.unreadable === 'boolean' && typeof i.sfx === 'boolean');
+  return Array.isArray(a.items) && a.items.every((i) => isStr(i?.id) && isStr(i.zh) && typeof i.unreadable === 'boolean' && typeof i.sfx === 'boolean');
 }
 
 function isNotesAnswer(v: unknown): v is NotesAnswer {
@@ -354,10 +361,10 @@ function parse<A>(json: ApiResponse, isValid: (v: unknown) => v is A): { answer:
   };
 }
 
-/** ① 的回應 → 依 id 對回的讀音與譯文；回答不完整或不符合 schema 時丟錯。 */
+/** ① 的回應 → 依 id 對回的譯文（讀音由本機 kuromoji 產生，ADR 0001）；回答不完整或不符合 schema 時丟錯。 */
 export function parseTranslateResponse(json: ApiResponse): Omit<TranslateOutput, 'latencyMs'> {
   const { answer, ...info } = parse(json, isTranslateAnswer);
-  return { items: answer.items.map((i) => ({ id: i.id, 讀音: i.reading, 譯文: i.zh, unreadable: i.unreadable, sfx: i.sfx })), ...info };
+  return { items: answer.items.map((i) => ({ id: i.id, 譯文: i.zh, unreadable: i.unreadable, sfx: i.sfx })), ...info };
 }
 
 /** ② 的回應 → Series Notes 的變更；回答不完整或不符合 schema 時丟錯。 */

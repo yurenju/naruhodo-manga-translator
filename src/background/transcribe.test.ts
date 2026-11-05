@@ -111,7 +111,7 @@ function translatorReturning(zh: string, calls: TranslateInput[] = []): Translat
     async translatePage(input) {
       calls.push(input);
       return {
-        items: input.items.map((i) => ({ id: i.id, 讀音: `${i.id}-讀音`, 譯文: `${zh}-${i.id}`, unreadable: false })),
+        items: input.items.map((i) => ({ id: i.id, 譯文: `${zh}-${i.id}`, unreadable: false })),
         usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 700, costUsd: 0.000137 },
         model: 'claude-haiku-5-5',
         latencyMs: 2300,
@@ -122,8 +122,8 @@ function translatorReturning(zh: string, calls: TranslateInput[] = []): Translat
 
 const translatedOutput = (): TranslateOutput => ({
   items: [
-    { id: 'b1', 讀音: 'きょうは', 譯文: '今天', unreadable: false },
-    { id: 'l1', 讀音: 'どん', 譯文: '咚', unreadable: false },
+    { id: 'b1', 譯文: '今天', unreadable: false },
+    { id: 'l1', 譯文: '咚', unreadable: false },
   ],
   usage: { inputTokens: 1200, outputTokens: 300, cacheReadTokens: 0, costUsd: 0.0003 },
   model: 'claude-haiku-5-5',
@@ -141,7 +141,7 @@ describe('逐字稿：本機流水線＋Translator', () => {
     expect(transcriber.get(1)).toEqual(published.at(-1));
   });
 
-  it('有 Translator 時依閱讀順序送出原文，讀音與譯文換成它的結果', async () => {
+  it('有 Translator 時依閱讀順序送出原文，譯文換成它的結果，讀音維持 kuromoji 的（#195）', async () => {
     let input: TranslateInput | undefined;
     const translator: Translator = {
       ...noNotes,
@@ -149,8 +149,8 @@ describe('逐字稿：本機流水線＋Translator', () => {
         input = i;
         return {
           items: [
-            { id: 'b1', 讀音: 'きょうは', 譯文: '今天', unreadable: false, sfx: false },
-            { id: 'l1', 讀音: 'どん', 譯文: '咚', unreadable: true, sfx: true },
+            { id: 'b1', 譯文: '今天', unreadable: false, sfx: false },
+            { id: 'l1', 譯文: '咚', unreadable: true, sfx: true },
           ],
           usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 },
           model: 'fake',
@@ -173,8 +173,8 @@ describe('逐字稿：本機流水線＋Translator', () => {
     const last = published.at(-1)![0]!.transcript;
     expect(last.state === 'done' && last.translated).toBe(true);
     if (last.state !== 'done') return;
-    expect(last.text.balloons[0]).toMatchObject({ 讀音: 'きょうは', 讀音來源: 'llm', 譯文: '今天', unreadable: false, sfx: false });
-    expect(last.text.looseText[0]).toMatchObject({ 讀音: 'どん', 讀音來源: 'llm', 譯文: '咚', unreadable: true, sfx: true });
+    expect(last.text.balloons[0]).toMatchObject({ 讀音: 'こんにちは', 讀音來源: 'kuromoji', 譯文: '今天', unreadable: false, sfx: false });
+    expect(last.text.looseText[0]).toMatchObject({ 讀音: 'どん', 讀音來源: 'kuromoji', 譯文: '咚', unreadable: true, sfx: true });
   });
 
   it('Translator 沒回 sfx（部署中的舊版 Worker）：PageText 也沒有 sfx，Loose Text 不覆蓋', async () => {
@@ -337,7 +337,7 @@ describe('翻譯此頁', () => {
     }
     const first = pages[0]!.transcript;
     if (first.state !== 'done') throw new Error('not done');
-    expect(first.text.balloons[0]).toMatchObject({ 讀音: 'b1-讀音', 讀音來源: 'llm', 譯文: '今天-b1' });
+    expect(first.text.balloons[0]).toMatchObject({ 讀音: 'こんにちは', 讀音來源: 'kuromoji', 譯文: '今天-b1' });
   });
 
   it('重新翻譯失敗時退回 kuromoji 讀音（不是上一次的譯文），並顯示錯誤', async () => {
@@ -479,7 +479,7 @@ describe('翻譯快取', () => {
       latencyMs: 2300,
       usage: { inputTokens: 1200, outputTokens: 300, cacheReadTokens: 0, costUsd: 0.0003 },
     });
-    expect(saved.balloons[0]).toMatchObject({ id: 'b1', 原文: '今日は', 譯文: '今天', 讀音來源: 'llm' });
+    expect(saved.balloons[0]).toMatchObject({ id: 'b1', 原文: '今日は', 譯文: '今天', 讀音: 'こんにちは', 讀音來源: 'kuromoji' });
     expect(saved.looseText[0]).toMatchObject({ id: 'l1', 原文: 'ドン', 譯文: '咚' });
     expect(JSON.stringify(saved)).not.toContain('data:');
   });
@@ -517,6 +517,60 @@ describe('翻譯快取', () => {
     expect(last.transcript.translated).toBe(true);
     expect(last.transcript.text.balloons[0]).toMatchObject({ 原文: '今日は', 譯文: '今天' });
     expect(last.transcript.translation).toMatchObject({ model: 'claude-haiku-5-5', latencyMs: 2300, usage: { costUsd: 0.0003 } });
+  });
+
+  describe('舊快取裡 LLM 給的讀音（#195 之前翻的頁）', () => {
+    const oldPage = (): PageTranslation => ({
+      balloons: [{ ...pageText.balloons[0]!, 讀音: 'きょうは', 讀音來源: 'llm', 譯文: '今天' }],
+      looseText: [{ ...pageText.looseText[0]!, 讀音: 'どん', 讀音來源: 'llm', 譯文: '咚' }],
+      seriesId: 'series-1',
+      pageHash: HASHES.a1!,
+      usedNotes: [],
+      model: 'claude-haiku-5-5',
+      promptVersion: 'claude-text-v7',
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 },
+      latencyMs: 0,
+      translatedAt: 0,
+    });
+
+    async function hitOldPage(kuromojiReadings: TranscriberDeps['kuromojiReadings']) {
+      const cache = memoryCache();
+      await cache.save(oldPage());
+      const { transcriber, published } = setup({ cache, kuromojiReadings });
+      await transcriber.update(1, [thumb('a1')], capture);
+      const last = published.at(-1)![0]!.transcript;
+      if (last.state !== 'done') throw new Error('not done');
+      return last;
+    }
+
+    it('命中時讀音換成 kuromoji 的，譯文照用', async () => {
+      const kuromojiReadings = vi.fn(async (texts: string[]) => texts.map((t) => `kuromoji:${t}`));
+
+      const last = await hitOldPage(kuromojiReadings);
+
+      expect(kuromojiReadings).toHaveBeenCalledWith(['今日は', 'ドン']);
+      expect(last.translation?.source).toBe('cache');
+      expect(last.text.balloons[0]).toMatchObject({ 讀音: 'kuromoji:今日は', 讀音來源: 'kuromoji', 譯文: '今天' });
+      expect(last.text.looseText[0]).toMatchObject({ 讀音: 'kuromoji:ドン', 讀音來源: 'kuromoji', 譯文: '咚' });
+    });
+
+    it('kuromoji 失敗時先顯示快取裡的讀音', async () => {
+      const last = await hitOldPage(async () => {
+        throw new Error('offscreen 沒回應');
+      });
+
+      expect(last.text.balloons[0]).toMatchObject({ 讀音: 'きょうは', 譯文: '今天' });
+    });
+
+    it('讀音已經是 kuromoji 的頁不再重算', async () => {
+      const kuromojiReadings = vi.fn(async (texts: string[]) => texts);
+      const cache = memoryCache();
+      await setup({ cache, getTranslator: () => countingTranslator() }).transcriber.update(1, [thumb('a1')], capture);
+
+      await setup({ cache, kuromojiReadings }).transcriber.update(1, [thumb('a7')], capture);
+
+      expect(kuromojiReadings).not.toHaveBeenCalled();
+    });
   });
 
   it('別的 Series 的快取不算數', async () => {
@@ -985,7 +1039,7 @@ describe('Series Notes 累積（#37、ADR 0005）', () => {
       ...translator,
       async translatePage(input) {
         const output = await translator.translatePage(input);
-        return { ...output, items: output.items.map((i) => (i.id === 'l1' ? { ...i, 讀音: '', 譯文: '', unreadable: true } : i)) };
+        return { ...output, items: output.items.map((i) => (i.id === 'l1' ? { ...i, 譯文: '', unreadable: true } : i)) };
       },
     };
     const { transcriber } = setup({ getTranslator: () => unreadableLoose, notes: memoryNotes([note('明日', '明天')]) });
@@ -1274,7 +1328,7 @@ describe('Prior Pages（ADR 0005）', () => {
         ...translator,
         async translatePage(input) {
           const output = await translator.translatePage(input);
-          return { ...output, items: output.items.map((i) => (i.id === 'l1' ? { ...i, 讀音: '', 譯文: '', unreadable: true } : i)) };
+          return { ...output, items: output.items.map((i) => (i.id === 'l1' ? { ...i, 譯文: '', unreadable: true } : i)) };
         },
       }),
     });

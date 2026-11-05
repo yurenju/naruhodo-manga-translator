@@ -1,6 +1,6 @@
 /**
  * 振り仮名（spec #27 第 8 節、prototype/sidepanel-ui 的 alignRuby）：把整句讀音用「漢字段／假名段」對齊回每段漢字。
- * 讀音是 LLM（或 kuromoji）推測的，不是頁面上印的ルビ。
+ * 讀音是 kuromoji 推測的（ADR 0001），不是頁面上印的ルビ。
  */
 
 export interface RubySegment {
@@ -11,7 +11,7 @@ export interface RubySegment {
 
 const KANJI = /[一-鿿々〆ヶ]/;
 const SPACE = /\s/;
-/** 寬鬆比對時再忽略標點符號（LLM 的讀音常把 !? … 拿掉）。只在嚴格比對失敗時用：標點也是段落的分界。 */
+/** 寬鬆比對時再忽略標點符號（舊快取裡 LLM 給的讀音常把 !? … 拿掉）。只在嚴格比對失敗時用：標點也是段落的分界。 */
 const SPACE_OR_PUNCT = /[\s\p{P}\p{S}]/u;
 
 const kata2hira = (c: string) => (/[ァ-ヶ]/.test(c) ? String.fromCharCode(c.charCodeAt(0) - 0x60) : c);

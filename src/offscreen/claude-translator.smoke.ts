@@ -24,7 +24,7 @@ const page = items('p02-ruby');
 const page2 = items('p01-basic');
 
 describe.skipIf(!apiKey)('真的 Claude API（smoke）', () => {
-  it('p02 → p01：Notes 從空的開始；回傳每一句的讀音與譯文；套用第 1 頁 ② 的 notes_changes 後第 2 頁仍吃到 prompt cache', { timeout: 120_000 }, async () => {
+  it('p02 → p01：Notes 從空的開始；回傳每一句的譯文；套用第 1 頁 ② 的 notes_changes 後第 2 頁仍吃到 prompt cache', { timeout: 120_000 }, async () => {
     const usages: ApiUsage[] = [];
     const translator = createClaudeTranslator({
       apiKey: apiKey!,
@@ -53,7 +53,7 @@ describe.skipIf(!apiKey)('真的 Claude API（smoke）', () => {
           `output ${u.output_tokens}、$${output.usage.costUsd.toFixed(6)}`,
       );
     }
-    console.log(first.items.map((item, i) => `${page[i]!.原文}（${item.讀音}）→ ${item.譯文}${item.unreadable ? ' [unreadable]' : ''}`).join('\n'));
+    console.log(first.items.map((item, i) => `${page[i]!.原文} → ${item.譯文}${item.unreadable ? ' [unreadable]' : ''}`).join('\n'));
     console.log('notes_changes', JSON.stringify(notes.notes_changes));
 
     expect(first.model).toBe(CLAUDE_MODEL);
@@ -61,7 +61,6 @@ describe.skipIf(!apiKey)('真的 Claude API（smoke）', () => {
     for (const item of first.items) {
       expect(item.unreadable).toBe(false);
       expect(item.譯文).not.toBe('');
-      expect(item.讀音).not.toBe('');
     }
     expect(first.usage.costUsd).toBeGreaterThan(0);
     expect(first.usage.costUsd).toBeLessThan(0.01);

@@ -55,6 +55,8 @@ export interface TranscriberDeps {
   getTranslator(): Translator | undefined | Promise<Translator | undefined>;
   /** 目前會用來翻譯的模型與 prompt 版本（過時提示比對用）；沒有 Translator 時 undefined，就不比版本。 */
   translatorVersion?(): TranslatorVersion | undefined | Promise<TranslatorVersion | undefined>;
+  /** 原文 → kuromoji 整句讀音（offscreen 算）；命中舊快取時換掉 LLM 給的讀音（#195）。 */
+  kuromojiReadings?(texts: string[]): Promise<string[]>;
   /** 這個 tab 啟動時選定的 Series（或 Provisional Series）；沒有就不查也不寫快取。正在猜作品原名時等猜完才回答（#186）。 */
   getSeriesId(tabId: number): Promise<string | undefined>;
   /** 這個 tab 的 Series 還在猜（#186）：新 Page 先跑 OCR，翻譯前才等 Series、查快取。 */
@@ -186,10 +188,10 @@ function analyzeRequestOf(page: PageThumb, capture: CropRequest): AnalyzeRequest
   };
 }
 
-/** 長 Page 裡已經翻好的 Line（LLM 給過譯文的），這次要翻的（added）除外。 */
+/** 長 Page 裡已經翻好的 Line（有譯文的；unreadable 的 pageLines 會略過），這次要翻的（added）除外。 */
 function translatedLines(page: PageText, added: PageText): TranslatedLine[] {
   const sending = new Set([...added.balloons, ...added.looseText].map((t) => t.id));
-  const done = new Set([...page.balloons, ...page.looseText].filter((t) => t.讀音來源 === 'llm' && !sending.has(t.id)).map((t) => t.id));
+  const done = new Set([...page.balloons, ...page.looseText].filter((t) => t.譯文 !== '' && !sending.has(t.id)).map((t) => t.id));
   return pageLines(pickLines(page, done));
 }
 
@@ -198,7 +200,13 @@ const mergeStripes = (a: readonly Stripe[], b: readonly Stripe[]) => [...a, ...b
 
 export function createTranscriber(deps: TranscriberDeps) {
   const ledger = createNotesLedger({ store: deps.notes });
-  const pageTranslation = createPageTranslation({ cache: deps.cache, ledger, getSeries: deps.getSeries, translatorVersion: deps.translatorVersion });
+  const pageTranslation = createPageTranslation({
+    cache: deps.cache,
+    ledger,
+    getSeries: deps.getSeries,
+    translatorVersion: deps.translatorVersion,
+    kuromojiReadings: deps.kuromojiReadings,
+  });
   const tabs = new Map<number, TabState>();
   const views = new Map<number, PageView[]>();
   const autoTranslate = new Map<number, boolean>();

@@ -319,6 +319,13 @@ describe('staleReason（過時提示）', () => {
     expect(staleReason(page, entries, { ...current, promptVersion: 'v3' })).toBe('version');
     expect(staleReason(page, entries, undefined)).toBeUndefined();
   });
+
+  it('快取的 prompt 版本列在目前版本的相容版本裡（例如只拿掉讀音，#195）：不過時；其他舊版本照樣 version', () => {
+    const entries = [entry('s', 'パン', '麵包')];
+    const v3 = { ...current, promptVersion: 'v3', compatiblePromptVersions: ['v2'] };
+    expect(staleReason(page, entries, v3)).toBeUndefined();
+    expect(staleReason({ ...page, promptVersion: 'v1' }, entries, v3)).toBe('version');
+  });
 });
 
 describe('mergeImportedNotes（匯入，本機優先）', () => {
