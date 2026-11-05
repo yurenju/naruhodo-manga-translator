@@ -25,6 +25,12 @@ export const isContext = (value: string | undefined): value is Context => (CONTE
 export const isOurExtension = (name: unknown): boolean => typeof name === 'string' && name.startsWith('Naruhodo');
 
 /**
+ * 在外掛 target 裡查 manifest 名稱的運算式（Runtime.evaluate 要 awaitPromise）。不用 chrome.runtime.getManifest：
+ * offscreen document 只拿得到 chrome.runtime 的訊息 API，getManifest 是 undefined；讀外掛自己的 manifest.json 每個 context 都行。
+ */
+export const MANIFEST_NAME_EXPRESSION = "fetch('/manifest.json').then((r) => r.json()).then((m) => m.name, () => undefined)";
+
+/**
  * 可能是目標的 target，照 /json/list 的順序（最近用過的在前）。
  * sw／offscreen：profile 裡別的外掛也有叫 background.js 的 SW、也可能有 offscreen.html，呼叫端要再用 manifest 名稱（isOurExtension）挑。
  * page／content：一般網頁分頁；urlFilter 給了就只留 url 含這段字的。

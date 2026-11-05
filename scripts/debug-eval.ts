@@ -13,7 +13,7 @@
  * 直接對 /json/list 的 target 開 WebSocket，不經 Playwright：connectOverCDP 看不到 offscreen document。
  */
 import { readFile } from 'node:fs/promises';
-import { buildExpression, candidateTargets, CONTEXTS, isContext, isOurExtension, type Context, type TargetInfo } from './debug-targets.ts';
+import { buildExpression, candidateTargets, CONTEXTS, isContext, isOurExtension, MANIFEST_NAME_EXPRESSION, type Context, type TargetInfo } from './debug-targets.ts';
 
 const DEFAULT_PORT = 9222;
 const DEFAULT_TIMEOUT_S = 30;
@@ -53,7 +53,7 @@ async function connectTarget(url: string) {
 type Connection = Awaited<ReturnType<typeof connectTarget>>;
 
 async function manifestName(connection: Connection): Promise<unknown> {
-  const { result } = await connection.send('Runtime.evaluate', { expression: 'chrome.runtime?.getManifest?.().name', returnByValue: true });
+  const { result } = await connection.send('Runtime.evaluate', { expression: MANIFEST_NAME_EXPRESSION, awaitPromise: true, returnByValue: true });
   return result.value;
 }
 
@@ -71,7 +71,8 @@ async function contentContextId(connection: Connection): Promise<number> {
 
 const NOT_FOUND: Record<Context, string> = {
   sw: '找不到外掛的 service worker：閒置時會被停掉，跑 npm run debug:panel 叫醒它',
-  offscreen: '找不到外掛的 offscreen document：要等外掛第一次偵測或翻譯時才會建立',
+  offscreen:
+    "找不到外掛的 offscreen document：外掛第一次偵測或翻譯時才會建立，閒置一陣子會被關掉。手動建立：npm run debug:eval -- sw -e \"chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['BLOBS'], justification: 'debug' })\"",
   page: '找不到網頁分頁',
   content: '找不到網頁分頁',
 };
