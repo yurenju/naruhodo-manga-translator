@@ -42,8 +42,8 @@ const LINE_HEIGHT = 1.15;
 const LOOSE_STROKE_EM = 0.25;
 
 /**
- * 譯文的「。，、；：．」用打包的 Noto Sans TC 標點（src/content/punctuation-font.ts，2.6 KB）：系統字型的位置不對
- * （微軟正黑體橫書在左下、直書在右上），台灣的直書標點在格子中間。其餘的字照舊用系統字型（--naru-font-sans）。
+ * 譯文的「。，、；：．」與刪節號用打包的 Noto Sans TC 標點（src/content/punctuation-font.ts，約 3 KB）：系統字型的位置不對
+ * （微軟正黑體的「。」橫書在左下、直書在右上；有的字型沒有 … 的直書字形），台灣的直書標點在格子中間。其餘的字照舊用系統字型（--naru-font-sans）。
  */
 export const PUNCTUATION_FAMILY = 'Naruhodo Punctuation TC';
 
