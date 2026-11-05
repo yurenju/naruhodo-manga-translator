@@ -1,6 +1,6 @@
 /**
  * 一個 Page 上的文字：Balloon 與 Loose Text（spec #27 第 4.3 節的 balloons／looseText）。
- * 本機流水線（偵測＋OCR＋閱讀順序）產生座標、原文、順序；讀音與譯文來自 Translator，沒有時用 kuromoji 讀音。
+ * 本機流水線（偵測＋OCR＋閱讀順序＋kuromoji）產生座標、原文、順序、讀音；譯文來自 Translator（ADR 0001）。
  */
 import type { Stripe } from './long-page.ts';
 import type { TranslatedLine, UsedNote } from './translator.ts';
@@ -35,6 +35,7 @@ export interface BalloonText {
   orientation: Orientation;
   原文: string;
   讀音: string;
+  /** #195 起一律 kuromoji；llm 只出現在之前翻的快取與備份，命中時換成 kuromoji 的（page-translation.ts）。 */
   讀音來源: 'llm' | 'kuromoji';
   /** 空字串＝未翻譯（沒有 API key 或還沒翻）。 */
   譯文: string;

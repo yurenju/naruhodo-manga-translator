@@ -1,5 +1,5 @@
 /**
- * e2e 用的 Translator（spec #27 第 12 節）：回傳合成頁 ground truth 的讀音與譯文，不花錢、結果固定、不需要 API key。
+ * e2e 用的 Translator（spec #27 第 12 節）：回傳合成頁 ground truth 的譯文，不花錢、結果固定、不需要 API key。
  * TranslateInput 沒有座標，所以用原文相似度（1 − 字元編輯距離 / 長度）把 OCR 結果對回 ground truth。
  */
 import { normalizeText } from './series-notes.ts';
@@ -98,10 +98,10 @@ export function createFakeTranslator(
               bestScore = score;
             }
           }
-          if (best && unreadable.has(best.ja)) return { id: item.id, 讀音: '', 譯文: '', unreadable: true, sfx: false };
+          if (best && unreadable.has(best.ja)) return { id: item.id, 譯文: '', unreadable: true, sfx: false };
           return best
-            ? { id: item.id, 讀音: best.reading, 譯文: best.zh, unreadable: false, sfx: best.kind === 'sfx' }
-            : { id: item.id, 讀音: '', 譯文: NO_MATCH, unreadable: false, sfx: false };
+            ? { id: item.id, 譯文: best.zh, unreadable: false, sfx: best.kind === 'sfx' }
+            : { id: item.id, 譯文: NO_MATCH, unreadable: false, sfx: false };
         }),
         ...NO_COST,
       };

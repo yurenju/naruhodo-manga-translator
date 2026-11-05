@@ -31,6 +31,8 @@ export interface PageTranslationDeps {
   getSeries(seriesId: string): Promise<Series | undefined>;
   /** 目前會用來翻譯的模型與 prompt 版本（過時提示比對用）；沒有 Translator 時 undefined，就不比版本。 */
   translatorVersion?(): TranslatorVersion | undefined | Promise<TranslatorVersion | undefined>;
+  /** 原文 → kuromoji 整句讀音（offscreen 算）。命中 #195 之前的快取時，把 LLM 給的讀音換掉；沒有就照用快取的。 */
+  kuromojiReadings?(texts: string[]): Promise<string[]>;
 }
 
 /** 要翻的一頁。 */
@@ -78,13 +80,14 @@ function toTranslateInput(text: PageText, seriesNotes: NotesEntry[], priorPages:
   return { seriesNotes, priorPages, items: items.sort((a, b) => a.order - b.order).map((i) => i.item) };
 }
 
+/** 只合併譯文、unreadable、sfx；讀音維持本機 kuromoji 的（ADR 0001、#195）。 */
 function applyTranslation(text: PageText, output: TranslateOutput): PageText {
   const byId = new Map(output.items.map((item) => [item.id, item]));
-  const merge = <T extends { id: string; 讀音: string; 讀音來源: 'llm' | 'kuromoji'; 譯文: string; unreadable: boolean; sfx?: boolean }>(entry: T): T => {
+  const merge = <T extends { id: string; 譯文: string; unreadable: boolean; sfx?: boolean }>(entry: T): T => {
     const item = byId.get(entry.id);
     if (!item) return entry;
     // 本機流水線已判 unreadable（OCR 信心低於門檻，ADR 0009）的段，LLM 讀得懂也維持 unreadable
-    const merged = { ...entry, 讀音: item.讀音, 讀音來源: 'llm' as const, 譯文: item.譯文, unreadable: entry.unreadable || item.unreadable };
+    const merged = { ...entry, 譯文: item.譯文, unreadable: entry.unreadable || item.unreadable };
     return item.sfx === undefined ? merged : { ...merged, sfx: item.sfx };
   };
   return { balloons: text.balloons.map(merge), looseText: text.looseText.map(merge) };
@@ -96,7 +99,7 @@ function chargeOf(previous: PageCharge | undefined, usageRecordId: number | unde
   return previous?.usageRecordId === usageRecordId ? previous : { usageRecordId, chargedAt: Date.now() };
 }
 
-export function createPageTranslation({ cache, ledger, getSeries, translatorVersion }: PageTranslationDeps) {
+export function createPageTranslation({ cache, ledger, getSeries, translatorVersion, kuromojiReadings }: PageTranslationDeps) {
   /** 還在背景跑的 ②。 */
   const pendingNotes = new Set<Promise<void>>();
 
@@ -220,10 +223,30 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
     return hit(cached, { seriesId, pageHash });
   }
 
+  /**
+   * #195 之前翻的頁，讀音是 LLM 給的（讀音來源 llm）：換成 kuromoji 的，新舊頁的讀音才一致（ADR 0001）。
+   * 算不出來（offscreen 失敗）就先照用快取的讀音，只記在 trace。
+   */
+  async function withKuromojiReadings(page: PageText): Promise<PageText> {
+    const lines = [...page.balloons, ...page.looseText];
+    if (!kuromojiReadings || !lines.some((t) => t.讀音來源 === 'llm')) return page;
+    let readings: string[];
+    try {
+      readings = await kuromojiReadings(lines.map((t) => t.原文));
+      if (readings.length !== lines.length) throw new Error(`kuromoji 回了 ${readings.length} 句讀音，要 ${lines.length} 句`);
+    } catch (e) {
+      trace('reading:error', { error: e });
+      return page;
+    }
+    const byId = new Map(lines.map((t, i) => [t.id, readings[i]!]));
+    const relabel = <T extends { id: string; 讀音: string; 讀音來源: 'llm' | 'kuromoji' }>(t: T): T => ({ ...t, 讀音: byId.get(t.id)!, 讀音來源: 'kuromoji' });
+    return { balloons: page.balloons.map(relabel), looseText: page.looseText.map(relabel) };
+  }
+
   /** 命中快取時要顯示的逐字稿（含過時提示）。 */
   async function hit(cached: PageTranslation, query: Record<string, unknown>): Promise<Transcript> {
-    const { balloons, looseText, model, latencyMs, usage } = cached;
-    const stale = await staleOf(cached);
+    const { model, latencyMs, usage } = cached;
+    const [stale, { balloons, looseText }] = await Promise.all([staleOf(cached), withKuromojiReadings(cached)]);
     trace('cache:hit', { ...query, cachedHash: cached.pageHash, stale });
     // 命中快取時沒有本機流水線的結果（text），「翻譯此頁／重新翻譯」不會重翻這頁。
     return { state: 'done', text: { balloons, looseText }, translated: true, translation: { source: 'cache', model, latencyMs, usage }, stale };

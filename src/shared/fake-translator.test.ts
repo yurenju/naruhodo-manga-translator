@@ -5,7 +5,7 @@ import { createFakeTranslator, fakeSeriesGuess, NO_MATCH } from './fake-translat
 const translator = createFakeTranslator([readGroundTruth('p01-basic'), readGroundTruth('p04-outside')]);
 
 describe('FakeTranslator', () => {
-  it('依原文找到合成頁 ground truth，回傳它的讀音與譯文，ground truth 的狀聲詞回 sfx；OCR 錯一兩個字也找得到', async () => {
+  it('依原文找到合成頁 ground truth，回傳它的譯文，ground truth 的狀聲詞回 sfx；OCR 錯一兩個字也找得到', async () => {
     const output = await translator.translatePage({
       seriesNotes: [],
       priorPages: [],
@@ -19,10 +19,10 @@ describe('FakeTranslator', () => {
     });
 
     expect(output.items).toEqual([
-      { id: 'b1', 讀音: 'おはよう！きょうははやいね', 譯文: '早安！今天好早喔', unreadable: false, sfx: false },
-      { id: 'b2', 讀音: 'いっしょにいってもいい？', 譯文: '我可以一起去嗎？', unreadable: false, sfx: false },
-      { id: 'l1', 讀音: 'ハァ…ハァ…', 譯文: '（喘氣）哈…哈…', unreadable: false, sfx: false },
-      { id: 'l2', 讀音: 'ドドドド', 譯文: '（跑步聲）咚咚咚咚', unreadable: false, sfx: true },
+      { id: 'b1', 譯文: '早安！今天好早喔', unreadable: false, sfx: false },
+      { id: 'b2', 譯文: '我可以一起去嗎？', unreadable: false, sfx: false },
+      { id: 'l1', 譯文: '（喘氣）哈…哈…', unreadable: false, sfx: false },
+      { id: 'l2', 譯文: '（跑步聲）咚咚咚咚', unreadable: false, sfx: true },
     ]);
   });
 
@@ -33,7 +33,7 @@ describe('FakeTranslator', () => {
       items: [{ id: 'x', kind: 'balloon', 原文: '全然関係ない文章です', orientation: 'vertical' }],
     });
 
-    expect(output.items).toEqual([{ id: 'x', 讀音: '', 譯文: NO_MATCH, unreadable: false, sfx: false }]);
+    expect(output.items).toEqual([{ id: 'x', 譯文: NO_MATCH, unreadable: false, sfx: false }]);
   });
 
   it('設定了 notes：proposeNotes 把 Balloon 原文裡出現、送來的 Notes 還沒有的條目回傳成 notes_changes.added', async () => {
@@ -77,7 +77,7 @@ describe('FakeTranslator', () => {
 });
 
 describe('FakeTranslator：模擬無法辨識', () => {
-  it('指定的 ground truth 原文回傳 unreadable，讀音與譯文留空', async () => {
+  it('指定的 ground truth 原文回傳 unreadable，譯文留空', async () => {
     const fake = createFakeTranslator([readGroundTruth('p01-basic')], { unreadableTexts: ['もちろん！'] });
 
     const output = await fake.translatePage({
@@ -90,8 +90,8 @@ describe('FakeTranslator：模擬無法辨識', () => {
     });
 
     expect(output.items).toEqual([
-      { id: 'b1', 讀音: '', 譯文: '', unreadable: true, sfx: false },
-      { id: 'b2', 讀音: 'いいにおい！', 譯文: '好香！', unreadable: false, sfx: false },
+      { id: 'b1', 譯文: '', unreadable: true, sfx: false },
+      { id: 'b2', 譯文: '好香！', unreadable: false, sfx: false },
     ]);
   });
 });

@@ -17,7 +17,7 @@ const usage = { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 700, cost
 
 /** Worker 回的 TranslateOutput（latencyMs 是 Worker 到 Anthropic 的時間，外掛用自己量的）。 */
 const translated: TranslateOutput = {
-  items: [{ id: 'b1', 讀音: 'おはよう！きょうははやいね', 譯文: '早安！今天好早喔', unreadable: false }],
+  items: [{ id: 'b1', 譯文: '早安！今天好早喔', unreadable: false }],
   usage,
   model: 'claude-haiku-5-5',
   latencyMs: 1800,

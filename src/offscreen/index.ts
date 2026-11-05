@@ -10,6 +10,7 @@ import type {
   CropRequest,
   CropResponse,
   FakeTranslatorConfig,
+  KuromojiReadingsResponse,
   Message,
   ModelStatus,
   PageCandidate,
@@ -30,6 +31,7 @@ import type { NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, Translat
 import { createClaudeTranslator } from './claude-translator.ts';
 import { subImageRect, thumbnailSize, toImageRect, toSubRect } from './crop.ts';
 import { eraseLuminance } from './erase-color.ts';
+import { createKuromojiReading } from './kuromoji-reading.ts';
 import { eraseImage, eraseLooseText, meanLuminance, type EraseImage } from './erase-image.ts';
 import { createLocalPipeline } from './local-pipeline.ts';
 import { detectExecutionProvider } from './models/model-files.ts';
@@ -331,6 +333,13 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
     analyze(message).then(
       (text) => sendResponse({ text } satisfies AnalyzeResponse),
       (e: unknown) => sendResponse({ error: e instanceof Error ? e.message : String(e) } satisfies AnalyzeResponse),
+    );
+    return true;
+  }
+  if (message.type === 'offscreen:kuromojiReadings') {
+    createKuromojiReading(chrome.runtime.getURL('kuromoji/dict/')).then(
+      (reading) => sendResponse({ readings: message.texts.map(reading) } satisfies KuromojiReadingsResponse),
+      (e: unknown) => sendResponse({ error: e instanceof Error ? e.message : String(e) } satisfies KuromojiReadingsResponse),
     );
     return true;
   }

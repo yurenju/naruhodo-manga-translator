@@ -88,7 +88,7 @@ export interface CallInfo {
 
 export interface TranslateOutput extends CallInfo {
   /** sfx：LLM 判斷是 Sound Effect（#151）。部署中的舊版 Worker 不回，當成不知道（Loose Text 不覆蓋）。 */
-  items: { id: string; 讀音: string; 譯文: string; unreadable: boolean; sfx?: boolean }[];
+  items: { id: string; 譯文: string; unreadable: boolean; sfx?: boolean }[];
   /**
    * 只有 Hosted Translation 有：這一頁扣頁的那次翻譯的用量紀錄 id（接續請求回的是被接續的那筆）。同一頁的 Notes 請求、
    * 長 Page 的接續請求帶回去（NotesInput／TranslateInput 的 pageUsageRecordId）。

@@ -20,7 +20,7 @@ const inputOf = (texts: readonly string[]): TranslateInput => ({
 });
 
 const replyFor = (input: TranslateInput) =>
-  reply({ items: input.items.map((item) => ({ id: item.id, reading: item.原文, zh: '譯文', unreadable: false, sfx: false })) });
+  reply({ items: input.items.map((item) => ({ id: item.id, zh: '譯文', unreadable: false, sfx: false })) });
 
 async function translate(token: string, texts: readonly string[]): Promise<Response> {
   const input = inputOf(texts);

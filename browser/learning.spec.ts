@@ -1,7 +1,7 @@
 /**
  * #39、#76 學習功能：side panel 逐字稿依 Page Mode 顯示（閱讀三種 Display Level；學習藏譯文＋振り仮名開關）、
  * 頁面 ↔ panel 的 hover 同步。
- * OCR 用 FakeEngine 重播（ADR 0007），讀音與譯文來自 FakeTranslator（ground truth）。
+ * OCR 用 FakeEngine 重播（ADR 0007），讀音來自 kuromoji、譯文來自 FakeTranslator（ground truth）。
  */
 import type { Locator, Page } from '@playwright/test';
 import { activateOnMockSite, expect, test } from './fixtures.ts';

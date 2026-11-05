@@ -31,7 +31,7 @@ import {
   type Quota,
   type VerifyCodeResponse,
 } from '../../src/shared/hosted-api.ts';
-import type { CallInfo, Translator } from '../../src/shared/translator.ts';
+import type { CallInfo, TranslateOutput, Translator } from '../../src/shared/translator.ts';
 import { accountEmail, authenticate, deleteAccount, revokeSession, sendCode, verifyCode } from './auth.ts';
 import { continuable, deductPage, monthlyLimit, quota, recordUsage, setFreePages, type QuotaContext, type UsageKind } from './quota.ts';
 import { parseNotesInput, parseTitleSignals, parseTranslateInput } from './input.ts';
@@ -166,12 +166,18 @@ const VERIFY_ERRORS = {
   tooManyAttempts: '錯誤次數太多，這組驗證碼已失效',
 } as const;
 
+/**
+ * hosted API 只能加欄位（CODING_STANDARDS.md）：① 不再回讀音（#195），但 v0.1.16 以前的外掛還讀 讀音，
+ * 照樣帶空字串（舊外掛顯示原文、不加ルビ）。等沒有受支援的舊版在呼叫再拿掉。
+ */
+const withEmptyReadings = (output: TranslateOutput) => ({ ...output, items: output.items.map((item) => ({ ...item, 讀音: '' })) });
+
 const ROUTES: Record<string, Handler> = {
   [`POST ${TRANSLATE_PATH}`]: authed(
     llm(
       'translate',
       parseTranslateInput,
-      (t, input) => t.translatePage(input),
+      async (t, input) => withEmptyReadings(await t.translatePage(input)),
       (input) => input.pageUsageRecordId,
       (input) => isPracticeSpreadPage(input.items.map((item) => item.原文), practiceSpread as PracticeSpreadText),
     ),
