@@ -4,7 +4,7 @@
  * 只有呼叫 Worker 的 SW（hostedSessionToken）與 side panel 的設定區（登入、顯示 email）會讀。
  * 改了 session 的一方要廣播 `session:changed`，讓其他 side panel 重新讀。
  */
-import { openDb, STORES, storeRequest } from './db.ts';
+import { STORES, storeRequest } from './db.ts';
 
 /** scripts/build.ts 依 build 決定（''＝Hosted Translation 不翻譯）。 */
 export const HOSTED_API_URL = __HOSTED_API_URL__;
@@ -18,11 +18,8 @@ export interface HostedSession {
   email: string;
 }
 
-let db: Promise<IDBDatabase> | undefined;
-
 function run<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  db ??= openDb();
-  return storeRequest(db, STORES.apiKeys, mode, op);
+  return storeRequest(STORES.apiKeys, mode, op);
 }
 
 export const loadHostedSession = () => run('readonly', (s) => s.get(SESSION_ID) as IDBRequest<HostedSession | undefined>);

@@ -1,4 +1,4 @@
-import { BY_SERIES, openDb, STORES, storeRequest, writeTransaction } from '../shared/db.ts';
+import { BY_SERIES, STORES, storeRequest, writeTransaction } from '../shared/db.ts';
 import type { PageTranslation } from '../shared/page-text.ts';
 import type { ExcludedTerm, NotesSuggestion } from '../shared/series-notes.ts';
 import type { Series, UrlPattern } from '../shared/series.ts';
@@ -29,9 +29,8 @@ function eachBySeries(store: IDBObjectStore, seriesId: string, visit: (cursor: I
  * prompt cache 才吃得到。條目、建議修改與不記的詞（#214）在同一個 transaction 整份取代（刪掉的條目才會消失）。
  */
 export function indexedDbNotesStore(): NotesStore {
-  let db: Promise<IDBDatabase> | undefined;
   const bySeries = <T>(store: string, seriesId: string) =>
-    storeRequest((db ??= openDb()), store, 'readonly', (s) => s.index(BY_SERIES).getAll(seriesId) as IDBRequest<T[]>);
+    storeRequest(store, 'readonly', (s) => s.index(BY_SERIES).getAll(seriesId) as IDBRequest<T[]>);
   return {
     list: (seriesId) => bySeries<NotesEntry>(STORES.seriesNotes, seriesId),
     async load(seriesId) {
@@ -43,7 +42,7 @@ export function indexedDbNotesStore(): NotesStore {
       return { entries, suggestions, excluded: excluded.map((t) => t.原文) };
     },
     save: (seriesId, { entries, suggestions, excluded }) =>
-      writeTransaction((db ??= openDb()), [STORES.seriesNotes, STORES.notesSuggestions, STORES.excludedTerms], (tx) => {
+      writeTransaction([STORES.seriesNotes, STORES.notesSuggestions, STORES.excludedTerms], (tx) => {
         const notes = tx.objectStore(STORES.seriesNotes);
         notes.delete(seriesRange(seriesId));
         for (const entry of entries) notes.put({ ...entry, seriesId });
@@ -63,9 +62,8 @@ export function indexedDbNotesStore(): NotesStore {
 
 /** Series、網址模式、合併時要動的快取與 Notes（#36），存在 IndexedDB。 */
 export function indexedDbSeriesRepo(): SeriesRepo {
-  let db: Promise<IDBDatabase> | undefined;
   const run = <T>(store: string, mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>) =>
-    storeRequest((db ??= openDb()), store, mode, op);
+    storeRequest(store, mode, op);
   const bySeries = <T>(store: string, seriesId: string) =>
     run(store, 'readonly', (s) => s.index(BY_SERIES).getAll(seriesId) as IDBRequest<T[]>);
   return {
@@ -81,7 +79,7 @@ export function indexedDbSeriesRepo(): SeriesRepo {
     listExcluded: (seriesId) => bySeries<ExcludedTerm>(STORES.excludedTerms, seriesId).then((rows) => rows.map((t) => t.原文)),
     commitMerge(merge) {
       // 一個 transaction：中途失敗就整個不算，不會留下一半在臨時 Series、一半在目標。
-      return writeTransaction((db ??= openDb()), SERIES_STORES, (tx) => {
+      return writeTransaction(SERIES_STORES, (tx) => {
         const { sourceId, targetId } = merge;
         const translations = tx.objectStore(STORES.pageTranslations);
         translations.delete(seriesRange(sourceId));
@@ -103,7 +101,7 @@ export function indexedDbSeriesRepo(): SeriesRepo {
     },
     deleteSeries(seriesId) {
       // 一個 transaction：中途失敗就整個不算，不會留下一半的資料（#214）
-      return writeTransaction((db ??= openDb()), SERIES_STORES, (tx) => {
+      return writeTransaction(SERIES_STORES, (tx) => {
         tx.objectStore(STORES.pageTranslations).delete(seriesRange(seriesId));
         tx.objectStore(STORES.seriesNotes).delete(seriesRange(seriesId));
         tx.objectStore(STORES.excludedTerms).delete(seriesRange(seriesId));
@@ -117,9 +115,8 @@ export function indexedDbSeriesRepo(): SeriesRepo {
 
 /** 匯出／匯入（#38）與清除快取用。只碰 Series、網址模式、Notes、建議修改、不記的詞、快取這六個 store；不碰 apiKeys。 */
 export function indexedDbBackupRepo(): BackupRepo & { clearTranslations(seriesId: string): Promise<void> } {
-  let db: Promise<IDBDatabase> | undefined;
   const run = <T>(store: string, mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>) =>
-    storeRequest((db ??= openDb()), store, mode, op);
+    storeRequest(store, mode, op);
   const all = <T>(store: string) => run(store, 'readonly', (s) => s.getAll() as IDBRequest<T[]>);
   return {
     async dump(): Promise<BackupData> {
@@ -139,7 +136,7 @@ export function indexedDbBackupRepo(): BackupRepo & { clearTranslations(seriesId
     putPattern: (pattern) => run(STORES.urlPatterns, 'readwrite', (s) => s.put(pattern)).then(() => {}),
     listTranslations: (seriesId) => run(STORES.pageTranslations, 'readonly', (s) => s.index(BY_SERIES).getAll(seriesId) as IDBRequest<PageTranslation[]>),
     putTranslations: (translations) =>
-      writeTransaction((db ??= openDb()), STORES.pageTranslations, (tx) => {
+      writeTransaction(STORES.pageTranslations, (tx) => {
         const store = tx.objectStore(STORES.pageTranslations);
         for (const t of translations) store.put(t);
       }),

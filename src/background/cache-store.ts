@@ -1,4 +1,4 @@
-import { BY_SERIES, openDb, STORES, storeRequest } from '../shared/db.ts';
+import { BY_SERIES, STORES, storeRequest } from '../shared/db.ts';
 import { sameLongPage } from '../shared/long-page.ts';
 import { findSamePage } from '../shared/page-hash.ts';
 import type { PageTranslation } from '../shared/page-text.ts';
@@ -9,9 +9,8 @@ import type { PageCache } from './transcribe.ts';
  * 一部 Series 頂多幾千頁、每筆只有文字與座標，v1 這樣夠快。不自動清除。
  */
 export function indexedDbPageCache(): PageCache {
-  let db: Promise<IDBDatabase> | undefined;
   const run = <T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>) =>
-    storeRequest((db ??= openDb()), STORES.pageTranslations, mode, op);
+    storeRequest(STORES.pageTranslations, mode, op);
   return {
     async find(seriesId, pageHash) {
       const entries = await run('readonly', (s) => s.index(BY_SERIES).getAll(seriesId) as IDBRequest<PageTranslation[]>);

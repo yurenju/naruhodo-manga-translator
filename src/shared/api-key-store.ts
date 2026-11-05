@@ -3,7 +3,7 @@
  * 只有 offscreen document（呼叫 API）與 side panel 設定區（輸入、顯示末四碼）會用 get()；
  * SW 只用 has() 判斷要不要排翻譯，不讀出值。不加密：見 spec 第 5 節的安全性取捨。
  */
-import { openDb, STORES } from './db.ts';
+import { STORES, storeRequest } from './db.ts';
 
 /** v1 只有 Claude 一把 key。 */
 const API_KEY_ID = 'anthropic';
@@ -19,20 +19,7 @@ export interface ApiKeyStore {
 export const lastFour = (key: string) => key.slice(-4);
 
 export function indexedDbApiKeyStore(): ApiKeyStore {
-  let db: Promise<IDBDatabase> | undefined;
-
-  function run<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-    db ??= openDb();
-    return db.then(
-      (db) =>
-        new Promise<T>((resolve, reject) => {
-          const tx = db.transaction(STORES.apiKeys, mode);
-          const request = op(tx.objectStore(STORES.apiKeys));
-          tx.oncomplete = () => resolve(request.result);
-          tx.onerror = () => reject(tx.error);
-        }),
-    );
-  }
+  const run = <T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>) => storeRequest(STORES.apiKeys, mode, op);
 
   return {
     get: () => run('readonly', (s) => s.get(API_KEY_ID) as IDBRequest<string | undefined>),
