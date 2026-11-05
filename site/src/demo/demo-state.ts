@@ -1,13 +1,15 @@
 /**
  * 首頁互動展示（#109）的進度：點圖示 → 辨識中 → 翻譯中 → 完成，全部用計時器模擬，不跑 OCR、不連網路。
  * 這裡只算「現在 side panel 與頁面該顯示什麼」，畫面是外掛的 SidePanel 與 createOverlay（Demo.tsx）。
+ * 圖示跟外掛一樣是開關（ADR 0003、src/background/activation.ts 的 toggle）：沒啟動就啟動並打開 side panel，
+ * 已啟動就停止並關掉 side panel；side panel 的「停止」只停止，side panel 留著。
  */
 import { CLAUDE_MODEL } from '../../../src/shared/claude-request.ts';
 import type { PageView } from '../../../src/shared/messages.ts';
 import type { PageText } from '../../../src/shared/page-text.ts';
 
-/** closed＝還沒點外掛圖示。 */
-export type DemoPhase = 'closed' | 'recognizing' | 'translating' | 'done';
+/** closed＝沒啟動、side panel 關著；stopped＝按了 side panel 的「停止」，side panel 還開著。 */
+export type DemoPhase = 'closed' | 'stopped' | 'recognizing' | 'translating' | 'done';
 
 /** 新帳號的免費額度（spec #86 的 Free Pages）；翻完展示的這頁少一頁。 */
 export const FREE_PAGES = 50;
@@ -25,8 +27,15 @@ export function nextPhase(phase: DemoPhase): { phase: DemoPhase; afterMs: number
   return STEPS[phase];
 }
 
+/** 點外掛圖示之後的進度：沒啟動（closed、stopped）就啟動，已啟動（辨識中、翻譯中、完成）就停止並關掉 side panel。 */
+export function clickIcon(phase: DemoPhase): DemoPhase {
+  return phase === 'closed' || phase === 'stopped' ? 'recognizing' : 'closed';
+}
+
 export interface DemoView {
   panelOpen: boolean;
+  /** 已啟動（SidePanel 的 running）；沒啟動時 side panel 只提示點圖示。 */
+  running: boolean;
   /** 給 SidePanel 的 pages。 */
   pages: PageView[];
   /** side panel 底部的剩餘免費頁數。 */
@@ -53,7 +62,9 @@ function transcript(phase: DemoPhase, text: PageText): PageView['transcript'] {
 }
 
 export function demoView(phase: DemoPhase, text: PageText): DemoView {
-  if (phase === 'closed') return { panelOpen: false, pages: [], remaining: FREE_PAGES, overlay: false };
+  if (phase === 'closed') return { panelOpen: false, running: false, pages: [], remaining: FREE_PAGES, overlay: false };
+  // 停止時外掛清掉這個 tab 的 Page 與覆蓋層；展示裡的額度在下一次啟動時重新從滿的開始
+  if (phase === 'stopped') return { panelOpen: true, running: false, pages: [], remaining: FREE_PAGES, overlay: false };
   const page: PageView = {
     anchorId: 'demo',
     rect: { x: 0, y: 0, width: 0, height: 0 },
@@ -62,5 +73,5 @@ export function demoView(phase: DemoPhase, text: PageText): DemoView {
     transcript: transcript(phase, text),
   };
   const done = phase === 'done';
-  return { panelOpen: true, pages: [page], remaining: done ? FREE_PAGES - 1 : FREE_PAGES, overlay: done };
+  return { panelOpen: true, running: true, pages: [page], remaining: done ? FREE_PAGES - 1 : FREE_PAGES, overlay: done };
 }

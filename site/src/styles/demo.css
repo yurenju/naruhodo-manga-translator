@@ -65,12 +65,6 @@
 }
 @keyframes demo-scan { from { opacity: 0.25; } to { opacity: 1; } }
 
-.demo-replay {
-  display: block; margin: 0 auto; padding: var(--naru-space-2) var(--naru-space-3); border: 0;
-  background: #FFF; color: var(--naru-accent); font: inherit; font-size: var(--naru-text-label); cursor: pointer;
-  width: 100%; border-top: 1px solid #E3E3E3;
-}
-
 /* 手機寬度：side panel 蓋在漫畫頁上面，不擠壓漫畫頁 */
 @media (max-width: 760px) {
   .demo-chrome__body { height: 480px; }

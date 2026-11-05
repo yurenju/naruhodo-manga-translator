@@ -12,7 +12,7 @@ export interface SiteCopy {
   nav: { pricing: string; faq: string; install: string; languageLabel: string };
   hero: { title: string; lead: string; install: string; pricing: string };
   /** 首頁互動展示（#109）外框上的文字；展示裡面的外掛介面只有繁體中文 */
-  demo: { caption: string; hint: string; replay: string };
+  demo: { caption: string; hint: string };
   /** 步驟內文的 `{shortcut}` 換成外掛快捷鍵的按鍵（Mac 是 ⌥⇧M，其他平台 Alt+Shift+M） */
   how: { title: string; steps: readonly { title: string; body: string }[] };
   /**
@@ -63,9 +63,8 @@ export const copy: Record<Locale, SiteCopy> = {
       pricing: '看價格',
     },
     demo: {
-      caption: '實際操作看看：點右上角的 Naruhodo 圖示，切到「學習」後把滑鼠移到對話框上。',
+      caption: '實際操作看看：點右上角的 Naruhodo 圖示，切到「學習」後把滑鼠移到對話框上；再點一次圖示就關掉。',
       hint: '點這裡開始翻譯',
-      replay: '重新播放',
     },
     how: {
       title: '怎麼用',
@@ -156,9 +155,8 @@ export const copy: Record<Locale, SiteCopy> = {
       pricing: 'See pricing',
     },
     demo: {
-      caption: 'Try it: click the Naruhodo icon at the top right, then switch to 學習 (Study) and hover a balloon.',
+      caption: 'Try it: click the Naruhodo icon at the top right, then switch to 學習 (Study) and hover a balloon. Click the icon again to turn it off.',
       hint: 'Click to translate',
-      replay: 'Replay',
     },
     how: {
       title: 'How it works',
