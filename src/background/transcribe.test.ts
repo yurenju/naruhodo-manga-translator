@@ -1350,6 +1350,54 @@ describe('Prior Pages（ADR 0005）', () => {
     expect(priorOf(inputs)).toEqual([[], ['a1'], [], []]);
   });
 
+  describe('換網址後重猜作品（#186）：Series 還在猜時排的頁', () => {
+    /** 先在 series-1 看完 a1、a2，再換網址：之後的 getSeriesId 卡住，直到 decide(seriesId)。 */
+    async function navigated() {
+      const inputs: TranslateInput[] = [];
+      let pending = false;
+      let decided: Promise<string> = Promise.resolve('series-1');
+      let decide!: (seriesId: string) => void;
+      const { transcriber } = setup({
+        analyze: analyzeByAnchor,
+        getSeriesId: () => decided,
+        isSeriesPending: () => pending,
+        getTranslator: () => translatorWithNotes([], inputs),
+      });
+      for (const anchor of ['a1', 'a2']) await transcriber.update(1, [thumb(anchor)], capture);
+      pending = true;
+      decided = new Promise<string>((r) => (decide = r));
+      return {
+        inputs,
+        transcriber,
+        decide(seriesId: string) {
+          pending = false;
+          decide(seriesId);
+        },
+      };
+    }
+
+    it('猜到另一部 Series：第一頁不帶上一部的頁（#222）', async () => {
+      const { inputs, transcriber, decide } = await navigated();
+
+      const done = transcriber.update(1, [thumb('a3')], capture);
+      decide('series-2');
+      await done;
+      await transcriber.update(1, [thumb('a4')], capture);
+
+      expect(priorOf(inputs)).toEqual([[], ['a1'], [], ['a3']]);
+    });
+
+    it('猜到同一部 Series：照樣帶前面看過的頁', async () => {
+      const { inputs, transcriber, decide } = await navigated();
+
+      const done = transcriber.update(1, [thumb('a3')], capture);
+      decide('series-1');
+      await done;
+
+      expect(priorOf(inputs)).toEqual([[], ['a1'], ['a1', 'a2']]);
+    });
+  });
+
   it('沒有 Series 時不帶（分不出前頁是不是同一部作品）', async () => {
     const inputs: TranslateInput[] = [];
     const { transcriber } = setup({ analyze: analyzeByAnchor, getSeriesId: async () => undefined, getTranslator: () => translatorWithNotes([], inputs) });

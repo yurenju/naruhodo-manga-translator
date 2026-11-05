@@ -566,15 +566,19 @@ export function createTranscriber(deps: TranscriberDeps) {
     if (deps.isSeriesPending?.(tabId) && newPages.every(({ record }) => !record.long)) {
       const seriesPending = deps.getSeriesId(tabId);
       const groupOf = snapshotGroups();
-      for (const { record, index } of newPages) {
+      const jobs = newPages.map(({ record, index }) => {
         const job = newJob({ tab, record, batch, index, group: groupOf(record) });
         job.seriesPending = seriesPending;
         enqueueLocal(job);
-      }
+        return job;
+      });
       for (const { record, page, index } of slices) requestSlice(record, page, capture!, { tab, batch, index, group: groupOf(record) });
-      // 這一批記成最近看過的（之後的頁拿來當 Prior Pages）
+      // 這一批記成最近看過的（之後的頁拿來當 Prior Pages）。排程時 Prior Pages 的位置取自 Series 決定前的紀錄：
+      // 猜到另一部（see 從頭記）就不帶上一部的頁（#222）。在 seriesDecided 之前跑（先接上 seriesPending），① 送出前就換好。
       void seriesPending.then((seriesId) => {
         if (isCurrent(tab)) see(tab, seriesId, pages);
+        const history = seen.get(tab.tabId)?.pages ?? [];
+        for (const job of jobs) job.prior = job.prior.filter((p) => history.includes(p));
       });
       await Promise.all([...visibleRecords].map((r) => r.settled));
       return;
