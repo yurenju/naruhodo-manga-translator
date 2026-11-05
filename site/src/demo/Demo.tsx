@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 /**
- * 首頁的互動展示（#109）：假的 Chrome 視窗裡放合成漫畫頁，點工具列的 Naruhodo 圖示後 side panel 滑出來。
+ * 首頁的互動展示（#109）：假的 Chrome 視窗裡放合成漫畫頁，點工具列的 Naruhodo 圖示後 side panel 滑出來，再點一次就收回去（跟外掛一樣是開關）。
  * side panel 是外掛的 SidePanel（render 在 shadow root 裡，樣式跟外掛同一份），頁面上的譯文與 tooltip 是外掛的
  * createOverlay；這裡只負責假外框與「辨識中 → 翻譯中 → 完成」的計時（demo-state.ts），資料是事先錄好的 demo-page.json。
  * 外掛介面只有繁體中文，所以展示裡面維持中文；只有外框上的提示（copy）跟著網站語言。
@@ -18,7 +18,7 @@ import SIDE_PANEL from '../../../src/ui/side-panel.css';
 import { SidePanel } from '../../../src/ui/index.ts';
 import pageSrc from '../../../testdata/synthetic/out/p01-basic.png?url';
 import { demoPage } from './demo-page.ts';
-import { DEMO_PAGE_HASH, demoView, nextPhase, type DemoPhase } from './demo-state.ts';
+import { DEMO_PAGE_HASH, clickIcon, demoView, nextPhase, type DemoPhase } from './demo-state.ts';
 
 /** 外掛打包的覆蓋層字型（Noto Sans TC 700 的子集）；網站自己帶一份，只下載譯文用得到的子集。 */
 const FONT_FILES = import.meta.glob('../../../node_modules/@fontsource/noto-sans-tc/files/*-700-normal.woff2', {
@@ -44,7 +44,6 @@ const noop = () => {};
 export interface DemoCopy {
   /** 圖示旁的提示 */
   hint: string;
-  replay: string;
 }
 
 export function Demo({ copy }: { copy: DemoCopy }) {
@@ -65,7 +64,7 @@ export function Demo({ copy }: { copy: DemoCopy }) {
     return () => clearTimeout(timer);
   }, [phase]);
 
-  // 翻完才畫覆蓋層；重新播放（回到 closed）就整個拿掉
+  // 翻完才畫覆蓋層；停止（再點一次圖示，或 side panel 的「停止」）就整個拿掉
   useEffect(() => {
     const img = image.current;
     if (!view.overlay || !img) return;
@@ -95,11 +94,6 @@ export function Demo({ copy }: { copy: DemoCopy }) {
     return () => render(null, mount);
   }, []);
 
-  const replay = () => {
-    setPhase('closed');
-    setPageMode('read');
-  };
-
   useEffect(() => {
     const mount = panelMount.current;
     if (!mount) return;
@@ -109,7 +103,7 @@ export function Demo({ copy }: { copy: DemoCopy }) {
     }
     render(
       <SidePanel
-        running
+        running={view.running}
         pages={view.pages}
         modelStatus={{ state: 'idle' }}
         access={{ mode: 'hosted', signedIn: true }}
@@ -118,7 +112,7 @@ export function Demo({ copy }: { copy: DemoCopy }) {
         hovered={hovered}
         logoSrc={logoSrc}
         onPageModeChange={setPageMode}
-        onStop={replay}
+        onStop={() => setPhase('stopped')}
         onScan={noop}
         onTranslate={noop}
         onLineHover={(line) => overlay.current?.highlight(line)}
@@ -152,13 +146,13 @@ export function Demo({ copy }: { copy: DemoCopy }) {
         <span class="demo-chrome__url">manga.example.com/sample-series/chapter-12</span>
         <button
           type="button"
-          class={`demo-chrome__ext${view.panelOpen ? '' : ' is-pulsing'}`}
+          class={`demo-chrome__ext${view.running ? '' : ' is-pulsing'}`}
           aria-label="Naruhodo"
-          aria-pressed={view.panelOpen}
-          onClick={() => phase === 'closed' && setPhase('recognizing')}
+          aria-pressed={view.running}
+          onClick={() => setPhase(clickIcon)}
         >
           <img src={logoSrc} alt="" width={20} height={20} />
-          {!view.panelOpen && <span class="demo-chrome__hint">{copy.hint}</span>}
+          {!view.running && <span class="demo-chrome__hint">{copy.hint}</span>}
         </button>
       </div>
       <div class="demo-chrome__body">
@@ -180,9 +174,6 @@ export function Demo({ copy }: { copy: DemoCopy }) {
           <div class="demo-chrome__panel" ref={panelHost} />
         </div>
       </div>
-      <button type="button" class="demo-replay" onClick={replay}>
-        ↺ {copy.replay}
-      </button>
     </div>
   );
 }

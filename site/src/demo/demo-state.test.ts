@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PageText } from '../../../src/shared/page-text.ts';
-import { DEMO_PAGE_HASH, FREE_PAGES, demoView, nextPhase } from './demo-state.ts';
+import { DEMO_PAGE_HASH, FREE_PAGES, clickIcon, demoView, nextPhase, type DemoPhase } from './demo-state.ts';
 
 const text: PageText = {
   balloons: [
@@ -22,7 +22,7 @@ const text: PageText = {
 
 describe('展示的進度', () => {
   it('點圖示前 side panel 沒打開，額度是滿的', () => {
-    expect(demoView('closed', text)).toEqual({ panelOpen: false, pages: [], remaining: FREE_PAGES, overlay: false });
+    expect(demoView('closed', text)).toEqual({ panelOpen: false, running: false, pages: [], remaining: FREE_PAGES, overlay: false });
   });
 
   it('點圖示後先辨識：逐字稿顯示辨識中，頁面上還沒有譯文', () => {
@@ -54,5 +54,25 @@ describe('展示的進度', () => {
     const total = steps.reduce((ms, s) => ms + s.afterMs, 0);
     expect(total).toBeGreaterThanOrEqual(1000);
     expect(total).toBeLessThanOrEqual(2000);
+  });
+});
+
+describe('圖示是開關（跟外掛的 toggle 一樣）', () => {
+  it('點一下開 side panel，再點一下關掉，再點又重新開始翻譯', () => {
+    const opened = clickIcon('closed');
+    expect(opened).toBe('recognizing');
+    expect(demoView(opened, text)).toMatchObject({ panelOpen: true, running: true });
+    const closed = clickIcon(opened);
+    expect(demoView(closed, text)).toMatchObject({ panelOpen: false, running: false, overlay: false });
+    expect(clickIcon(closed)).toBe('recognizing');
+  });
+
+  it('翻譯途中或翻完再點，都是停止並關掉 side panel', () => {
+    for (const phase of ['recognizing', 'translating', 'done'] satisfies DemoPhase[]) expect(clickIcon(phase)).toBe('closed');
+  });
+
+  it('按 side panel 的「停止」：side panel 留著、提示點圖示，頁面上的譯文拿掉；再點圖示重新開始', () => {
+    expect(demoView('stopped', text)).toEqual({ panelOpen: true, running: false, pages: [], remaining: FREE_PAGES, overlay: false });
+    expect(clickIcon('stopped')).toBe('recognizing');
   });
 });
