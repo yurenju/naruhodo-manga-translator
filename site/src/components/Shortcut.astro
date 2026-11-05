@@ -1,0 +1,36 @@
+---
+/**
+ * 外掛快捷鍵的按鍵。網站是預先輸出的靜態頁，build 時看不到讀者的平台，先輸出 Windows／Linux 的 Alt+Shift+M；
+ * 頁面載入後 script 在 Mac 上換成 ⌥⇧M。關掉 JavaScript 的 Mac 讀者看到 Alt+Shift+M，按 Option 照樣能用。
+ */
+import { shortcutFor } from '../shortcut.ts';
+
+const { keys, separator } = shortcutFor(false);
+---
+<span class="shortcut" data-shortcut>{keys.map((key, i) => <Fragment>{i > 0 && separator}<kbd>{key.label}</kbd></Fragment>)}</span>
+
+<script>
+  import { isMac, shortcutFor } from '../shortcut.ts';
+
+  if (isMac(navigator as Navigator & { userAgentData?: { platform?: string } })) {
+    const { keys, separator } = shortcutFor(true);
+    for (const el of document.querySelectorAll<HTMLElement>('[data-shortcut]')) {
+      el.replaceChildren(
+        ...keys.flatMap((key, i) => {
+          const kbd = document.createElement('kbd');
+          kbd.textContent = key.label;
+          if (key.name) {
+            kbd.title = key.name;
+            kbd.setAttribute('aria-label', key.name);
+          }
+          return i > 0 && separator ? [separator, kbd] : [kbd];
+        }),
+      );
+    }
+  }
+</script>
+
+<style>
+  .shortcut { white-space: nowrap; }
+  .shortcut :global(kbd) { padding: 1px 6px; border: 1px solid var(--naru-line-strong); border-bottom-width: 2px; border-radius: 4px; font-family: var(--naru-font-mono); font-size: var(--naru-text-small); background: var(--naru-surface); }
+</style>

@@ -159,6 +159,6 @@ No test account needed: sign up with any email. New accounts get 50 free pages, 
 2. Enter your email, click 同意並寄送驗證碼, enter the emailed code.
 3. Click 先用免費的 50 頁.
 4. Click 到試翻頁試試看 to open https://naruhodo.page/zh-tw/try/ (uses no pages).
-5. Click the toolbar icon (Alt+Shift+M): balloons turn into Chinese; the side panel lists original, readings, translation.
+5. Click the toolbar icon (Alt+Shift+M; Mac: ⌥⇧M): balloons turn into Chinese; the side panel lists original, readings, translation.
 6. Gear menu > 設定: account, pages, Subscribe, Delete account.
 ```
