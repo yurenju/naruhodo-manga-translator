@@ -11,8 +11,11 @@ import type * as Ort from 'onnxruntime-web';
 import type { ExecutionProvider } from './models/model-files.ts';
 import { DETECTION_LABELS, type Detection, type Engine, type PageImage, type Recognized } from './pipeline/analyze.ts';
 import type { PixelBox } from './pipeline/boxes.ts';
+import { createTrace } from '../shared/trace.ts';
 
 type OrtModule = typeof Ort;
+
+const trace = createTrace('offscreen');
 
 const CLS = 2n;
 const SEP = 3;
@@ -89,15 +92,20 @@ export async function createOrtEngine(
   }
   const { vocab } = models;
 
+  /** debug build：每頁各段的推論時間（#196 驗收），recognize 結束時跟 detector 的一起印成 ocr:timing。 */
+  let detectorMs = 0;
+
   async function detect(image: PageImage): Promise<Detection[]> {
     const rgb = image.rgb640();
     const plane = 640 * 640;
     const input = new Float32Array(3 * plane);
     for (let i = 0; i < plane; i++) for (let c = 0; c < 3; c++) input[c * plane + i] = rgb[i * 3 + c]! / 255;
+    const detectStartedAt = performance.now();
     const out = await detector.run({
       images: new ort.Tensor('float32', input, [1, 3, 640, 640]),
       orig_target_sizes: new ort.Tensor('int64', BigInt64Array.from([BigInt(image.width), BigInt(image.height)]), [1, 2]),
     });
+    if (__DEBUG__) detectorMs = performance.now() - detectStartedAt;
     const labels = out.labels!.data as BigInt64Array;
     const boxes = out.boxes!.data as Float32Array;
     const scores = out.scores!.data as Float32Array;
@@ -126,12 +134,16 @@ export async function createOrtEngine(
       }
     });
     // 整頁所有框一個 batch
+    const encodeStartedAt = performance.now();
     const { last_hidden_state: hidden } = await encoder.run({ pixel_values: new ort.Tensor('float32', pixels, [n, 3, 224, 224]) });
+    const decodeStartedAt = performance.now();
+    let decodeSteps = 0;
     const sequences: bigint[][] = Array.from({ length: n }, () => [CLS]);
     /** 每一步選中的 token 的 softmax 機率（OCR 信心，ADR 0009），跟 sequences 去掉 CLS 後一一對應。 */
     const probabilities: number[][] = Array.from({ length: n }, () => []);
     const done = new Array<boolean>(n).fill(false);
     for (let step = 0; step < MAX_TOKENS && done.includes(false); step++) {
+      decodeSteps++;
       const length = sequences[0]!.length;
       const ids = BigInt64Array.from(sequences.flat());
       const { logits } = await decoder.run({
@@ -163,6 +175,16 @@ export async function createOrtEngine(
         probabilities[k]!.push(1 / sum);
         if (best === SEP) done[k] = true;
       }
+    }
+    if (__DEBUG__) {
+      trace('ocr:timing', {
+        providers,
+        detectorMs: Math.round(detectorMs),
+        encoderMs: Math.round(decodeStartedAt - encodeStartedAt),
+        decoderMs: Math.round(performance.now() - decodeStartedAt),
+        boxes: n,
+        decodeSteps,
+      });
     }
     return sequences.map((seq, k) => {
       const tokens = seq
