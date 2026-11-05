@@ -1,0 +1,12 @@
+/*
+ * 外掛頁面（side panel、onboarding）的字型：打包進外掛的 Noto Sans CJK Variable（src/fonts/，來源見 scripts/cjk-font.ts）。
+ * 一個字型同時有日文與繁中字形，跟著 lang 屬性切換（OpenType locl），日文原文與中文譯文混排時不會因為缺字改用系統字型。
+ * 字重 100–900 都在同一個檔案裡。用自己的名字，不跟使用者電腦上可能裝了的 Noto Sans TC／JP 混在一起。
+ * 檔案在外掛裡、從本機讀：block 讓文字等字型好了再畫，不會先用系統字型畫一次再跳。
+ */
+@font-face {
+  font-family: 'Naruhodo Noto Sans CJK';
+  font-weight: 100 900;
+  font-display: block;
+  src: url(fonts/NotoSansCJKjp-VF.woff2) format('woff2');
+}
