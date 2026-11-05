@@ -39,6 +39,20 @@ export interface OrtEngine extends Engine {
   release(): Promise<void>;
 }
 
+/**
+ * 每個模型的 session 用哪個 EP。
+ *
+ * WebGPU 模式下 detector 還是用 wasm（#196）：detector 只有 int8 版，WebGPU 跑 int8 時有些運算退回 CPU，
+ * 資料在 GPU 與 CPU 間來回搬，反而是整頁 OCR 最慢的一段。本機兩部作品 58 頁、跑 2 輪的每頁平均：
+ * detector 0.67 s → 0.21 s，整頁 OCR 1.28 s → 0.85 s，每一頁都變快。
+ * 代價是兩個 EP 的 int8 捨入不同，框差一點（中位 1 px、p90 2 px），認出的字偶爾不同，
+ * 標點符號 wasm 比較常讀歪（「…」變「・・・」之類）；維護者決定接受。
+ * encoder／decoder 是 fp32，照樣用 WebGPU。
+ */
+export function sessionExecutionProviders(ep: ExecutionProvider): Record<'detector' | 'encoder' | 'decoder', ExecutionProvider> {
+  return { detector: 'wasm', encoder: ep, decoder: ep };
+}
+
 export async function createOrtEngine(
   ep: ExecutionProvider,
   models: { detector: ArrayBuffer; encoder: ArrayBuffer; decoder: ArrayBuffer; vocab: string[] },
@@ -46,17 +60,33 @@ export async function createOrtEngine(
 ): Promise<OrtEngine> {
   const ort = await loadOrt();
   if (maxThreads !== undefined) ort.env.wasm.numThreads = Math.min(ort.env.wasm.numThreads ?? 1, maxThreads);
-  // wasm 在 proxy worker 裡跑：建 session（編譯、最佳化）與推論都不卡 offscreen 的主執行緒，
+  // wasm 模式在 proxy worker 裡跑：建 session（編譯、最佳化）與推論都不卡 offscreen 的主執行緒，
   // 裁切縮圖等其他訊息才不會被擋住（外掛頁面共用同一個 renderer）。WebGPU 不支援 proxy。
-  // 只在第一次初始化前設定有效。
+  // 這個設定是全域的、只在第一次初始化前設定有效，所以 WebGPU 模式下 wasm 的 detector 也不走 proxy，
+  // 在 offscreen 主執行緒上跑，每頁約卡 0.2 s；#196 的數字就是在這個條件下量的，換整頁 OCR 快約 0.4 s。
   ort.env.wasm.proxy = ep === 'wasm';
+  const providers = sessionExecutionProviders(ep);
   // logSeverityLevel 3＝只記 error：「部分節點沒分給 WebGPU」的警告每建一次 session 就印兩行，
   // 擠滿 chrome://extensions 的錯誤頁，而那是 ORT 刻意把 shape 運算放 CPU（#27 除錯）
-  const create = (buffer: ArrayBuffer) =>
-    ort.InferenceSession.create(new Uint8Array(buffer), { executionProviders: [ep], logSeverityLevel: 3 });
-  const detector = await create(models.detector);
-  const encoder = await create(models.encoder);
-  const decoder = await create(models.decoder);
+  const create = (buffer: ArrayBuffer, provider: ExecutionProvider) =>
+    ort.InferenceSession.create(new Uint8Array(buffer), { executionProviders: [provider], logSeverityLevel: 3 });
+  // detector 最後建：WebGPU 建不起來時要在 wasm 的 session 出現前就失敗，
+  // local-pipeline 退回 wasm 重建時 proxy 才還來得及生效。哪個失敗，就把已經建好的放掉。
+  const sessions: Ort.InferenceSession[] = [];
+  const createTracked = async (buffer: ArrayBuffer, provider: ExecutionProvider) => {
+    const session = await create(buffer, provider);
+    sessions.push(session);
+    return session;
+  };
+  let encoder: Ort.InferenceSession, decoder: Ort.InferenceSession, detector: Ort.InferenceSession;
+  try {
+    encoder = await createTracked(models.encoder, providers.encoder);
+    decoder = await createTracked(models.decoder, providers.decoder);
+    detector = await createTracked(models.detector, providers.detector);
+  } catch (error) {
+    await Promise.allSettled(sessions.map((session) => session.release()));
+    throw error;
+  }
   const { vocab } = models;
 
   async function detect(image: PageImage): Promise<Detection[]> {
