@@ -3,7 +3,6 @@ import { loadPageMode, onPageModeChange } from '../shared/page-mode.ts';
 import { createTrace } from '../shared/trace.ts';
 import { createCapturePrep } from './capture.ts';
 import { createOverlay, HOST_ATTRIBUTE, isShown, untilRepainted } from './overlay.ts';
-import { createOverlayFontLoader } from './overlay-font.ts';
 import { longPageVisible, pageCandidateRejection } from './page-candidates.ts';
 import { watchPageTurns } from './page-turn.ts';
 import { stopRepaint } from './repaint.ts';
@@ -108,7 +107,6 @@ if (!globalThis.__naruhodo) {
   }
 
   const overlay = createOverlay({
-    loadFont: createOverlayFontLoader(),
     // 頁面 hover → side panel 高亮那行（panel 用 sender.tab 分辨是哪個 tab）
     onHover(line) {
       void send({ type: 'content:hover', line });

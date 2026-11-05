@@ -8,7 +8,6 @@
 import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { createOverlay, type Overlay } from '../../../src/content/overlay.ts';
-import { createOverlayFontLoader } from '../../../src/content/overlay-font.ts';
 import logoSrc from '../../../src/icons/naruhodo-small.svg?url';
 import type { LineRef } from '../../../src/shared/messages.ts';
 import type { PageMode } from '../../../src/shared/page-mode.ts';
@@ -19,18 +18,6 @@ import { SidePanel } from '../../../src/ui/index.ts';
 import pageSrc from '../../../testdata/synthetic/out/p01-basic.png?url';
 import { demoPage } from './demo-page.ts';
 import { DEMO_PAGE_HASH, clickIcon, demoView, nextPhase, type DemoPhase } from './demo-state.ts';
-
-/** 外掛打包的覆蓋層字型（Noto Sans TC 700 的子集）；網站自己帶一份，只下載譯文用得到的子集。 */
-const FONT_FILES = import.meta.glob('../../../node_modules/@fontsource/noto-sans-tc/files/*-700-normal.woff2', {
-  query: '?url',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>;
-const fontUrl = (file: string) => {
-  const url = Object.entries(FONT_FILES).find(([path]) => path.endsWith(`/${file}`))?.[1];
-  if (!url) throw new Error(`沒有打包字型 ${file}`);
-  return url;
-};
 
 /**
  * shadow root 裡的樣式：host 不繼承網站的字型與顏色（all: initial），side panel 的 tokens 與元件樣式跟外掛同一份。
@@ -68,7 +55,7 @@ export function Demo({ copy }: { copy: DemoCopy }) {
   useEffect(() => {
     const img = image.current;
     if (!view.overlay || !img) return;
-    const created = createOverlay({ loadFont: createOverlayFontLoader(fontUrl), onHover: (line) => setHovered(line ?? undefined) });
+    const created = createOverlay({ onHover: (line) => setHovered(line ?? undefined) });
     created.setPageMode(pageMode);
     overlay.current = created;
     void img.decode().then(() => created.show(img, demoPage.sub, demoPage.text, DEMO_PAGE_HASH));

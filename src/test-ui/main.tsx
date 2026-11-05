@@ -101,7 +101,7 @@ globalThis.__testUi = {
   async renderOverlay({ image, pages, pageMode }) {
     overlay?.clear();
     // 網站自己決定字型怎麼載入；這裡用系統字型
-    overlay = createOverlay({ loadFont: async () => 'sans-serif' });
+    overlay = createOverlay();
     overlay.setPageMode(pageMode);
     const img = document.createElement('img');
     img.src = image;

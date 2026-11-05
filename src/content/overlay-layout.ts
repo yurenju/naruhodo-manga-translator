@@ -4,28 +4,40 @@
  */
 import type { RatioRect } from '../shared/page-text.ts';
 
-/** 一段譯文；upright＝縱中橫（text-combine-upright）。 */
+/**
+ * 一段譯文怎麼直排：plain 照字型（text-orientation: mixed）、upright＝縱中橫（text-combine-upright）、
+ * sideways＝轉 90 度（text-orientation: sideways）。
+ */
 export interface TextRun {
   text: string;
-  upright: boolean;
+  form: 'plain' | 'upright' | 'sideways';
 }
 
 const HALF_TO_FULL: Record<string, string> = { '!': '！', '?': '？', '~': '～', ',': '，' };
 
-/** 1～3 字的英數字（前後不接英數字），或兩個全形驚嘆號／問號的組合。 */
-const UPRIGHT = /(?<![0-9A-Za-z])[0-9A-Za-z]{1,3}(?![0-9A-Za-z])|[！？]{2}/g;
+/**
+ * 直排時一律轉 90 度的字：～〜ー 要靠字型的直書字形（vert）才會變直，系統字型常常沒有
+ * （微軟正黑體沒有 ～、Bold 也沒有 ー），Chrome 也不會自己轉。sideways 由 Chrome 轉，不管字型有沒有。
+ * …、— 不用：它們本來就由 Chrome 轉（Unicode Vertical_Orientation=R）。
+ */
+const SIDEWAYS = /[～〜ー]+/;
 
-/** 直書前：半形 !?~, 與 ... 換成全形，短英數字縱中橫。 */
+/** 1～3 字的英數字（前後不接英數字），或兩個全形驚嘆號／問號的組合。 */
+const UPRIGHT = /(?<![0-9A-Za-z])[0-9A-Za-z]{1,3}(?![0-9A-Za-z])|[！？]{2}/;
+
+const SPECIAL = new RegExp(`(?<upright>${UPRIGHT.source})|(?<sideways>${SIDEWAYS.source})`, 'g');
+
+/** 直書前：半形 !?~, 與 ... 換成全形，短英數字縱中橫，～〜ー 轉 90 度。 */
 export function verticalize(text: string): TextRun[] {
   const full = text.replace(/\.{2,}|…+/g, '……').replace(/[!?~,]/g, (c) => HALF_TO_FULL[c]!);
   const runs: TextRun[] = [];
   let last = 0;
-  for (const match of full.matchAll(UPRIGHT)) {
-    if (match.index > last) runs.push({ text: full.slice(last, match.index), upright: false });
-    runs.push({ text: match[0], upright: true });
+  for (const match of full.matchAll(SPECIAL)) {
+    if (match.index > last) runs.push({ text: full.slice(last, match.index), form: 'plain' });
+    runs.push({ text: match[0], form: match.groups!.upright ? 'upright' : 'sideways' });
     last = match.index + match[0].length;
   }
-  if (last < full.length) runs.push({ text: full.slice(last), upright: false });
+  if (last < full.length) runs.push({ text: full.slice(last), form: 'plain' });
   return runs;
 }
 

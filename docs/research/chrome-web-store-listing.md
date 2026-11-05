@@ -5,7 +5,7 @@
 ## 結論摘要
 
 1. **模型權重不算 remotely hosted code。** 官方的 AI 外掛指南寫明「models are not considered remote hosted code」。ORT 的 wasm／JS 打包在套件裡，`'wasm-unsafe-eval'` 本來就在 MV3 最低 CSP 裡。表單選「No, I am not using remote code」。
-2. **`fonts/*` 對 `<all_urls>` 開放：** 官方沒寫這會被追問，它也不是權限、不會出安裝警告；唯一的代價是網站可以探測到外掛有裝。`use_dynamic_url`（Chrome 130+）可以降低被探測的程度，但要把 `minimum_chrome_version` 從 116 調高，而且官方沒寫清楚它跟 `getURL()` 怎麼搭配。
+2. **`fonts/*` 對 `<all_urls>` 開放（已不適用：2026-11-05 起不打包字型，見第 2 題）：** 官方沒寫這會被追問，它也不是權限、不會出安裝警告；唯一的代價是網站可以探測到外掛有裝。`use_dynamic_url`（Chrome 130+）可以降低被探測的程度，但要把 `minimum_chrome_version` 從 116 調高，而且官方沒寫清楚它跟 `getURL()` 怎麼搭配。
 3. **揭露：** 資料類別勾「Website content」與「Authentication information」，「Web history」建議也勾（理由見第 3 題）；三項 Limited Use 聲明都可以照實勾；必須有隱私權政策 URL。2026-08-01 起，揭露政策改成**所有**資料收集都要 prominent disclosure，不論是否跟 single purpose 密切相關。所以 BYOK、使用者主動點擊都不能免除。要在 side panel 做一個第一次翻譯前的揭露與同意畫面。
 4. 這六個權限在官方權限清單上都沒有安裝警告。justification 範例與 single purpose 範例見第 4 題（英文）。深入審查的觸發點主要是寬 host 權限、新開發者與新項目、大幅改版，本外掛只會碰到後兩項。
 5. **必要素材**只有 128×128 icon（圖案 96×96，四邊各 16 px 透明 padding）和至少 1 張截圖（1280×800 或 640×400，最多 5 張）。small promo tile 440×280、marquee 1400×560、YouTube 影片都是選填，但沒有 small tile 的項目排序會比較後面。
@@ -59,6 +59,8 @@
 - https://developer.chrome.com/docs/webstore/cws-dashboard-privacy
 
 ## 2. `web_accessible_resources` 對 `<all_urls>` 開放 `fonts/*`
+
+> 2026-11-05 更新：覆蓋層改用系統字型、不再打包字型，manifest 已經沒有 `web_accessible_resources`，這題不用再處理。以下是當時的研究。
 
 **官方說法。** 資源預設不是 web accessible，官方給的理由是避免惡意網站 fingerprint 已安裝的外掛，或利用外掛裡的 XSS 之類漏洞。`matches` 只看 origin。`use_dynamic_url: true` 會讓資源只能透過每個 session 產生的動態 ID 存取，這個 ID 在瀏覽器重開或外掛重載時重新產生。Chrome 130 起支援這個屬性。
 

@@ -87,8 +87,6 @@ test('譯文蓋在 Balloon 上；捲動、祖先 transform 縮放後仍對齊；
   const shot = testInfo.outputPath('overlay.png');
   await page.screenshot({ path: shot });
   await testInfo.attach('overlay', { path: shot, contentType: 'image/png' });
-  // 打包的 Noto Sans TC 有載入（content script 透過 web_accessible_resources 讀到字型檔）
-  expect(await page.evaluate(() => document.fonts.check('700 26px "Naruhodo Noto Sans TC"', '早安'))).toBe(true);
 
   await page.mouse.wheel(0, 400);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);

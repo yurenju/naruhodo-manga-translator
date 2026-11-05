@@ -25,9 +25,6 @@ import { createTrace } from '../shared/trace.ts';
 import { headingToward, HOVER_DWELL_MS, type Point } from './hover-intent.ts';
 import { eraseFill, estimateFontPx, estimateOriginalLines, fitText, isVertical, layerTransform, layoutText, looseTextRegions, minLayerFontPx, pageSize, ratioToBox, separateRegions, textRegions, verticalize, type Box } from './overlay-layout.ts';
 
-/** 載入譯文要用的字型（等 document.fonts.load 完成），回傳 CSS font-family。 */
-export type LoadFont = (text: string) => Promise<string>;
-
 /**
  * 元素看得到（自己與祖先都不是 display:none、visibility 不是 hidden）。輪流用好幾張疊在一起的 img 的閱讀器
  * （真實的電子書閱讀器）用 visibility 藏起舊的那張、留在原地：它不是 Page，上面的覆蓋層也要藏起來。
@@ -50,9 +47,10 @@ const STYLE = `${TOKENS}
 .er { position: absolute; border-radius: 3px; }
 .er.img { border-radius: 0; }
 .tx { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center;
-  text-align: center; line-height: ${LINE_HEIGHT}; overflow: hidden; font-weight: 700; overflow-wrap: anywhere; }
+  text-align: center; line-height: ${LINE_HEIGHT}; overflow: hidden; font-family: var(--naru-font-sans); font-weight: 700; overflow-wrap: anywhere; }
 .tx.v { writing-mode: vertical-rl; text-orientation: mixed; }
 .tx .u { text-combine-upright: all; }
+.tx .s { text-orientation: sideways; }
 .tx > span { white-space: nowrap; }
 .tx[data-wrap] > span { white-space: normal; }
 .tx[data-fit="3"] { align-items: flex-start; justify-content: flex-start; }
@@ -206,7 +204,7 @@ export type OnHover = (line: LineRef | null) => void;
 
 const trace = createTrace('content');
 
-export function createOverlay({ loadFont, onHover, onStatusAction }: { loadFont: LoadFont; onHover?: OnHover; onStatusAction?: OnStatusAction }) {
+export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; onStatusAction?: OnStatusAction } = {}) {
   const entries = new Map<HTMLElement, Entry>();
   /** 被我們從 static 改成 relative 的父元素 → 原本的 inline position，停止時還原。 */
   const changedParents = new Map<HTMLElement, string>();
@@ -370,6 +368,8 @@ export function createOverlay({ loadFont, onHover, onStatusAction }: { loadFont:
     host.dataset.pageMode = pageMode;
     if (statusHidden) host.dataset.statusHidden = '';
     host.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;overflow:visible;pointer-events:none;margin:0;padding:0;border:0;';
+    // 譯文是繁中：字型（缺字時 Chrome 補的字型也是）跟著 lang 挑，不跟著日文網頁的 lang="ja"；tooltip 的原文另外標 ja
+    host.lang = 'zh-Hant';
     const root = host.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
     style.textContent = STYLE;
@@ -392,11 +392,11 @@ export function createOverlay({ loadFont, onHover, onStatusAction }: { loadFont:
   }
 
   function appendRuns(inner: HTMLElement, text: string, vertical: boolean): void {
-    for (const run of vertical ? verticalize(text) : [{ text, upright: false }]) {
-      if (!run.upright) inner.append(run.text);
+    for (const run of vertical ? verticalize(text) : [{ text, form: 'plain' as const }]) {
+      if (run.form === 'plain') inner.append(run.text);
       else {
         const span = document.createElement('span');
-        span.className = 'u';
+        span.className = run.form === 'upright' ? 'u' : 's';
         span.textContent = run.text;
         inner.append(span);
       }
@@ -406,8 +406,6 @@ export function createOverlay({ loadFont, onHover, onStatusAction }: { loadFont:
   /** 把一個 Page 的譯文覆蓋在 anchor 上；同一個 Page（subRect）再呼叫就換成新的。pageHash＝hover 同步用的 Page 身分。 */
   async function show(anchor: HTMLElement, sub: RatioRect = WHOLE_PAGE, text: PageText, pageHash = ''): Promise<void> {
     const { balloons, looseText } = overlaidTexts(text);
-    const fontFamily = await loadFont([...balloons, ...looseText].map((t) => t.譯文).join(''));
-    if (stopped) return;
     const entry = entryFor(anchor);
     const size = pageSize(intrinsicSize(anchor), sub, anchor);
     const element = document.createElement('div');
@@ -454,7 +452,6 @@ export function createOverlay({ loadFont, onHover, onStatusAction }: { loadFont:
       const vertical = isVertical(line.orientation, frame);
       const box = document.createElement('div');
       box.className = `tx${vertical ? ' v' : ''}`;
-      box.style.fontFamily = fontFamily;
       const [ink, stroke] = luminance < 128 ? ['#fff', '#111'] : ['#111', '#fff'];
       box.style.color = ink;
       if (kind === 'loose') {

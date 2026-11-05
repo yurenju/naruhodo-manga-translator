@@ -90,12 +90,21 @@ test.describe('覆蓋渲染（ground truth）', () => {
         const range = document.createRange();
         range.setStart(node, i);
         range.setEnd(node, i + 1);
-        const r = range.getBoundingClientRect();
-        return { vertical: getComputedStyle(tx).writingMode, x: r.x, y: r.y, width: r.width, height: r.height };
+        // 只讓 ～ 留下墨跡：其他字透明，～ 包一層只改顏色的 span（不影響它怎麼直排）
+        (tx as HTMLElement).style.color = 'transparent';
+        // Windows 繁中的預設字型微軟正黑體沒有 ～ 的直書字形：指定它，量的就是最常出問題的情況（裝了 Noto Sans TC 的電腦也一樣）
+        if (navigator.userAgent.includes('Windows')) (tx as HTMLElement).style.fontFamily = "'Microsoft JhengHei'";
+        const only = document.createElement('span');
+        only.style.color = '#000';
+        range.surroundContents(only);
+        const r = only.getBoundingClientRect();
+        return { vertical: getComputedStyle(tx).writingMode, orientation: getComputedStyle(only).textOrientation, x: r.x, y: r.y, width: r.width, height: r.height };
       }
       throw new Error('no ～');
     });
     expect(clip.vertical).toBe('vertical-rl');
+    // 不靠字型的直書字形，由 Chrome 轉 90 度
+    expect(clip.orientation).toBe('sideways');
     // 直書時字框的寬是行高，左右會碰到隔壁欄；只量中間的 em 正方形（邊長＝字框高）
     const em = { x: clip.x + (clip.width - clip.height) / 2, y: clip.y, width: clip.height, height: clip.height };
     const png = await page.screenshot({ clip: em });
@@ -119,7 +128,7 @@ test.describe('覆蓋渲染（ground truth）', () => {
       return { width: right - left + 1, height: bottom - top + 1 };
     }, `data:image/png;base64,${png.toString('base64')}`);
     console.log('～ 的字形墨跡', JSON.stringify(ink), '字框', JSON.stringify(clip));
-    // 橫書的 ～ 是扁的；直書字形是直的
+    // 橫書的 ～ 是扁的；直書時要是直的。系統字型常常沒有 ～ 的直書字形（微軟正黑體就沒有），靠 text-orientation: sideways 轉
     expect(ink.height).toBeGreaterThan(ink.width * 1.5);
   });
 

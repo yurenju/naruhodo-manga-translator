@@ -5,7 +5,7 @@ declare const __DEBUG__: boolean;
 /** Hosted Translation 的 Worker 網址（scripts/build.ts 的 hostedApiUrl）。 */
 declare const __HOSTED_API_URL__: string;
 
-/** esbuild 用 text loader 把 .css 打包成字串（覆蓋層字型的 unicode-range，src/content/overlay-font.ts）。 */
+/** esbuild 用 text loader 把 .css 打包成字串（design tokens 放進覆蓋層的 shadow DOM，src/content/overlay.ts）。 */
 declare module '*.css' {
   const text: string;
   export default text;

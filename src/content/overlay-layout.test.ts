@@ -3,31 +3,50 @@ import { breakLines, estimateFontPx, estimateOriginalLines, fitText, isVertical,
 
 describe('verticalize（直書前的文字處理）', () => {
   it('半形 !?~, 換成全形', () => {
-    expect(verticalize('欸~好麻煩,真的?')).toEqual([{ text: '欸～好麻煩，真的？', upright: false }]);
+    expect(verticalize('真的?好麻煩,')).toEqual([{ text: '真的？好麻煩，', form: 'plain' }]);
+    expect(verticalize('欸~')).toEqual([
+      { text: '欸', form: 'plain' },
+      { text: '～', form: 'sideways' },
+    ]);
+  });
+
+  it('～〜ー 轉 90 度（系統字型常常沒有它們的直書字形），連續的併成一段', () => {
+    expect(verticalize('欸～～好麻煩〜')).toEqual([
+      { text: '欸', form: 'plain' },
+      { text: '～～', form: 'sideways' },
+      { text: '好麻煩', form: 'plain' },
+      { text: '〜', form: 'sideways' },
+    ]);
+    expect(verticalize('ラーメン!?')).toEqual([
+      { text: 'ラ', form: 'plain' },
+      { text: 'ー', form: 'sideways' },
+      { text: 'メン', form: 'plain' },
+      { text: '！？', form: 'upright' },
+    ]);
   });
 
   it('... 與連續的 … 換成直書的刪節號', () => {
-    expect(verticalize('結果...')).toEqual([{ text: '結果……', upright: false }]);
-    expect(verticalize('喂…聽得到嗎')).toEqual([{ text: '喂……聽得到嗎', upright: false }]);
+    expect(verticalize('結果...')).toEqual([{ text: '結果……', form: 'plain' }]);
+    expect(verticalize('喂…聽得到嗎')).toEqual([{ text: '喂……聽得到嗎', form: 'plain' }]);
   });
 
   it('短英數字（1～3 字）與 !? 組合縱中橫', () => {
     expect(verticalize('7點在車站前')).toEqual([
-      { text: '7', upright: true },
-      { text: '點在車站前', upright: false },
+      { text: '7', form: 'upright' },
+      { text: '點在車站前', form: 'plain' },
     ]);
     expect(verticalize('你是認真的嗎!?')).toEqual([
-      { text: '你是認真的嗎', upright: false },
-      { text: '！？', upright: true },
+      { text: '你是認真的嗎', form: 'plain' },
+      { text: '！？', form: 'upright' },
     ]);
     expect(verticalize('OK！')).toEqual([
-      { text: 'OK', upright: true },
-      { text: '！', upright: false },
+      { text: 'OK', form: 'upright' },
+      { text: '！', form: 'plain' },
     ]);
   });
 
   it('4 字以上的英數字不縱中橫', () => {
-    expect(verticalize('2026年')).toEqual([{ text: '2026年', upright: false }]);
+    expect(verticalize('2026年')).toEqual([{ text: '2026年', form: 'plain' }]);
   });
 });
 
