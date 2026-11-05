@@ -8,6 +8,10 @@
  *   click <urlPart> <x> <y>                在 CSS 座標點一下
  *   wheel <urlPart> <dy> [x y]             在 (x, y) 滾動 dy CSS px（預設視窗中央），直式 viewer 用
  *   size <urlPart> <w> <h>                 設定那個分頁所在視窗的大小
+ *   panel text [--tab N]                   side panel（sidepanel.html?tabId=N）畫面上的文字；空字串＝沒渲染出來
+ *   panel shot <out.png> [--tab N]         截 side panel
+ *   panel reload [--tab N]                 重新載入 side panel，印出 5 秒內的例外與 console，再印畫面文字
+ *   開著不只一個 side panel 時用 --tab 指定 tabId（debug:activate 會印出來）。
  * 在頁面裡執行程式用 npm run debug:eval -- page --url <urlPart> -e "<運算式>"。
  */
 import { writeFileSync } from 'node:fs';
@@ -49,7 +53,56 @@ async function viewport(cdp: Cdp, sessionId: string): Promise<{ width: number; h
   return result.value;
 }
 
+/** 接上 side panel：cdp.ts 其他指令只認 http(s) 分頁，看不到 chrome-extension:// 的 side panel。 */
+async function attachPanel(cdp: Cdp, tab: string | undefined): Promise<string> {
+  const { targetInfos } = (await cdp.send('Target.getTargets')) as { targetInfos: (PageTarget & { type: string })[] };
+  const panels = targetInfos.filter((t) => t.type === 'page' && t.url.includes('/sidepanel.html') && (tab === undefined || t.url.endsWith(`tabId=${tab}`)));
+  if (panels.length !== 1)
+    throw new Error(`找到 ${panels.length} 個 side panel${tab === undefined ? '，用 --tab <tabId> 指定' : ''}：\n${panels.map((t) => t.url).join('\n')}`);
+  const { sessionId } = (await cdp.send('Target.attachToTarget', { targetId: panels[0]!.targetId, flatten: true })) as { sessionId: string };
+  return sessionId;
+}
+
+async function panelText(cdp: Cdp, sessionId: string): Promise<string> {
+  const { result } = await cdp.send('Runtime.evaluate', { expression: 'document.body.innerText', returnByValue: true }, sessionId);
+  return result.value === '' ? '（side panel 是空白的：#app 沒有渲染出來）' : result.value;
+}
+
+async function panel(cdp: Cdp, [action, out]: string[], tab: string | undefined): Promise<string> {
+  const sessionId = await attachPanel(cdp, tab);
+  switch (action) {
+    case 'text':
+      return panelText(cdp, sessionId);
+    case 'shot': {
+      const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' }, sessionId);
+      writeFileSync(out!, Buffer.from(data, 'base64'));
+      return out!;
+    }
+    case 'reload': {
+      const logs: string[] = [];
+      cdp.on((message) => {
+        const { method, params } = message as { method?: string; params?: any; sessionId?: string };
+        if ((message as { sessionId?: string }).sessionId !== sessionId) return;
+        if (method === 'Runtime.exceptionThrown') logs.push(`例外 ${params.exceptionDetails.exception?.description ?? params.exceptionDetails.text}`);
+        if (method === 'Runtime.consoleAPICalled') logs.push(`console.${params.type} ${params.args.map((a: any) => a.value ?? a.description).join(' ')}`);
+      });
+      await cdp.send('Runtime.enable', {}, sessionId);
+      await cdp.send('Page.enable', {}, sessionId);
+      await cdp.send('Page.reload', {}, sessionId);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      return [...(logs.length > 0 ? logs : ['（沒有例外或 console 輸出）']), '---', await panelText(cdp, sessionId)].join('\n');
+    }
+    default:
+      throw new Error(`panel 要接 text、shot 或 reload`);
+  }
+}
+
 async function run(cdp: Cdp, [cmd, ...args]: string[]): Promise<string> {
+  if (cmd === 'panel') {
+    const at = args.indexOf('--tab');
+    const tab = at === -1 ? undefined : args.splice(at, 2)[1];
+    return panel(cdp, args, tab);
+  }
   const [urlPart = ''] = args;
   switch (cmd) {
     case 'list':
