@@ -1,6 +1,7 @@
 ---
 /** 首頁就是價格頁（#89 A 版）：大標題 → 展示 → 怎麼用 → 方案 → 常見問題。 */
 import Copy from '../../components/Copy.astro';
+import PricePair from '../../components/PricePair.astro';
 import StepBody from '../../components/StepBody.astro';
 import Base from '../../layouts/Base.astro';
 import '../../styles/demo.css';
@@ -49,22 +50,29 @@ const t = copy[locale];
   </section>
 
   <section class="section" id="pricing">
-    <div class="wrap narrow">
+    <div class="wrap">
       <h2>{t.pricing.title}</h2>
       <div class="plans">
         <div class="card plan">
-          <h3>{t.pricing.free.title}</h3>
-          <p class="price">$0</p>
+          <div class="plan-head"><h3>{t.pricing.free.title}</h3><span class="plan-tag plan-tag--soft">{t.pricing.free.tag}</span></div>
+          <p class="price">{t.pricing.free.price}</p>
+          <p class="grant">{t.pricing.free.grant.lead} <strong>{t.pricing.free.grant.pages}</strong><span>{t.pricing.free.grant.note}</span></p>
           <ul>{t.pricing.free.items.map((item) => <li><Copy text={item} /></li>)}</ul>
-          <a class="btn btn-ghost" href={INSTALL_URL}>{t.pricing.free.cta}</a>
         </div>
         <div class="card plan featured">
-          <h3>{t.pricing.sub.title}</h3>
-          <p class="price"><Copy text={t.pricing.sub.price} /> <small>{t.pricing.sub.unit}</small></p>
+          <div class="plan-head"><h3>{t.pricing.sub.title}</h3><span class="plan-tag">{t.pricing.sub.tag}</span></div>
+          <PricePair pay={t.pricing.sub.pay} average={t.pricing.sub.average} />
           <ul>{t.pricing.sub.items.map((item) => <li><Copy text={item} /></li>)}</ul>
-          <!-- 訂閱要先有帳號，從外掛裡購買（#94） -->
-          <a class="btn btn-primary" href={INSTALL_URL}>{t.pricing.sub.cta}</a>
         </div>
+      </div>
+      <!-- 卡片裡不放按鈕：訂閱要先有帳號、只能在外掛裡付款（#94），所以唯一的入口是安裝 -->
+      <div class="card start">
+        <ol class="start-steps">
+          {t.pricing.start.steps.map((step, i) => (
+            <li><span class="start-num" aria-hidden="true">{i + 1}</span><span><b>{step.title}</b>{step.body}</span></li>
+          ))}
+        </ol>
+        <a class="btn btn-primary" href={INSTALL_URL}>{t.pricing.start.cta}</a>
       </div>
       <p class="own-key">{t.pricing.ownKey}</p>
     </div>

@@ -49,7 +49,7 @@ const legal = copy[locale].legal;
       </div>
       <p class="hint">{t.hint}</p>
       <div class="summary">
-        <div><span>{t.plan}</span><strong><Copy text={copy[locale].pricing.sub.price} /> {copy[locale].pricing.sub.unit}</strong></div>
+        <div><span>{t.plan}</span><strong>{copy[locale].pricing.sub.pay.price}{copy[locale].pricing.sub.pay.unit}</strong></div>
         <div><span>{t.pagesPerMonth}</span><span><Copy text={t.pagesValue} /></span></div>
       </div>
       <p class="agree">

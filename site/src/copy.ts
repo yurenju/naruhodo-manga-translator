@@ -1,5 +1,7 @@
 import type { Locale } from './locale.ts';
 import type { LegalDoc } from './links.ts';
+import { FREE_PAGES, MONTHLY_AVERAGE_USD, MONTHLY_PAGES, YEARLY_PRICE_USD } from '../../src/shared/hosted-api.ts';
+import type { PriceSide } from '../../src/ui/components.tsx';
 
 /**
  * 網站文案（#89 A 版定稿）。`[TBD]` 會畫成明顯的 TBD 標記（Copy.astro），標在還沒定案的文字旁。
@@ -20,10 +22,15 @@ export interface SiteCopy {
    * 漫畫本身（Practice Spread）是日文，不跟著語言換。
    */
   try: { title: string; lead: string; free: string; steps: readonly { title: string; body: string }[]; notInstalled: string; install: string; spreadAlt: string; puzzleLabel: string };
+  /**
+   * 價格區（價格呈現定案）：免費卡、訂閱卡（雙價並列）兩張卡片裡都不放按鈕，下面一張白卡是三步驟＋唯一的按鈕。
+   * 付款只能在外掛裡（要先有帳號），所以按鈕一律是安裝。
+   */
   pricing: {
     title: string;
-    free: { title: string; items: readonly string[]; cta: string };
-    sub: { title: string; price: string; unit: string; items: readonly string[]; cta: string };
+    free: { title: string; tag: string; price: string; grant: { lead: string; pages: string; note: string }; items: readonly string[] };
+    sub: { title: string; tag: string; pay: PriceSide; average: PriceSide; items: readonly string[] };
+    start: { steps: readonly { title: string; body: string }[]; cta: string };
     ownKey: string;
   };
   /** `a` 裡的 `{link}` 換成 `link` 那份法律文件的連結 */
@@ -50,7 +57,11 @@ export interface SiteCopy {
   };
 }
 
-const PRICE = '$20';
+// 價格與頁數跟外掛共用同一份常數（src/shared/hosted-api.ts），不在這裡另外寫數字
+const ZH_YEARLY = `US$${YEARLY_PRICE_USD}`;
+const ZH_MONTHLY = `US$${MONTHLY_AVERAGE_USD}`;
+const EN_YEARLY = `$${YEARLY_PRICE_USD}`;
+const EN_MONTHLY = `$${MONTHLY_AVERAGE_USD}`;
 
 export const copy: Record<Locale, SiteCopy> = {
   'zh-tw': {
@@ -90,13 +101,27 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     pricing: {
       title: '價格',
-      free: { title: '免費額度', items: ['註冊就有 50 頁免費額度（大約兩話）', '不需要信用卡'], cta: '免費開始' },
+      free: {
+        title: '免費額度',
+        tag: '不需信用卡',
+        price: 'US$0',
+        grant: { lead: '註冊就送', pages: `${FREE_PAGES} 頁`, note: '大約兩話，不會過期' },
+        items: ['用 email 註冊就能翻譯', '不需要信用卡'],
+      },
       sub: {
-        title: '年繳訂閱',
-        price: PRICE,
-        unit: '／年',
-        items: ['每月 800 頁翻譯，大約 4 本單行本', '每月在你訂閱的那天重置', '隨時取消，用到這一年結束'],
-        cta: '訂閱',
+        title: '訂閱',
+        tag: '年繳',
+        pay: { label: '你付', price: ZH_YEARLY, unit: '／年', note: '一年扣款一次' },
+        average: { label: '平均', price: ZH_MONTHLY, unit: '／月', note: '比一杯咖啡還少' },
+        items: [`每月 ${MONTHLY_PAGES} 頁翻譯，大約 4 本單行本`, '每月在你訂閱的那天重置', '一年後自動續訂，隨時可以取消'],
+      },
+      start: {
+        steps: [
+          { title: '加到 Chrome', body: '從 Chrome 線上應用程式商店安裝' },
+          { title: '用 email 註冊', body: `馬上拿到 ${FREE_PAGES} 頁免費額度` },
+          { title: '想繼續再訂閱', body: `在外掛裡付款，${ZH_YEARLY} 用一年` },
+        ],
+        cta: '加到 Chrome，免費開始',
       },
       ownKey: '已經有 Anthropic API key？也可以改用自備金鑰，不需要帳號、沒有頁數限制。',
     },
@@ -141,7 +166,7 @@ export const copy: Record<Locale, SiteCopy> = {
       missing: '這個付款連結不完整。請回到外掛，重新打開付款頁。',
       plan: 'Naruhodo 年繳訂閱',
       pagesPerMonth: '每月頁數',
-      pagesValue: '800',
+      pagesValue: String(MONTHLY_PAGES),
       agree: '付款即表示同意',
     },
   },
@@ -182,13 +207,27 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     pricing: {
       title: 'Pricing',
-      free: { title: 'Free pages', items: ['50 free pages when you sign up (about two episodes)', 'No credit card needed'], cta: 'Start free' },
+      free: {
+        title: 'Free pages',
+        tag: 'No credit card',
+        price: '$0',
+        grant: { lead: 'Sign up and get', pages: `${FREE_PAGES} pages`, note: "About two episodes, and they don't expire" },
+        items: ['Sign up with your email and start translating', 'No credit card needed'],
+      },
       sub: {
-        title: 'Yearly subscription',
-        price: PRICE,
-        unit: '/year',
-        items: ['800 translated pages a month, about 4 volumes', 'Resets each month on the day you subscribed', 'Cancel anytime, keep using it until the year ends'],
-        cta: 'Subscribe',
+        title: 'Subscription',
+        tag: 'Yearly',
+        pay: { label: 'You pay', price: EN_YEARLY, unit: '/year', note: 'Billed once a year' },
+        average: { label: 'About', price: EN_MONTHLY, unit: '/month', note: 'Less than a cup of coffee' },
+        items: [`${MONTHLY_PAGES} translated pages a month, about 4 volumes`, 'Resets each month on the day you subscribed', 'Renews automatically after a year; cancel anytime'],
+      },
+      start: {
+        steps: [
+          { title: 'Add to Chrome', body: 'Install it from the Chrome Web Store' },
+          { title: 'Sign up with email', body: `Get ${FREE_PAGES} free pages right away` },
+          { title: 'Subscribe if you want more', body: `Pay in the extension: ${EN_YEARLY} for a year` },
+        ],
+        cta: 'Add to Chrome, start free',
       },
       ownKey: 'Already have an Anthropic API key? You can use your own key instead: no account, no page limit.',
     },
@@ -233,7 +272,7 @@ export const copy: Record<Locale, SiteCopy> = {
       missing: 'This checkout link is incomplete. Go back to the extension and open the checkout again.',
       plan: 'Naruhodo yearly subscription',
       pagesPerMonth: 'Pages per month',
-      pagesValue: '800',
+      pagesValue: String(MONTHLY_PAGES),
       agree: 'By paying you agree to the',
     },
   },

@@ -1,4 +1,4 @@
-import { FREE_PAGES, type Quota } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
 import type { PageView } from '../shared/messages.ts';
 import type { SeriesOption } from '../shared/series.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
@@ -228,7 +228,7 @@ export function quotaView(access: TranslationAccess, quota: Quota | undefined): 
   if (quota.remaining === 0)
     return {
       line: { text: '免費額度已用完', warn: true, subscribeLink: false },
-      exhausted: { title: '免費額度已用完', body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 800 頁。', subscribe: true },
+      exhausted: { title: '免費額度已用完', body: `已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 ${MONTHLY_PAGES} 頁。`, subscribe: true },
       footerButton: 'subscribe',
     };
   return {
