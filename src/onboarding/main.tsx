@@ -17,7 +17,7 @@ import { HOSTED_API_URL, loadHostedSession, saveHostedSession, type HostedSessio
 import type { Message, ModelStatus, ModelStatusResponse } from '../shared/messages.ts';
 import { downloadNotice, downloadPill } from '../shared/model-download.ts';
 import { loadOnboarding, onboardingRequest, saveOnboarding, startStep, type OnboardingProgress, type OnboardingStep, type RequestedStep } from '../shared/onboarding.ts';
-import { savePageMode, type PageMode } from '../shared/page-mode.ts';
+import { savePageMode } from '../shared/page-mode.ts';
 import { saveSidePanelOnActivation } from '../shared/side-panel-setting.ts';
 import { onboardingPaymentChange, openPayment, watchPendingPayment, type PendingPayment } from '../shared/payment-return.ts';
 import { saveTranslationMode } from '../shared/translation-mode.ts';
@@ -281,32 +281,14 @@ function Plan({
 }
 
 /**
- * 第 4 步的一題（#185）：看漫畫＝不開側邊欄＋閱讀，學日文＝開側邊欄＋學習。只是一次設好兩個獨立的設定，不另外存「使用目的」；
- * 之後在圖示右鍵改「啟動時打開側邊欄」。Practice Spread 試翻也照這個設定走，所以放在試翻按鈕上面。
- * 不選也可以直接按「完成」：設定維持預設（開側邊欄、閱讀）。
+ * 走完 onboarding 的新讀者一律從「看漫畫」開始（#185 的二選一拿掉了）：不開側邊欄＋閱讀。
+ * 想要側邊欄的人在圖示右鍵改「啟動時打開側邊欄」。沒經過新 onboarding 的既有讀者沒有值，維持開側邊欄。
+ * 進到第 4 步就寫好，Practice Spread 試翻也照這個設定走。
  */
-function Purpose() {
-  const [chosen, setChosen] = useState<PageMode | undefined>(undefined);
-  const choose = (purpose: PageMode) => {
-    setChosen(purpose);
-    void Promise.all([saveSidePanelOnActivation(purpose === 'learn'), savePageMode(purpose)]);
-  };
-  return (
-    <section aria-label="使用方式">
-      <h3 class="ob-h3">你想怎麼用 Naruhodo？</h3>
-      <div class="ob-plans" role="group" aria-label="使用方式">
-        <button type="button" class="ob-plan ob-choice" aria-pressed={chosen === 'read'} onClick={() => choose('read')}>
-          <span class="ob-plan__name">看漫畫</span>
-          <span class="hint">對話框直接換成中文，不開側邊欄。</span>
-        </button>
-        <button type="button" class="ob-plan ob-choice" aria-pressed={chosen === 'learn'} onClick={() => choose('learn')}>
-          <span class="ob-plan__name">學日文</span>
-          <span class="hint">保留日文原文，側邊欄列出讀音與譯文。</span>
-        </button>
-      </div>
-      <p class="hint">之後隨時可以在工具列的 Naruhodo 圖示上按右鍵，改「啟動時打開側邊欄」。</p>
-    </section>
-  );
+function useReadingDefaults() {
+  useEffect(() => {
+    void Promise.all([saveSidePanelOnActivation(false), savePageMode('read')]);
+  }, []);
 }
 
 /** 點圖示時卡住、在這裡解決之後（#185）：回到漫畫分頁，SW 接著翻畫面上還沒翻的頁（#93），不必再點一次圖示。 */
@@ -333,10 +315,10 @@ function ReturnToManga({ from }: { from: number }) {
 
 /** 第 4 步：到網站的試翻頁，用真的工具列圖示翻一次 Practice Spread（釘選圖示的教學在試翻頁上）。onboarding 分頁不自動關。 */
 function TryPractice() {
+  useReadingDefaults();
   return (
     <>
       <h2 class="ob-h2">設定完成，來試翻一頁吧</h2>
-      <Purpose />
       <p>我們準備了一張試翻頁的日文漫畫，這一頁不會用到額度。</p>
       <div class="naru-row">
         <Button variant="primary" class="ob-big" onClick={() => void chrome.tabs.create({ url: PRACTICE_URL })}>
@@ -349,6 +331,7 @@ function TryPractice() {
       <p class="hint">
         之後在任何日文漫畫網站，點工具列上的 Naruhodo 圖示或按 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> 就能翻譯。
       </p>
+      <p class="hint">想要側邊欄列出讀音與譯文，可以在 Naruhodo 圖示上按右鍵，勾選「啟動時打開側邊欄」。</p>
     </>
   );
 }

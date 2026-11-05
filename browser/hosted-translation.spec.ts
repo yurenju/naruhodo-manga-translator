@@ -47,8 +47,8 @@ test.describe('全新安裝', () => {
     const email = freshEmail(testInfo.workerIndex);
     await signInWithEmail(onboarding, email);
     await onboarding.getByRole('button', { name: '先用免費的 50 頁' }).click();
-    // 第 4 步的「看漫畫／學日文」（#185）：一次寫好兩個獨立的設定
-    await onboarding.getByRole('group', { name: '使用方式' }).getByRole('button', { name: /^看漫畫/ }).click();
+    // 第 4 步不讓讀者選：一律從「看漫畫」開始（不開側邊欄＋閱讀）
+    await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
     await expect
       .poll(() => sw.evaluate(() => chrome.storage.local.get(['sidePanelOnActivation', 'pageMode'])))
       .toEqual({ sidePanelOnActivation: false, pageMode: 'read' });
