@@ -7,6 +7,7 @@ import type {
   AnalyzeResponse,
   AutoTranslateResponse,
   CaptureFinishedResponse,
+  CapturePreparedResponse,
   CropResponse,
   ExecutionProvider,
   FakeTranslatorConfig,
@@ -92,9 +93,8 @@ const scanner = createScanner({
     const tab = await chrome.tabs.get(tabId);
     return tab.active ? tab.windowId : undefined;
   },
-  async prepareCapture(tabId, hideOverlay) {
-    await chrome.tabs.sendMessage(tabId, { type: 'content:prepareCapture', hideOverlay } satisfies Message);
-  },
+  prepareCapture: (tabId, hideOverlay) =>
+    chrome.tabs.sendMessage<Message, CapturePreparedResponse>(tabId, { type: 'content:prepareCapture', hideOverlay }),
   finishCapture: (tabId) => chrome.tabs.sendMessage<Message, CaptureFinishedResponse>(tabId, { type: 'content:finishCapture' }),
   async captureWindow(windowId) {
     if (__E2E__) (globalThis.__captureLog ??= []).push(Date.now());

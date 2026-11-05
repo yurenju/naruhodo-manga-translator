@@ -62,7 +62,7 @@ export interface PageTurnWatchDeps extends PageTurnSignalDeps {
    */
   relatesToPage(node: Node, added: boolean): boolean;
   /** 頁面的 document：事件用 capture 掛在它上面，MutationObserver 看 documentElement。 */
-  document: Listeners & { documentElement: Node };
+  document: Listeners & { documentElement: Node; visibilityState: DocumentVisibilityState };
   /** resize 掛在 window 上。 */
   window: Listeners;
   MutationObserver: new (callback: MutationCallback) => Pick<MutationObserver, 'observe' | 'disconnect'>;
@@ -87,6 +87,11 @@ export function watchPageTurns(deps: PageTurnWatchDeps): () => void {
   // capture：scroll 與 load 不會冒泡，capture 才收得到頁面內任何元素的
   for (const type of EVENTS) document.addEventListener(type, onEvent, { capture: true, passive: true });
   window.addEventListener('resize', onEvent);
+  // 看不見的頁面不重繪，SW 不截它（#197）；重新可見時重掃一次，期間換的頁才不會漏掉
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') signal.fire('visibilitychange');
+  };
+  document.addEventListener('visibilitychange', onVisibility);
   const observer = new deps.MutationObserver((records) => {
     const foreign = (r: MutationRecord) =>
       r.type === 'childList'
@@ -101,5 +106,6 @@ export function watchPageTurns(deps: PageTurnWatchDeps): () => void {
     observer.disconnect();
     for (const type of EVENTS) document.removeEventListener(type, onEvent, { capture: true });
     window.removeEventListener('resize', onEvent);
+    document.removeEventListener('visibilitychange', onVisibility);
   };
 }

@@ -58,7 +58,7 @@ function eventOn(type: string, target: Node, props: Record<string, unknown> = {}
 function setup() {
   const notify = vi.fn();
   // document 包住所有 Page：目標是 document 的事件（scroll、load）都算
-  const document = Object.assign(new EventTarget(), { documentElement: node(false), own: false, page: true });
+  const document = Object.assign(new EventTarget(), { documentElement: node(false), own: false, page: true, visibilityState: 'visible' as DocumentVisibilityState });
   const window = new EventTarget();
   let onMutation: MutationCallback | undefined;
   const disconnect = vi.fn();
@@ -103,6 +103,20 @@ describe('watchPageTurns', () => {
       expect(t.notify).toHaveBeenCalledTimes(1);
       t.stop();
     }
+  });
+
+  it('頁面重新可見時通知（#197：看不見時頁面不重繪、不截圖，回來要重掃）；變成看不見不算', () => {
+    const t = setup();
+
+    t.document.visibilityState = 'hidden';
+    t.document.dispatchEvent(new Event('visibilitychange'));
+    vi.advanceTimersByTime(PAGE_TURN_DEBOUNCE_MS);
+    expect(t.notify).not.toHaveBeenCalled();
+
+    t.document.visibilityState = 'visible';
+    t.document.dispatchEvent(new Event('visibilitychange'));
+    vi.advanceTimersByTime(PAGE_TURN_DEBOUNCE_MS);
+    expect(t.notify).toHaveBeenCalledTimes(1);
   });
 
   it('頁面自己的 DOM 變動會通知；只有覆蓋層自己的變動不算翻頁', () => {

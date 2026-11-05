@@ -1,4 +1,4 @@
-import type { CaptureFinishedResponse, Message, PageCandidate, PageCandidatesResponse, Rect } from '../shared/messages.ts';
+import type { CaptureFinishedResponse, CapturePreparedResponse, Message, PageCandidate, PageCandidatesResponse, Rect } from '../shared/messages.ts';
 import { loadPageMode, onPageModeChange } from '../shared/page-mode.ts';
 import { createTrace } from '../shared/trace.ts';
 import { createCapturePrep } from './capture.ts';
@@ -181,7 +181,7 @@ if (!globalThis.__naruhodo) {
         return false;
       }
       case 'content:prepareCapture':
-        void capturePrep.prepare(message.hideOverlay).then(() => sendResponse(null));
+        void capturePrep.prepare(message.hideOverlay).then((r) => sendResponse(r satisfies CapturePreparedResponse));
         return true;
       case 'content:finishCapture': {
         const { stable, overlayHiddenMs } = capturePrep.finish();

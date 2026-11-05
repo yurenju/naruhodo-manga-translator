@@ -29,6 +29,8 @@ function fakeDeps(candidates: PageCandidate[] = [P1]) {
     capturedHidden: false,
     /** 每次截完時藏起來的遮擋物有沒有被換掉，依序取用；用完就是 true。 */
     stable: [] as boolean[],
+    /** 每次準備截圖時頁面有沒有重繪（rAF 有沒有跑），依序取用；用完就是 true。 */
+    painted: [] as boolean[],
   };
   const deps: ScannerDeps = {
     findPageCandidates: async () => {
@@ -56,6 +58,7 @@ function fakeDeps(candidates: PageCandidate[] = [P1]) {
     prepareCapture: async (tabId, hideOverlay) => {
       env.hidden = hideOverlay;
       events.push(`${hideOverlay ? 'hide' : 'prepare'} ${tabId}`);
+      return { painted: env.painted.shift() ?? true };
     },
     finishCapture: async (tabId) => {
       env.hidden = false;
@@ -199,6 +202,62 @@ describe('scan', () => {
     await settle(scanner.scan(1));
 
     expect(chrome.events).toEqual(['hide 1', 'capture', 'restore 1']);
+  });
+
+  describe('頁面沒在產生新畫面（#197：captureVisibleTab 交回十幾秒前的舊 frame）', () => {
+    // trace 實際的值：跨頁 a7/a8 翻好、記過帶覆蓋層的樣子後，翻頁換成 a9/a10；那時頁面的 rAF 不跑，
+    // 截到的是上一個跨頁帶覆蓋層的舊 frame（hash 跟 overlaid:record 記的一模一樣），新跨頁就被當成翻好的頁
+    const A7 = '7dfe25b46d2ce920535933752e09760a709a25dbae372e717120e40f8c1d62f3';
+    const A7_OVERLAID = '7dfe65b46d2ce920535937754e09760a708a05db2e372e717122e40b8c1d52fb';
+    const A8_OVERLAID = '2aaa9c0663d80d3594c7e17c1e9281f43fc5de7b3168048c9d0bc7b53f3333f0';
+    const RIGHT = { x: 1067.666748046875, y: 0, width: 747, height: 1090.510498046875 };
+    const LEFT = { x: 320.66668701171875, y: 0, width: 747, height: 1090.510498046875 };
+
+    function turnedSpread() {
+      const chrome = fakeDeps([{ anchorId: 'a9', rect: RIGHT }, { anchorId: 'a10', rect: LEFT }]);
+      chrome.env.viewport = { width: 2150, height: 1130 };
+      // 拍到的是舊 frame：新 anchor 的位置上是上一個跨頁帶覆蓋層的樣子
+      chrome.env.cleanHash = { a9: A7_OVERLAID, a10: A8_OVERLAID };
+      return chrome;
+    }
+
+    it('準備截圖時頁面沒重繪就不截：截到的會是舊 frame，不公布、不丟錯', async () => {
+      const chrome = turnedSpread();
+      chrome.env.painted = [false, false, false];
+      const scanner = createScanner(chrome.deps);
+
+      await settle(scanner.scan(1));
+
+      expect(chrome.captures).toEqual([]);
+      expect(chrome.published).toEqual([]);
+      // 藏起來的東西照樣還原
+      expect(chrome.events.filter((e) => e === 'restore 1')).toHaveLength(3);
+    });
+
+    it('重試時頁面重繪了就照常截圖、公布', async () => {
+      const chrome = turnedSpread();
+      chrome.env.painted = [false];
+      chrome.env.cleanHash = { a9: 'new-right', a10: 'new-left' };
+      const scanner = createScanner(chrome.deps);
+
+      await settle(scanner.scan(1));
+
+      expect(chrome.captures).toHaveLength(1);
+      expect(chrome.published.at(-1)?.[1].map((p) => p.pageHash)).toEqual(['new-right', 'new-left']);
+    });
+
+    it('記帶覆蓋層的樣子時頁面沒重繪也不截（記到舊 frame 會把錯的樣子配給這頁）', async () => {
+      const chrome = fakeDeps([{ anchorId: 'a7', rect: RIGHT }]);
+      chrome.env.cleanHash.a7 = A7;
+      const scanner = createScanner(chrome.deps);
+      await settle(scanner.scan(1));
+      chrome.env.candidates = [{ anchorId: 'a7', rect: RIGHT, overlaid: [A7] }];
+      chrome.env.painted = [false];
+
+      await settle(scanner.recordOverlaid(1));
+
+      expect(chrome.captures).toHaveLength(1);
+    });
   });
 
   describe('疊在 Page 上的網站元素（#59）', () => {
