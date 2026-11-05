@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ModelStatus } from '../shared/messages.ts';
-import { currentModelStatus } from './model-status.ts';
+import { currentModelStatus, modelStatusResponse } from './model-status.ts';
 
 describe('SW 回答目前的模型狀態（#169）', () => {
   it('不知道（SW 剛啟動、或模型已釋放）而那一組模型都在快取裡：downloaded', async () => {
@@ -22,5 +22,22 @@ describe('SW 回答目前的模型狀態（#169）', () => {
     ];
     for (const status of known) expect(await currentModelStatus(status, isCached)).toEqual(status);
     expect(isCached).not.toHaveBeenCalled();
+  });
+});
+
+describe('side panel、onboarding 問模型狀態（#221）', () => {
+  it('問不到這台電腦用哪一組模型：不丟錯，回目前知道的狀態、不帶下載大小', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const response = await modelStatusResponse(
+      { state: 'idle' },
+      { executionProvider: async () => Promise.reject(new Error('offscreen 還沒準備好')), isCached: async () => true },
+    );
+    expect(response).toEqual({ status: { state: 'idle' } });
+  });
+
+  it('問得到：查那一組模型的快取，並帶上那一組的下載大小', async () => {
+    const response = await modelStatusResponse({ state: 'idle' }, { executionProvider: async () => 'wasm', isCached: async () => true });
+    expect(response.status).toEqual({ state: 'downloaded' });
+    expect(response.downloadBytes).toBeGreaterThan(100_000_000);
   });
 });
