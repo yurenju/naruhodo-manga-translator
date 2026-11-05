@@ -121,7 +121,7 @@ export function DeleteSeries({ tabId, name }: { tabId: number; name: string }) {
   if (confirming)
     return (
       <Callout tone="danger" class="naru-callout--stack" role="group" aria-label="確認刪除作品">
-        確定刪除「{name}」？翻譯快取、角色與用語、不記的詞都會一起刪掉，無法復原。之後再讀這部作品要重新翻譯（要花費用）。
+        確定刪除『{name}』？翻譯快取、角色與用語、不記的詞都會一起刪掉，無法復原。之後再讀這部作品要重新翻譯（要花費用）。
         <div class="naru-row">
           <Button variant="danger" onClick={() => void send({ type: 'panel:deleteSeries', tabId })}>
             刪除

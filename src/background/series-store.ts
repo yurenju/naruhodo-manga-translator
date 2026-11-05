@@ -10,6 +10,9 @@ import type { SeriesRepo } from './series-catalog.ts';
 /** key 以 seriesId 開頭的 store（[seriesId, …]）裡，這個 Series 的全部。陣列 key 比任何字串都大。 */
 const seriesRange = (seriesId: string) => IDBKeyRange.bound([seriesId], [seriesId, []]);
 
+/** 一部 Series 的資料分在這幾個 store：合併與刪除（#214）都在一個 transaction 裡動全部。 */
+const SERIES_STORES = [STORES.series, STORES.pageTranslations, STORES.seriesNotes, STORES.notesSuggestions, STORES.urlPatterns, STORES.excludedTerms];
+
 /** 用 index 找出這個 Series 的每一筆，逐筆交給 visit（同一個 transaction 裡）。 */
 function eachBySeries(store: IDBObjectStore, seriesId: string, visit: (cursor: IDBCursorWithValue) => void): void {
   const req = store.index(BY_SERIES).openCursor(seriesId);
@@ -77,9 +80,8 @@ export function indexedDbSeriesRepo(): SeriesRepo {
     listSuggestions: (seriesId) => bySeries<NotesSuggestion>(STORES.notesSuggestions, seriesId),
     listExcluded: (seriesId) => bySeries<ExcludedTerm>(STORES.excludedTerms, seriesId).then((rows) => rows.map((t) => t.原文)),
     commitMerge(merge) {
-      const stores = [STORES.series, STORES.pageTranslations, STORES.seriesNotes, STORES.notesSuggestions, STORES.urlPatterns, STORES.excludedTerms];
       // 一個 transaction：中途失敗就整個不算，不會留下一半在臨時 Series、一半在目標。
-      return writeTransaction((db ??= openDb()), stores, (tx) => {
+      return writeTransaction((db ??= openDb()), SERIES_STORES, (tx) => {
         const { sourceId, targetId } = merge;
         const translations = tx.objectStore(STORES.pageTranslations);
         translations.delete(seriesRange(sourceId));
@@ -101,8 +103,7 @@ export function indexedDbSeriesRepo(): SeriesRepo {
     },
     deleteSeries(seriesId) {
       // 一個 transaction：中途失敗就整個不算，不會留下一半的資料（#214）
-      const stores = [STORES.series, STORES.pageTranslations, STORES.seriesNotes, STORES.notesSuggestions, STORES.urlPatterns, STORES.excludedTerms];
-      return writeTransaction((db ??= openDb()), stores, (tx) => {
+      return writeTransaction((db ??= openDb()), SERIES_STORES, (tx) => {
         tx.objectStore(STORES.pageTranslations).delete(seriesRange(seriesId));
         tx.objectStore(STORES.seriesNotes).delete(seriesRange(seriesId));
         tx.objectStore(STORES.excludedTerms).delete(seriesRange(seriesId));

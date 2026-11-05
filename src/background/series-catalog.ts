@@ -4,7 +4,7 @@
  * 儲存從 SeriesRepo 注入（SW 接 IndexedDB，測試用記憶體）。
  */
 import type { PageTranslation } from '../shared/page-text.ts';
-import { excludedTest, mergeExcluded, mergeNotes, type NotesSuggestion } from '../shared/series-notes.ts';
+import { excludedMatcher, mergeExcluded, mergeNotes, type NotesSuggestion } from '../shared/series-notes.ts';
 import { normalizeTitle, type Series, type SeriesOption, type TitleGuess, type UrlPattern } from '../shared/series.ts';
 import { createTrace } from '../shared/trace.ts';
 import type { NotesEntry } from '../shared/translator.ts';
@@ -205,7 +205,7 @@ export function createSeriesCatalog(deps: SeriesCatalogDeps) {
       ]);
       // 目標不記的詞（#214）：來源的條目與建議都不帶過來；來源不記的詞也併進目標
       const notes = mergeNotes(targetNotes, sourceNotes, { seriesId: targetId, 來源: { mergedFrom: sourceId }, excluded: targetExcluded });
-      const isExcluded = excludedTest(targetExcluded);
+      const isExcluded = excludedMatcher(targetExcluded);
       await repo.commitMerge({
         sourceId,
         targetId,

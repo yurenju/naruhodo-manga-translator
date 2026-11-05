@@ -73,7 +73,7 @@ export function mergeNotes(
   const entries = target.map((e) => ({ ...e }));
   const byOriginal = new Map(entries.map((e) => [e.原文, e]));
   const suggestions: NotesSuggestion[] = [];
-  const isExcluded = excludedTest(into.excluded ?? []);
+  const isExcluded = excludedMatcher(into.excluded ?? []);
   for (const next of incoming) {
     // 目標不記的詞（#214）：不加、不補、也不變成建議
     if (isExcluded(next.原文)) continue;
@@ -116,7 +116,7 @@ export interface NotesPage {
 export const normalizeText = (s: string) => s.normalize('NFKC').replace(/\s/g, '');
 
 /** 這個原文是不是 Excluded Term 之一（忽略全形半形與空白）。 */
-export function excludedTest(excluded: readonly string[]): (原文: string) => boolean {
+export function excludedMatcher(excluded: readonly string[]): (原文: string) => boolean {
   const set = new Set(excluded.map(normalizeText));
   return (原文) => set.has(normalizeText(原文));
 }
@@ -163,7 +163,7 @@ export interface AppliedNotes extends MergedNotes {
  * 自稱、語氣、稱呼一律不採用，只由人填（ADR 0005）。Excluded Term（#214）的任何變更都不採用。
  */
 export function applyNotesChanges(notes: readonly NotesEntry[], proposed: NotesChanges, page: NotesPage): AppliedNotes {
-  const isExcluded = excludedTest(page.excluded ?? []);
+  const isExcluded = excludedMatcher(page.excluded ?? []);
   const rejected: string[] = proposed.added.filter((a) => isExcluded(a.原文)).map((a) => a.原文);
   const changes: NotesChanges = {
     added: proposed.added.filter((a) => !isExcluded(a.原文)),
@@ -234,13 +234,14 @@ export function pendingSuggestions({ entries, suggestions }: SeriesNotes): Notes
 }
 
 /**
- * 人在 side panel 刪除一個條目（#214）：條目與它的建議修改（含忽略過的）一起拿掉。locked 的也能刪。
+ * 人在 side panel 刪除一個條目（#214）：條目與它還沒處理的建議修改一起拿掉；忽略過的留著，同樣的建議之後也不再出現。
+ * locked 的也能刪。
  * exclude：原文變成 Excluded Term，之後不再記；否則 LLM 下次遇到時可以重新記。
  */
 export function deleteEntry(notes: SeriesNotes, 原文: string, { exclude }: { exclude: boolean }): SeriesNotes {
   return {
     entries: notes.entries.filter((e) => e.原文 !== 原文),
-    suggestions: notes.suggestions.filter((s) => s.原文 !== 原文),
+    suggestions: notes.suggestions.filter((s) => s.原文 !== 原文 || s.ignored),
     excluded: exclude && !notes.excluded.includes(原文) ? [...notes.excluded, 原文] : notes.excluded,
   };
 }
@@ -308,7 +309,7 @@ export function staleReason(
  */
 export function mergeImportedNotes(local: SeriesNotes, incoming: SeriesNotes, seriesId: string): SeriesNotes {
   const merged = mergeNotes(local.entries, incoming.entries, { seriesId, 來源: { imported: true }, excluded: local.excluded });
-  const isExcluded = excludedTest(local.excluded);
+  const isExcluded = excludedMatcher(local.excluded);
   const imported = incoming.suggestions.filter((s) => !isExcluded(s.原文)).map((s) => ({ ...s, seriesId }));
   return {
     entries: merged.entries,
@@ -322,7 +323,7 @@ export function mergeImportedNotes(local: SeriesNotes, incoming: SeriesNotes, se
  * 跟條目的先到先贏一樣。
  */
 export function mergeExcluded(target: Pick<SeriesNotes, 'entries' | 'excluded'>, incoming: readonly string[]): string[] {
-  const taken = excludedTest([...target.excluded, ...target.entries.map((e) => e.原文)]);
+  const taken = excludedMatcher([...target.excluded, ...target.entries.map((e) => e.原文)]);
   const result = [...target.excluded];
   for (const 原文 of incoming) if (!taken(原文) && !result.includes(原文)) result.push(原文);
   return result;

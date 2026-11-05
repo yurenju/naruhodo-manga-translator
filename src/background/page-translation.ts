@@ -171,8 +171,7 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
     const translated = applyTranslation(text, output);
     const page = whole(translated);
     const { model, latencyMs, usage } = output;
-    // 翻譯中作品被刪掉了（#214）：結果照樣回給畫面（tab 已經停用，不會顯示），但不寫快取、不整理 Notes
-    if (seriesId !== undefined && (await getSeries(seriesId))) {
+    if (seriesId !== undefined) {
       // 過時提示（#38）拿它跟目前的版本比，所以兩個欄位都記送出時的版本（同一個來源）。API 回報的模型 ID 可能跟送出的
       // 不同（例如帶日期），用它比對會讓每頁都過時；沒有版本資訊時才退回 API 回報的。
       const version = await translatorVersion?.();
@@ -189,9 +188,13 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
         latencyMs,
         translatedAt: Date.now(),
       };
-      // 寫不進去只是下次要重翻，這次的結果照樣顯示。
-      await cache.save(entry).catch((e: unknown) => console.warn('cache save failed', e));
-      inBackground(proposeNotes(translator, seriesId, pageHash, group, translated, output.usageRecordId));
+      // 寫不進去只是下次要重翻，這次的結果照樣顯示。翻譯中作品被刪掉了（#214）：不寫快取、不整理 Notes
+      // （tab 已經停用，結果也不會顯示）；跟刪除排在同一條序列裡，不會在刪完之後寫回去
+      const saved = await ledger.whileExists(seriesId, () => cache.save(entry).then(() => true)).catch((e: unknown) => {
+        console.warn('cache save failed', e);
+        return true;
+      });
+      if (saved) inBackground(proposeNotes(translator, seriesId, pageHash, group, translated, output.usageRecordId));
     }
     return { state: 'done', text: page, translated: true, translation: { source: 'translated', model, latencyMs, usage } };
   }

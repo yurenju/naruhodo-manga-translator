@@ -409,10 +409,13 @@ describe('deleteEntry（刪除條目，#214）', () => {
     excluded: [],
   });
 
-  it('勾「之後不要再記」：條目與它的建議修改（含忽略過的）拿掉，原文變成不記的詞', () => {
+  it('勾「之後不要再記」：條目與它還沒處理的建議修改拿掉（忽略過的留著），原文變成不記的詞', () => {
     expect(deleteEntry(notes(), 'ホンダナ', { exclude: true })).toEqual({
       entries: [entry('s', 'タロウ', '太郎', { locked: true })],
-      suggestions: [{ seriesId: 's', 原文: 'タロウ', 建議譯文: '太朗', 來源: { pageHash: 'h1' } }],
+      suggestions: [
+        { seriesId: 's', 原文: 'ホンダナ', 建議譯文: '架子', 來源: { pageHash: 'h2' }, ignored: true },
+        { seriesId: 's', 原文: 'タロウ', 建議譯文: '太朗', 來源: { pageHash: 'h1' } },
+      ],
       excluded: ['ホンダナ'],
     });
   });

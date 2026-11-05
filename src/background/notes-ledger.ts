@@ -91,14 +91,21 @@ export function createNotesLedger({ store, seriesExists = async () => true }: No
     return run;
   }
 
+  /**
+   * Series 還在才寫（#214）：跟刪除排在同一條序列裡，檢查與寫入之間不會被刪除插進來。刪掉了就不跑，回傳 undefined。
+   */
+  function whileExists<T>(seriesId: string, write: () => Promise<T>): Promise<T | undefined> {
+    return serialize(seriesId, async () => ((await seriesExists(seriesId)) ? write() : undefined));
+  }
+
   /** 讀 → 改 → 寫。Series 已經刪掉就什麼都不寫（#214）。 */
-  function exclusive(seriesId: string, change: (notes: SeriesNotes) => SeriesNotes): Promise<SeriesNotes> {
-    return serialize(seriesId, async () => {
-      if (!(await seriesExists(seriesId))) return EMPTY;
+  async function exclusive(seriesId: string, change: (notes: SeriesNotes) => SeriesNotes): Promise<SeriesNotes> {
+    const written = await whileExists(seriesId, async () => {
       const next = change(await store.load(seriesId));
       await store.save(seriesId, next);
       return next;
     });
+    return written ?? EMPTY;
   }
 
   /** 這個 Series 目前的條目。讀不到就當沒有：只是少了 Notes 或過時提示，不擋翻譯。 */
@@ -159,6 +166,9 @@ export function createNotesLedger({ store, seriesExists = async () => true }: No
 
     /** 人在 side panel 的修改：不等送出順序，只跟其他寫入互斥。回傳改完的 Notes。 */
     update: exclusive,
+
+    /** 翻譯快取這類跟 Notes 無關的寫入（#214）：Series 還在才寫，不會在刪除之後寫回去。 */
+    whileExists,
 
     /**
      * 刪除這部 Series 的資料（#214）：排在已經開始的寫入後面，刪完之後的寫入看到 Series 不在就不寫。
