@@ -91,6 +91,14 @@ describe('Spread 切頁', () => {
     expect(hammingDistance(pageHash(cropImage(image, pages[0]!)), groundTruthHashes('p07-spread')[0]!)).toBeLessThanOrEqual(SAME_PAGE_MAX_DISTANCE);
   });
 
+  it('左右黑邊對稱、黑邊裡兩頁的白色留白不一樣寬：照樣去黑邊、從中間切成兩頁', () => {
+    // 電子書閱讀器實測：左頁外緣留白比右頁寬（截圖像素差 16 px），黑邊連同留白一起算就不對稱。
+    // 視窗夠寬（整張截圖的一半不像漫畫頁）才會出事，用實測的截圖尺寸
+    const { image, content } = letterbox(readGray('p07-spread'), { width: 2778, height: 1397 });
+    for (let y = content.y; y < content.y + content.height; y++) image.gray.fill(255, y * image.width + content.x, y * image.width + content.x + 40);
+    expectNear(splitSpread(image), expectedPages('p07-spread', content));
+  });
+
   it('單側的純黑出血（不對稱）不當黑邊切掉', () => {
     const image = readGray('p08-action');
     for (let y = 0; y < image.height; y++) image.gray.fill(0, y * image.width, y * image.width + 60);

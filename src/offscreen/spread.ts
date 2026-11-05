@@ -29,8 +29,10 @@ const PAGE_ASPECT_MAX = 0.9;
 /** 回傳的 Page 依閱讀順序（Spread 先右後左），座標相對 image；寬 > 高卻切不開時是空陣列。 */
 export function splitSpread(image: GrayImage): Rect[] {
   const content = trimBorders(image, isBorderLine);
-  // 是不是 Spread 看的是去掉任何顏色的均勻邊之後的形狀：白底網站上置中的單頁不能從中間切開
-  const shape = trimBorders(image, isUniform);
+  // 是不是 Spread 看的是去掉任何顏色的均勻邊之後的形狀：白底網站上置中的單頁不能從中間切開。
+  // 在去黑邊後的範圍裡找：兩頁的白色留白不一樣寬時只是不裁留白，黑邊照樣不算進形狀
+  // （電子書閱讀器實測：連黑邊一起算長寬比，整張截圖的一半不像漫畫頁，整張跨頁都不翻）
+  const shape = trimBorders(image, isUniform, content);
   if (shape.width <= shape.height) return [content];
   const half = Math.round(shape.width / 2);
   const seam = shape.x + half;
@@ -88,18 +90,21 @@ const symmetric = (a: number, b: number) => a > 0 && b > 0 && Math.abs(a - b) <=
 
 type LineTest = (line: Rect) => boolean;
 
-/** 去掉兩側對稱、符合 lineTest 的邊。 */
-function trimBorders(image: GrayImage, lineTest: (image: GrayImage, line: Rect) => boolean): Rect {
-  const { width, height } = image;
-  const whole: Rect = { x: 0, y: 0, width, height };
+/** 在 within 範圍裡去掉兩側對稱、符合 lineTest 的邊；不對稱的那個方向不裁。 */
+function trimBorders(
+  image: GrayImage,
+  lineTest: (image: GrayImage, line: Rect) => boolean,
+  within: Rect = { x: 0, y: 0, width: image.width, height: image.height },
+): Rect {
+  const { x, y, width, height } = within;
   const isBorder: LineTest = (line) => lineTest(image, line);
-  const top = countBorder(height, (i) => ({ x: 0, y: i, width, height: 1 }), isBorder);
-  // 整張都是均勻的：沒有內容可切
-  if (top === height) return whole;
-  const bottom = countBorder(height, (i) => ({ x: 0, y: height - 1 - i, width, height: 1 }), isBorder);
-  const left = countBorder(width, (i) => ({ x: i, y: 0, width: 1, height }), isBorder);
-  const right = countBorder(width, (i) => ({ x: width - 1 - i, y: 0, width: 1, height }), isBorder);
+  const top = countBorder(height, (i) => ({ x, y: y + i, width, height: 1 }), isBorder);
+  // 整塊都是均勻的：沒有內容可切
+  if (top === height) return within;
+  const bottom = countBorder(height, (i) => ({ x, y: y + height - 1 - i, width, height: 1 }), isBorder);
+  const left = countBorder(width, (i) => ({ x: x + i, y, width: 1, height }), isBorder);
+  const right = countBorder(width, (i) => ({ x: x + width - 1 - i, y, width: 1, height }), isBorder);
   const [t, b] = symmetric(top, bottom) ? [top, bottom] : [0, 0];
   const [l, r] = symmetric(left, right) ? [left, right] : [0, 0];
-  return { x: l, y: t, width: width - l - r, height: height - t - b };
+  return { x: x + l, y: y + t, width: width - l - r, height: height - t - b };
 }
