@@ -37,6 +37,8 @@ export interface TabStateStore {
   get(tabId: number): Promise<TabState | undefined>;
   set(tabId: number, state: TabState): Promise<void>;
   delete(tabId: number): Promise<void>;
+  /** 全部已啟動的 tab（#214：刪除作品時找出顯示它的 tab）。 */
+  entries(): Promise<[number, TabState][]>;
 }
 
 export interface ActivationDeps {
@@ -104,6 +106,7 @@ export function createActivation(deps: ActivationDeps) {
       knownActive.set(tabId, false);
       await deps.store.delete(tabId);
     },
+    entries: () => deps.store.entries(),
   };
 
   /** 新的啟動還在猜時先等它（同一個 tab 的事件與再點一次圖示都要看到它的結果）。 */
@@ -364,5 +367,21 @@ export function createActivation(deps: ActivationDeps) {
     await deps.stopContentScript(tabId).catch(() => {});
   }
 
-  return { activate, toggle, openPanel, stop, isActive, isSeriesPending, getTab, getSeriesId, setSeriesId, handleTabUpdated, handleTabRemoved };
+  /**
+   * 刪除作品（#214）：停用所有顯示這部作品的 tab（還在決定 Series 的等它決定），側邊欄不關，讓它顯示「已刪除」。
+   * 回傳停用了哪些 tab。
+   */
+  async function stopSeries(seriesId: string): Promise<number[]> {
+    const tabIds = new Set([...(await store.entries()).map(([tabId]) => tabId), ...starting.keys()]);
+    const stopped: number[] = [];
+    for (const tabId of tabIds) {
+      if ((await getTab(tabId))?.seriesId !== seriesId) continue;
+      await stop(tabId);
+      stopped.push(tabId);
+    }
+    trace('series:stopTabs', { seriesId, tabIds: stopped });
+    return stopped;
+  }
+
+  return { activate, toggle, openPanel, stop, stopSeries, isActive, isSeriesPending, getTab, getSeriesId, setSeriesId, handleTabUpdated, handleTabRemoved };
 }

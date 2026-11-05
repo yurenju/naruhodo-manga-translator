@@ -96,6 +96,13 @@
 :where(.naru-side-panel) .notes li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--naru-space-1); margin-bottom: var(--naru-space-1); }
 :where(.naru-side-panel) .note-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--naru-space-1); }
 :where(.naru-side-panel) .note-form label { display: flex; flex-direction: column; font-size: var(--naru-text-caption); color: var(--naru-ink-2); }
+/* 刪除條目（#214）：儲存／取消在左、刪除在右；核取方塊在下一行 */
+:where(.naru-side-panel) .note-form__actions { display: flex; flex: 1 1 100%; align-items: center; gap: var(--naru-space-1); }
+:where(.naru-side-panel) .note-form__spacer { flex: 1; }
+:where(.naru-side-panel) .note-form label.note-form__exclude { flex-direction: row; align-items: center; gap: var(--naru-space-1); }
+:where(.naru-side-panel) .excluded-terms { margin-top: var(--naru-space-3); }
+:where(.naru-side-panel) .excluded-terms summary { cursor: pointer; font-size: var(--naru-text-small); color: var(--naru-ink-2); }
+:where(.naru-side-panel) .excluded-terms li { justify-content: space-between; }
 :where(.naru-side-panel) .backup { display: flex; flex-wrap: wrap; gap: var(--naru-space-2); align-items: center; margin: var(--naru-space-2) 0; }
 :where(.naru-side-panel) .backup p { margin: 0; }
 

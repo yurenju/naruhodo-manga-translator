@@ -26,6 +26,22 @@ export function indexedDbTabStore(): TabStateStore & { clear(): Promise<void> } 
     get: (tabId) => run('readonly', (s) => s.get(tabId) as IDBRequest<TabState | undefined>),
     set: (tabId, state) => run('readwrite', (s) => s.put(state, tabId)).then(() => {}),
     delete: (tabId) => run('readwrite', (s) => s.delete(tabId)),
+    entries: () =>
+      (db ??= openDb()).then(
+        (db) =>
+          new Promise<[number, TabState][]>((resolve, reject) => {
+            const tx = db.transaction(STORES.activeTabs, 'readonly');
+            const rows: [number, TabState][] = [];
+            const cursor = tx.objectStore(STORES.activeTabs).openCursor();
+            cursor.onsuccess = () => {
+              if (!cursor.result) return;
+              rows.push([cursor.result.key as number, cursor.result.value as TabState]);
+              cursor.result.continue();
+            };
+            tx.oncomplete = () => resolve(rows);
+            tx.onerror = () => reject(tx.error);
+          }),
+      ),
     clear: () => run('readwrite', (s) => s.clear()),
   };
 }

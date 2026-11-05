@@ -38,6 +38,7 @@ function fakeChrome(urls: Record<number, string>) {
       get: async (tabId) => states.get(tabId),
       set: async (tabId, s) => void states.set(tabId, s),
       delete: async (tabId) => void states.delete(tabId),
+      entries: async () => [...states],
     },
     getTabUrl: async (tabId) => urls[tabId],
     sidePanelOnActivation: () => settings.panelOnActivation,
@@ -288,6 +289,26 @@ describe('stop', () => {
     expect(chrome.calls.stopped).toEqual([1]);
     expect(chrome.calls.injected).toEqual([1]);
     expect(chrome.statusEvents.at(-1)).toEqual([1, false]);
+  });
+});
+
+describe('stopSeries（刪除作品，#214）', () => {
+  it('停用所有顯示這部作品的 tab（不只是目前這個），其他作品的 tab 不動；回傳停用了哪些 tab', async () => {
+    const OTHER = 'https://manga.example/episode/999';
+    const chrome = fakeChrome({ 1: EPISODE, 2: EPISODE, 3: OTHER });
+    chrome.patterns.set(EPISODE, 'doomed');
+    chrome.patterns.set(OTHER, 'kept');
+    const activation = createActivation(chrome.deps);
+    for (const tabId of [1, 2, 3]) await activation.activate(tabId);
+
+    expect(await activation.stopSeries('doomed')).toEqual([1, 2]);
+
+    expect(await activation.isActive(1)).toBe(false);
+    expect(await activation.isActive(2)).toBe(false);
+    expect(await activation.isActive(3)).toBe(true);
+    expect(chrome.calls.stopped).toEqual([1, 2]);
+    // 側邊欄留著，顯示「這部作品已刪除」
+    expect(chrome.calls.closedPanels).toEqual([]);
   });
 });
 

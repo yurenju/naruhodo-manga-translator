@@ -4,7 +4,7 @@
  * 儲存從 SeriesRepo 注入（SW 接 IndexedDB，測試用記憶體）。
  */
 import type { PageTranslation } from '../shared/page-text.ts';
-import { mergeNotes, type NotesSuggestion } from '../shared/series-notes.ts';
+import { excludedMatcher, mergeExcluded, mergeNotes, type NotesSuggestion } from '../shared/series-notes.ts';
 import { normalizeTitle, type Series, type SeriesOption, type TitleGuess, type UrlPattern } from '../shared/series.ts';
 import { createTrace } from '../shared/trace.ts';
 import type { NotesEntry } from '../shared/translator.ts';
@@ -20,6 +20,8 @@ export interface SeriesMerge {
   notes: NotesEntry[];
   /** 要新增到目標的建議修改。 */
   suggestions: NotesSuggestion[];
+  /** 目標合併後的全部 Excluded Term（#214）。 */
+  excluded: string[];
 }
 
 /**
@@ -43,8 +45,12 @@ export interface SeriesRepo {
   listTranslations(seriesId: string): Promise<PageTranslation[]>;
   listNotes(seriesId: string): Promise<NotesEntry[]>;
   listSuggestions(seriesId: string): Promise<NotesSuggestion[]>;
-  /** 寫入 translations／notes／suggestions，再刪掉來源 Series 與它的快取、Notes、建議修改。 */
+  /** 這部 Series 的 Excluded Term（#214）。 */
+  listExcluded(seriesId: string): Promise<string[]>;
+  /** 寫入 translations／notes／suggestions／excluded，再刪掉來源 Series 與它的快取、Notes、建議修改、不記的詞。 */
   commitMerge(merge: SeriesMerge): Promise<void>;
+  /** 一次刪掉這部 Series 與它的快取、條目、建議修改、網址模式、不記的詞（#214）。 */
+  deleteSeries(seriesId: string): Promise<void>;
 }
 
 export interface SeriesCatalogDeps {
@@ -188,24 +194,40 @@ export function createSeriesCatalog(deps: SeriesCatalogDeps) {
       if (sourceId === targetId) return false;
       const [source, target] = await Promise.all([repo.getSeries(sourceId), repo.getSeries(targetId)]);
       if (!source?.provisional || !target) return false;
-      const [targetCache, sourceCache, targetNotes, sourceNotes, sourceSuggestions] = await Promise.all([
+      const [targetCache, sourceCache, targetNotes, sourceNotes, sourceSuggestions, targetExcluded, sourceExcluded] = await Promise.all([
         repo.listTranslations(targetId),
         repo.listTranslations(sourceId),
         repo.listNotes(targetId),
         repo.listNotes(sourceId),
         repo.listSuggestions(sourceId),
+        repo.listExcluded(targetId),
+        repo.listExcluded(sourceId),
       ]);
-      const notes = mergeNotes(targetNotes, sourceNotes, { seriesId: targetId, 來源: { mergedFrom: sourceId } });
+      // 目標不記的詞（#214）：來源的條目與建議都不帶過來；來源不記的詞也併進目標
+      const notes = mergeNotes(targetNotes, sourceNotes, { seriesId: targetId, 來源: { mergedFrom: sourceId }, excluded: targetExcluded });
+      const isExcluded = excludedMatcher(targetExcluded);
       await repo.commitMerge({
         sourceId,
         targetId,
         translations: mergeTranslations(targetCache, sourceCache, targetId),
         notes: notes.entries,
-        suggestions: [...sourceSuggestions.map((s) => ({ ...s, seriesId: targetId })), ...notes.suggestions],
+        suggestions: [...sourceSuggestions.filter((s) => !isExcluded(s.原文)).map((s) => ({ ...s, seriesId: targetId })), ...notes.suggestions],
+        excluded: mergeExcluded({ entries: targetNotes, excluded: targetExcluded }, sourceExcluded),
       });
       trace('series:merge', { sourceId, targetId, translations: sourceCache.length, notes: sourceNotes.length, suggestions: notes.suggestions.length });
       for (const title of source.originalTitles ?? []) await rememberTitle(targetId, title);
       await remember(targetId, url);
+      return true;
+    },
+
+    /**
+     * 刪除作品（#214）：這部作品與它的快取、條目、建議修改、網址模式、不記的詞一次刪掉，不能復原。
+     * 不存在就什麼都不動，回傳 false。停用顯示它的 tab 是呼叫端的事。
+     */
+    async remove(seriesId: string): Promise<boolean> {
+      if (!(await repo.getSeries(seriesId))) return false;
+      await repo.deleteSeries(seriesId);
+      trace('series:delete', { seriesId });
       return true;
     },
   };

@@ -69,7 +69,7 @@ function memoryNotes(initial: NotesEntry[] = []): NotesStore & { entries: NotesE
     suggestions: [] as NotesSuggestion[],
     list: async (seriesId: string) => structuredClone(store.entries.filter((e) => e.seriesId === seriesId)),
     load: async (seriesId: string) =>
-      structuredClone({ entries: store.entries.filter((e) => e.seriesId === seriesId), suggestions: store.suggestions.filter((s) => s.seriesId === seriesId) }),
+      structuredClone({ entries: store.entries.filter((e) => e.seriesId === seriesId), suggestions: store.suggestions.filter((s) => s.seriesId === seriesId), excluded: [] }),
     async save(seriesId: string, notes: SeriesNotes) {
       store.entries = [...store.entries.filter((e) => e.seriesId !== seriesId), ...structuredClone(notes.entries)];
       store.suggestions = [...store.suggestions.filter((s) => s.seriesId !== seriesId), ...structuredClone(notes.suggestions)];
@@ -607,6 +607,31 @@ describe('翻譯快取', () => {
 
     expect(cache.saved).toHaveLength(1);
     expect(cache.saved[0]).toMatchObject({ seriesId: 'series-1', pageHash: 'cd'.repeat(32) });
+  });
+
+  it('翻譯中作品被刪掉（#214）：回來的結果不寫快取，也不整理 Notes', async () => {
+    const cache = memoryCache();
+    let deleted = false;
+    const proposeNotes = vi.fn(noNotes.proposeNotes);
+    const translator: Translator = {
+      ...noNotes,
+      proposeNotes,
+      translatePage: async () => {
+        deleted = true;
+        return translatedOutput();
+      },
+    };
+    const { transcriber } = setup({
+      cache,
+      getTranslator: () => translator,
+      getSeries: async (id) => (deleted ? undefined : { id, name: '範例作品', provisional: false, createdAt: 0 }),
+    });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+    await transcriber.notesSettled();
+
+    expect(cache.saved).toEqual([]);
+    expect(proposeNotes).not.toHaveBeenCalled();
   });
 
   it('沒有 Translator（未翻譯）或翻譯失敗時不寫快取', async () => {

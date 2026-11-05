@@ -3,7 +3,7 @@
  * 之後的 ticket 加 store（Series Notes 等）時，調高 DB_VERSION 並在 upgrade 裡依舊版本建立。
  */
 const DB_NAME = 'naruhodo';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export const STORES = {
   /** 已啟動的 tab：key 是 tabId。 */
@@ -23,9 +23,11 @@ export const STORES = {
   seriesNotes: 'seriesNotes',
   /** 建議修改 NotesSuggestion：自動遞增 key，index seriesId（#36 合併、#37）。 */
   notesSuggestions: 'notesSuggestions',
+  /** 不記的詞 ExcludedTerm：keyPath [seriesId, 原文]，index seriesId（#214）。 */
+  excludedTerms: 'excludedTerms',
 } as const;
 
-/** pageTranslations、urlPatterns、seriesNotes、notesSuggestions 依 Series 查詢的 index。 */
+/** pageTranslations、urlPatterns、seriesNotes、notesSuggestions、excludedTerms 依 Series 查詢的 index。 */
 export const BY_SERIES = 'seriesId';
 
 /** 在一個 store 上開一個 transaction 跑一個 request，transaction 完成時 resolve 它的結果。 */
@@ -73,6 +75,7 @@ export function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORES.seriesNotes, { keyPath: ['seriesId', '原文'] }).createIndex(BY_SERIES, 'seriesId');
         db.createObjectStore(STORES.notesSuggestions, { autoIncrement: true }).createIndex(BY_SERIES, 'seriesId');
       }
+      if (event.oldVersion < 5) db.createObjectStore(STORES.excludedTerms, { keyPath: ['seriesId', '原文'] }).createIndex(BY_SERIES, 'seriesId');
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

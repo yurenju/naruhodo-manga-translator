@@ -15,6 +15,7 @@ function memoryRepo() {
   let translations: PageTranslation[] = [];
   let notes: NotesEntry[] = [];
   let suggestions: NotesSuggestion[] = [];
+  const excluded = new Map<string, string[]>();
   const repo: SeriesRepo = {
     getSeries: async (id) => series.get(id),
     listSeries: async () => [...series.values()],
@@ -25,17 +26,29 @@ function memoryRepo() {
     listTranslations: async (id) => translations.filter((t) => t.seriesId === id),
     listNotes: async (id) => notes.filter((n) => n.seriesId === id),
     listSuggestions: async (id) => suggestions.filter((s) => s.seriesId === id),
+    listExcluded: async (id) => excluded.get(id) ?? [],
     async commitMerge(m) {
       translations = [...translations.filter((t) => t.seriesId !== m.sourceId), ...m.translations];
       notes = [...notes.filter((n) => n.seriesId !== m.sourceId && n.seriesId !== m.targetId), ...m.notes];
       suggestions = [...suggestions.filter((s) => s.seriesId !== m.sourceId), ...m.suggestions];
+      excluded.delete(m.sourceId);
+      excluded.set(m.targetId, m.excluded);
       series.delete(m.sourceId);
+    },
+    async deleteSeries(id) {
+      translations = translations.filter((t) => t.seriesId !== id);
+      notes = notes.filter((n) => n.seriesId !== id);
+      suggestions = suggestions.filter((s) => s.seriesId !== id);
+      for (const [key, p] of patterns) if (p.seriesId === id) patterns.delete(key);
+      excluded.delete(id);
+      series.delete(id);
     },
   };
   return {
     repo,
     series,
     patterns,
+    excluded,
     seed(t: PageTranslation[], n: NotesEntry[]) {
       translations.push(...t);
       notes.push(...n);
@@ -303,7 +316,7 @@ describe('merge', () => {
   it('來源不是 Provisional Series：不合併，什麼都不動', async () => {
     const { db, catalog } = setup();
     const target = await catalog.create('範例作品', EP1);
-    const named = await catalog.create('鬼滅', EP2);
+    const named = await catalog.create('另一部作品', EP2);
     db.seed([translation(named.id, B, '另一頁')], [note(named.id, '鈴木', '阿鈴')]);
 
     const merged = await catalog.merge(named.id, target.id, EP2);
@@ -333,10 +346,61 @@ describe('merge', () => {
       translations: [],
       notes: [],
       suggestions: [{ seriesId: provisional, 原文: 'x', 建議譯文: 'y', 來源: { pageHash: 'h1' } }],
+      excluded: [],
     });
 
     await catalog.merge(provisional, target.id, EP2);
 
     expect(db.suggestions).toEqual([{ seriesId: target.id, 原文: 'x', 建議譯文: 'y', 來源: { pageHash: 'h1' } }]);
+  });
+});
+
+describe('Excluded Term 與合併（#214）', () => {
+  it('目標不記的詞：來源的條目與建議都不帶過來；來源不記的詞加到目標（目標已有條目的除外）', async () => {
+    const { db, catalog } = setup();
+    const target = await catalog.create('範例作品', EP1);
+    const provisional = (await catalog.seriesForUrl(EP2, cannotGuess)).seriesId;
+    db.seed([], [note(target.id, 'タロウ', '太郎'), note(provisional, 'ドーン', '咚'), note(provisional, 'ミナ', '美娜')]);
+    db.excluded.set(target.id, ['ドーン']);
+    db.excluded.set(provisional, ['ホンダナ', 'タロウ']);
+    await db.repo.commitMerge({
+      sourceId: 'none',
+      targetId: provisional,
+      translations: [],
+      notes: db.notes.filter((n) => n.seriesId === provisional),
+      suggestions: [{ seriesId: provisional, 原文: 'ドーン', 建議譯文: '轟', 來源: { pageHash: 'h1' } }],
+      excluded: ['ホンダナ', 'タロウ'],
+    });
+
+    await catalog.merge(provisional, target.id, EP2);
+
+    expect(db.notes.map((n) => n.原文)).toEqual(['タロウ', 'ミナ']);
+    expect(db.suggestions).toEqual([]);
+    expect(db.excluded.get(target.id)).toEqual(['ドーン', 'ホンダナ']);
+  });
+});
+
+describe('remove（刪除作品，#214）', () => {
+  it('刪掉這部作品與它的快取、條目、建議修改、網址模式、不記的詞；別部作品不動', async () => {
+    const { db, catalog } = setup();
+    const doomed = await catalog.create('要刪的', EP1);
+    const kept = await catalog.create('留著的', EP2);
+    db.seed([translation(doomed.id, 'a'.repeat(64), '刪'), translation(kept.id, 'b'.repeat(64), '留')], [note(doomed.id, 'ドーン', '咚'), note(kept.id, 'ミナ', '美娜')]);
+    db.excluded.set(doomed.id, ['ホンダナ']);
+
+    expect(await catalog.remove(doomed.id)).toBe(true);
+
+    expect([...db.series.keys()]).toEqual([kept.id]);
+    expect(db.translations.map((t) => t.seriesId)).toEqual([kept.id]);
+    expect(db.notes.map((n) => n.seriesId)).toEqual([kept.id]);
+    expect([...db.patterns.values()].map((p) => p.seriesId)).toEqual([kept.id]);
+    expect(db.excluded.has(doomed.id)).toBe(false);
+    // 網址模式也不在了：再開同一話會重新歸類
+    expect((await catalog.seriesForUrl(EP1, cannotGuess)).by).toBe('unnamed');
+  });
+
+  it('不存在的作品：什麼都不動，回傳 false', async () => {
+    const { catalog } = setup();
+    expect(await catalog.remove('nope')).toBe(false);
   });
 });

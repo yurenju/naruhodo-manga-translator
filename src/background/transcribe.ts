@@ -203,7 +203,7 @@ function isUntranslated(record: PageRecord): boolean {
 }
 
 export function createTranscriber(deps: TranscriberDeps) {
-  const ledger = createNotesLedger({ store: deps.notes });
+  const ledger = createNotesLedger({ store: deps.notes, seriesExists: async (seriesId) => (await deps.getSeries(seriesId)) !== undefined });
   const pageTranslation = createPageTranslation({
     cache: deps.cache,
     ledger,
@@ -728,6 +728,11 @@ export function createTranscriber(deps: TranscriberDeps) {
     return next;
   }
 
+  /** 刪除作品（#214）：排在這部 Series 已經開始的 Notes 寫入後面才刪，之後的寫入看到它不在就不寫。 */
+  function removeSeries(seriesId: string, remove: () => Promise<void>): Promise<void> {
+    return ledger.remove(seriesId, remove);
+  }
+
   /** 停止或關 tab：同 resetPages，看過的頁也忘掉。 */
   function clear(tabId: number): void {
     seen.delete(tabId);
@@ -743,6 +748,7 @@ export function createTranscriber(deps: TranscriberDeps) {
     reassignSeries,
     notesChanged,
     updateNotes,
+    removeSeries,
     clear,
     /** 背景整理 Notes（②）都做完時 resolve（測試用）。 */
     notesSettled: pageTranslation.notesSettled,

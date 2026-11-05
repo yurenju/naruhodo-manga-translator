@@ -53,6 +53,8 @@ export function newSnapshotGroup(): SnapshotGroup {
 
 export interface NotesLedgerDeps {
   store: NotesStore;
+  /** 這部 Series 還在不在（#214）：刪除之後不再寫入，還在翻的頁回來也不會把 Notes 寫回去。沒給＝一律在。 */
+  seriesExists?(seriesId: string): Promise<boolean>;
 }
 
 /** 一頁送出 LLM 時拿到的號碼牌。commit 與 release 只能擇一呼叫一次。 */
@@ -65,7 +67,9 @@ export interface NotesTurn {
   release(): void;
 }
 
-export function createNotesLedger({ store }: NotesLedgerDeps) {
+const EMPTY: SeriesNotes = { entries: [], suggestions: [], excluded: [] };
+
+export function createNotesLedger({ store, seriesExists = async () => true }: NotesLedgerDeps) {
   /** 每個 Series 最後一張號碼牌輪完時 resolve。 */
   const tails = new Map<string, Promise<void>>();
   /**
@@ -76,19 +80,32 @@ export function createNotesLedger({ store }: NotesLedgerDeps) {
   /** 每個 Series 最後一次「讀 → 改 → 寫」做完時 resolve。 */
   const writes = new Map<string, Promise<unknown>>();
 
-  /** 讀 → 改 → 寫，同一個 Series 一次只跑一個。 */
-  function exclusive(seriesId: string, change: (notes: SeriesNotes) => SeriesNotes): Promise<SeriesNotes> {
-    const run = (writes.get(seriesId) ?? Promise.resolve()).then(async () => {
-      const next = change(await store.load(seriesId));
-      await store.save(seriesId, next);
-      return next;
-    });
+  /** 同一個 Series 的寫入一次只跑一個。 */
+  function serialize<T>(seriesId: string, op: () => Promise<T>): Promise<T> {
+    const run = (writes.get(seriesId) ?? Promise.resolve()).then(op);
     const settled = run.catch(() => {});
     writes.set(seriesId, settled);
     void settled.then(() => {
       if (writes.get(seriesId) === settled) writes.delete(seriesId);
     });
     return run;
+  }
+
+  /**
+   * Series 還在才寫（#214）：跟刪除排在同一條序列裡，檢查與寫入之間不會被刪除插進來。刪掉了就不跑，回傳 undefined。
+   */
+  function whileExists<T>(seriesId: string, write: () => Promise<T>): Promise<T | undefined> {
+    return serialize(seriesId, async () => ((await seriesExists(seriesId)) ? write() : undefined));
+  }
+
+  /** 讀 → 改 → 寫。Series 已經刪掉就什麼都不寫（#214）。 */
+  async function exclusive(seriesId: string, change: (notes: SeriesNotes) => SeriesNotes): Promise<SeriesNotes> {
+    const written = await whileExists(seriesId, async () => {
+      const next = change(await store.load(seriesId));
+      await store.save(seriesId, next);
+      return next;
+    });
+    return written ?? EMPTY;
   }
 
   /** 這個 Series 目前的條目。讀不到就當沒有：只是少了 Notes 或過時提示，不擋翻譯。 */
@@ -123,13 +140,13 @@ export function createNotesLedger({ store }: NotesLedgerDeps) {
             await previous;
             let report: Record<string, unknown> = {};
             const next = await exclusive(seriesId, (current) => {
-              const merged = applyNotesChanges(current.entries, changes, { ...page, seriesId, unseen: new Set(shared.added) });
+              const merged = applyNotesChanges(current.entries, changes, { ...page, seriesId, unseen: new Set(shared.added), excluded: current.excluded });
               const { added, filled } = describeChanges(current.entries, merged.entries);
               for (const 原文 of added) shared.added.add(原文);
               const suggestions = addSuggestions(current.suggestions, merged.suggestions);
               const newSuggestions = suggestions.slice(current.suggestions.length).map(({ 原文, 建議譯文 }) => ({ 原文, 建議譯文 }));
               report = { added, filled, rejected: merged.rejected, dropped: merged.dropped, suggestions: newSuggestions };
-              return { entries: merged.entries, suggestions };
+              return { ...current, entries: merged.entries, suggestions };
             });
             // 實際採用了什麼（#40 驗收 H2、H5）：LLM 想改的是 translate:response 的 notes_changes
             trace('notes:apply', { seriesId, pageHash: page.pageHash, ...report });
@@ -149,6 +166,14 @@ export function createNotesLedger({ store }: NotesLedgerDeps) {
 
     /** 人在 side panel 的修改：不等送出順序，只跟其他寫入互斥。回傳改完的 Notes。 */
     update: exclusive,
+
+    /** 翻譯快取這類跟 Notes 無關的寫入（#214）：Series 還在才寫，不會在刪除之後寫回去。 */
+    whileExists,
+
+    /**
+     * 刪除這部 Series 的資料（#214）：排在已經開始的寫入後面，刪完之後的寫入看到 Series 不在就不寫。
+     */
+    remove: (seriesId: string, remove: () => Promise<void>) => serialize(seriesId, remove),
   };
 }
 

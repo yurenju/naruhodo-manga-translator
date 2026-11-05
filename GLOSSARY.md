@@ -76,6 +76,14 @@ _Avoid_: reader mode, learning mode, panel mode
 The fixed translations a Series has settled on — names and terms, plus how each character refers to themself, speaks, and addresses others — used to keep translations consistent. The translator accumulates names and terms as it reads; how each character speaks comes only from the reader, since the text alone does not say who is speaking. The reader reviews it and occasionally corrects it. No plot progress. Belongs to the Series, shared across every site the Series is read on.
 _Avoid_: context, glossary (ambiguous with this file), dictionary, 作品筆記 (the UI name before #186)
 
+**Notes Entry** (條目)
+One name or term in a Series' Series Notes, keyed by its original text, with its reading, translation and, for a character, how they speak. The reader can delete one; the translator may record it again later unless it was made an Excluded Term.
+_Avoid_: item, row, note
+
+**Excluded Term** (不記的詞)
+An original text the reader asked never to be recorded again when deleting its Notes Entry. The translator no longer adds it to that Series' Series Notes; the reader can restore it, which only allows it to be recorded again and does not bring the deleted Notes Entry back. Belongs to the Series like its Series Notes.
+_Avoid_: ignored (that is what the reader does to a suggested change), blacklist, blocked term, deleted entry
+
 **Prior Pages** (前頁)
 The Pages the reader saw just before the one being translated, in the same tab, with their text and translations; sent along when a Page is translated so the translator can follow the conversation and keep its wording. Includes the Pages on screen that come earlier in reading order, such as the right Page of a Spread for its left Page, and the earlier part of a Page taller than the screen. Follows what the reader actually saw, so after a jump or a page back they are not the previous Pages of the Episode.
 _Avoid_: context (that word is avoided for Series Notes), history

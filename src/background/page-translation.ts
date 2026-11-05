@@ -188,9 +188,13 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
         latencyMs,
         translatedAt: Date.now(),
       };
-      // 寫不進去只是下次要重翻，這次的結果照樣顯示。
-      await cache.save(entry).catch((e: unknown) => console.warn('cache save failed', e));
-      inBackground(proposeNotes(translator, seriesId, pageHash, group, translated, output.usageRecordId));
+      // 寫不進去只是下次要重翻，這次的結果照樣顯示。翻譯中作品被刪掉了（#214）：不寫快取、不整理 Notes
+      // （tab 已經停用，結果也不會顯示）；跟刪除排在同一條序列裡，不會在刪完之後寫回去
+      const saved = await ledger.whileExists(seriesId, () => cache.save(entry).then(() => true)).catch((e: unknown) => {
+        console.warn('cache save failed', e);
+        return true;
+      });
+      if (saved) inBackground(proposeNotes(translator, seriesId, pageHash, group, translated, output.usageRecordId));
     }
     return { state: 'done', text: page, translated: true, translation: { source: 'translated', model, latencyMs, usage } };
   }

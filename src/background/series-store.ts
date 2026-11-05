@@ -1,6 +1,6 @@
 import { BY_SERIES, openDb, STORES, storeRequest, writeTransaction } from '../shared/db.ts';
 import type { PageTranslation } from '../shared/page-text.ts';
-import type { NotesSuggestion } from '../shared/series-notes.ts';
+import type { ExcludedTerm, NotesSuggestion } from '../shared/series-notes.ts';
 import type { Series, UrlPattern } from '../shared/series.ts';
 import type { NotesEntry } from '../shared/translator.ts';
 import type { BackupData, BackupRepo } from './backup.ts';
@@ -9,6 +9,9 @@ import type { SeriesRepo } from './series-catalog.ts';
 
 /** key 以 seriesId 開頭的 store（[seriesId, …]）裡，這個 Series 的全部。陣列 key 比任何字串都大。 */
 const seriesRange = (seriesId: string) => IDBKeyRange.bound([seriesId], [seriesId, []]);
+
+/** 一部 Series 的資料分在這幾個 store：合併與刪除（#214）都在一個 transaction 裡動全部。 */
+const SERIES_STORES = [STORES.series, STORES.pageTranslations, STORES.seriesNotes, STORES.notesSuggestions, STORES.urlPatterns, STORES.excludedTerms];
 
 /** 用 index 找出這個 Series 的每一筆，逐筆交給 visit（同一個 transaction 裡）。 */
 function eachBySeries(store: IDBObjectStore, seriesId: string, visit: (cursor: IDBCursorWithValue) => void): void {
@@ -23,7 +26,7 @@ function eachBySeries(store: IDBObjectStore, seriesId: string, visit: (cursor: I
 
 /**
  * 翻譯時累積的 Series Notes（#37）。依 index 讀出來是照原文排序（主鍵 [seriesId, 原文]），每次順序相同，
- * prompt cache 才吃得到。條目與建議修改在同一個 transaction 寫入。
+ * prompt cache 才吃得到。條目、建議修改與不記的詞（#214）在同一個 transaction 整份取代（刪掉的條目才會消失）。
  */
 export function indexedDbNotesStore(): NotesStore {
   let db: Promise<IDBDatabase> | undefined;
@@ -32,16 +35,21 @@ export function indexedDbNotesStore(): NotesStore {
   return {
     list: (seriesId) => bySeries<NotesEntry>(STORES.seriesNotes, seriesId),
     async load(seriesId) {
-      const [entries, suggestions] = await Promise.all([
+      const [entries, suggestions, excluded] = await Promise.all([
         bySeries<NotesEntry>(STORES.seriesNotes, seriesId),
         bySeries<NotesSuggestion>(STORES.notesSuggestions, seriesId),
+        bySeries<ExcludedTerm>(STORES.excludedTerms, seriesId),
       ]);
-      return { entries, suggestions };
+      return { entries, suggestions, excluded: excluded.map((t) => t.原文) };
     },
-    save: (seriesId, { entries, suggestions }) =>
-      writeTransaction((db ??= openDb()), [STORES.seriesNotes, STORES.notesSuggestions], (tx) => {
+    save: (seriesId, { entries, suggestions, excluded }) =>
+      writeTransaction((db ??= openDb()), [STORES.seriesNotes, STORES.notesSuggestions, STORES.excludedTerms], (tx) => {
         const notes = tx.objectStore(STORES.seriesNotes);
+        notes.delete(seriesRange(seriesId));
         for (const entry of entries) notes.put({ ...entry, seriesId });
+        const terms = tx.objectStore(STORES.excludedTerms);
+        terms.delete(seriesRange(seriesId));
+        for (const 原文 of excluded) terms.put({ seriesId, 原文 } satisfies ExcludedTerm);
         // 建議修改整份取代（接受的拿掉、忽略的改了標記）。先拿到舊的 key 再刪：cursor 會看到同一個 transaction 裡新加的。
         const pending = tx.objectStore(STORES.notesSuggestions);
         const old = pending.index(BY_SERIES).getAllKeys(seriesId);
@@ -70,10 +78,10 @@ export function indexedDbSeriesRepo(): SeriesRepo {
     listTranslations: (seriesId) => bySeries<PageTranslation>(STORES.pageTranslations, seriesId),
     listNotes: (seriesId) => bySeries<NotesEntry>(STORES.seriesNotes, seriesId),
     listSuggestions: (seriesId) => bySeries<NotesSuggestion>(STORES.notesSuggestions, seriesId),
+    listExcluded: (seriesId) => bySeries<ExcludedTerm>(STORES.excludedTerms, seriesId).then((rows) => rows.map((t) => t.原文)),
     commitMerge(merge) {
-      const stores = [STORES.series, STORES.pageTranslations, STORES.seriesNotes, STORES.notesSuggestions, STORES.urlPatterns];
       // 一個 transaction：中途失敗就整個不算，不會留下一半在臨時 Series、一半在目標。
-      return writeTransaction((db ??= openDb()), stores, (tx) => {
+      return writeTransaction((db ??= openDb()), SERIES_STORES, (tx) => {
         const { sourceId, targetId } = merge;
         const translations = tx.objectStore(STORES.pageTranslations);
         translations.delete(seriesRange(sourceId));
@@ -86,13 +94,28 @@ export function indexedDbSeriesRepo(): SeriesRepo {
         eachBySeries(suggestions, sourceId, (cursor) => cursor.delete());
         for (const s of merge.suggestions) suggestions.add(s);
         eachBySeries(tx.objectStore(STORES.urlPatterns), sourceId, (cursor) => cursor.update({ ...cursor.value, seriesId: targetId }));
+        const terms = tx.objectStore(STORES.excludedTerms);
+        terms.delete(seriesRange(sourceId));
+        terms.delete(seriesRange(targetId));
+        for (const 原文 of merge.excluded) terms.put({ seriesId: targetId, 原文 } satisfies ExcludedTerm);
         tx.objectStore(STORES.series).delete(sourceId);
+      });
+    },
+    deleteSeries(seriesId) {
+      // 一個 transaction：中途失敗就整個不算，不會留下一半的資料（#214）
+      return writeTransaction((db ??= openDb()), SERIES_STORES, (tx) => {
+        tx.objectStore(STORES.pageTranslations).delete(seriesRange(seriesId));
+        tx.objectStore(STORES.seriesNotes).delete(seriesRange(seriesId));
+        tx.objectStore(STORES.excludedTerms).delete(seriesRange(seriesId));
+        eachBySeries(tx.objectStore(STORES.notesSuggestions), seriesId, (cursor) => cursor.delete());
+        eachBySeries(tx.objectStore(STORES.urlPatterns), seriesId, (cursor) => cursor.delete());
+        tx.objectStore(STORES.series).delete(seriesId);
       });
     },
   };
 }
 
-/** 匯出／匯入（#38）與清除快取用。只碰 Series、網址模式、Notes、建議修改、快取這五個 store；不碰 apiKeys。 */
+/** 匯出／匯入（#38）與清除快取用。只碰 Series、網址模式、Notes、建議修改、不記的詞、快取這六個 store；不碰 apiKeys。 */
 export function indexedDbBackupRepo(): BackupRepo & { clearTranslations(seriesId: string): Promise<void> } {
   let db: Promise<IDBDatabase> | undefined;
   const run = <T>(store: string, mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>) =>
@@ -100,14 +123,15 @@ export function indexedDbBackupRepo(): BackupRepo & { clearTranslations(seriesId
   const all = <T>(store: string) => run(store, 'readonly', (s) => s.getAll() as IDBRequest<T[]>);
   return {
     async dump(): Promise<BackupData> {
-      const [series, urlPatterns, seriesNotes, notesSuggestions, pageTranslations] = await Promise.all([
+      const [series, urlPatterns, seriesNotes, notesSuggestions, excludedTerms, pageTranslations] = await Promise.all([
         all<Series>(STORES.series),
         all<UrlPattern>(STORES.urlPatterns),
         all<NotesEntry>(STORES.seriesNotes),
         all<NotesSuggestion>(STORES.notesSuggestions),
+        all<ExcludedTerm>(STORES.excludedTerms),
         all<PageTranslation>(STORES.pageTranslations),
       ]);
-      return { series, urlPatterns, seriesNotes, notesSuggestions, pageTranslations };
+      return { series, urlPatterns, seriesNotes, notesSuggestions, excludedTerms, pageTranslations };
     },
     getSeries: (id) => run(STORES.series, 'readonly', (s) => s.get(id) as IDBRequest<Series | undefined>),
     putSeries: (series) => run(STORES.series, 'readwrite', (s) => s.put(series)).then(() => {}),

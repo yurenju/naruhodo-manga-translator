@@ -3,13 +3,16 @@ import {
   acceptSuggestion,
   addSuggestions,
   applyNotesChanges,
+  deleteEntry,
   editEntry,
   ignoreSuggestion,
   mergeImportedNotes,
   mergeNotes,
   pendingSuggestions,
+  restoreExcluded,
   staleReason,
   type NotesSuggestion,
+  type SeriesNotes,
 } from './series-notes.ts';
 import type { NotesEntry } from './translator.ts';
 
@@ -213,6 +216,22 @@ describe('applyNotesChanges（套用 LLM 的 notes_changes）', () => {
     expect(result.rejected).toEqual(['潮見坂']);
   });
 
+  it('Excluded Term（#214）：新增、補空欄位、建議修改都不採用，新增記成 rejected；比對忽略全形半形與空白', () => {
+    const result = applyNotesChanges(
+      [entry('s', 'ミナ', '')],
+      {
+        added: [added('潮見坂', '潮見坂', { 類別: '地名' })],
+        filled: [{ 原文: 'ミナ', fields: { 譯文: '美娜' } }],
+        suggestions: [{ 原文: 'ミナ', 建議譯文: '米娜' }],
+      },
+      { ...page, excluded: ['潮見 坂', 'ミナ'] },
+    );
+
+    expect(result.entries).toEqual([entry('s', 'ミナ', '')]);
+    expect(result.suggestions).toEqual([]);
+    expect(result.rejected).toEqual(['潮見坂']);
+  });
+
   it('原文是空字串的條目不採用', () => {
     const result = applyNotesChanges([], { ...none, added: [added('', '某人')] }, page);
 
@@ -256,6 +275,7 @@ describe('建議修改（去重、接受、忽略）', () => {
     const notes = {
       entries: [entry('s', 'ミナ', '米娜'), entry('s', '相棒', '搭檔')],
       suggestions: [suggestion('ミナ', '米娜'), suggestion('相棒', '夥伴', { ignored: true }), suggestion('潮見坂', '潮見坡'), suggestion('相棒', '拍檔')],
+      excluded: [],
     };
 
     expect(pendingSuggestions(notes)).toEqual([suggestion('相棒', '拍檔')]);
@@ -265,20 +285,23 @@ describe('建議修改（去重、接受、忽略）', () => {
     const notes = {
       entries: [entry('s', '相棒', '搭檔')],
       suggestions: [suggestion('相棒', '夥伴'), suggestion('相棒', '夥伴', { 來源: { pageHash: 'h2' } }), suggestion('相棒', '拍檔')],
+      excluded: [],
     };
 
     expect(acceptSuggestion(notes, { 原文: '相棒', 建議譯文: '夥伴' })).toEqual({
       entries: [entry('s', '相棒', '夥伴', { locked: true })],
       suggestions: [suggestion('相棒', '拍檔')],
+      excluded: [],
     });
   });
 
   it('ignoreSuggestion：條目不動，這個建議標成忽略（之後同樣的建議不會再出現）', () => {
-    const notes = { entries: [entry('s', '相棒', '搭檔')], suggestions: [suggestion('相棒', '夥伴'), suggestion('相棒', '拍檔')] };
+    const notes = { entries: [entry('s', '相棒', '搭檔')], suggestions: [suggestion('相棒', '夥伴'), suggestion('相棒', '拍檔')], excluded: [] };
 
     expect(ignoreSuggestion(notes, { 原文: '相棒', 建議譯文: '夥伴' })).toEqual({
       entries: notes.entries,
       suggestions: [suggestion('相棒', '夥伴', { ignored: true }), suggestion('相棒', '拍檔')],
+      excluded: [],
     });
   });
 });
@@ -289,6 +312,10 @@ describe('staleReason（過時提示）', () => {
 
   it('用到的條目都沒改、模型與 prompt 版本相同：不過時', () => {
     expect(staleReason(page, [entry('s', 'パン', '麵包')], current)).toBeUndefined();
+  });
+
+  it('這頁用到的條目被刪了（#214）不算過時', () => {
+    expect(staleReason(page, [], current)).toBeUndefined();
   });
 
   it('只新增條目（就算原文出現在這頁）不算過時', () => {
@@ -333,6 +360,7 @@ describe('mergeImportedNotes（匯入，本機優先）', () => {
     const local = {
       entries: [entry('s', '相棒', '搭檔')],
       suggestions: [{ seriesId: 's', 原文: '相棒', 建議譯文: '拍檔', 來源: { pageHash: 'h1' } }],
+      excluded: [],
     };
     const incoming = {
       entries: [entry('s', '相棒', '夥伴'), entry('s', 'ミナ', '美娜', { locked: true })],
@@ -340,6 +368,7 @@ describe('mergeImportedNotes（匯入，本機優先）', () => {
         { seriesId: 's', 原文: '相棒', 建議譯文: '拍檔', 來源: { pageHash: 'h9' } },
         { seriesId: 's', 原文: 'ミナ', 建議譯文: '米娜', 來源: { pageHash: 'h9' }, ignored: true as const },
       ],
+      excluded: [],
     };
 
     expect(mergeImportedNotes(local, incoming, 's')).toEqual({
@@ -349,6 +378,57 @@ describe('mergeImportedNotes（匯入，本機優先）', () => {
         { seriesId: 's', 原文: 'ミナ', 建議譯文: '米娜', 來源: { pageHash: 'h9' }, ignored: true },
         { seriesId: 's', 原文: '相棒', 建議譯文: '夥伴', 來源: { imported: true } },
       ],
+      excluded: [],
     });
+  });
+
+  it('Excluded Term（#214）：本機不記的詞不會因匯入加回來（含建議）；檔案裡不記的詞也加進來，但本機已有條目的不算', () => {
+    const local = { entries: [entry('s', '相棒', '搭檔')], suggestions: [], excluded: ['ドーン'] };
+    const incoming = {
+      entries: [entry('s', 'ドーン', '咚'), entry('s', 'ミナ', '美娜')],
+      suggestions: [{ seriesId: 's', 原文: 'ドーン', 建議譯文: '轟', 來源: { pageHash: 'h9' } }],
+      excluded: ['相棒', 'ホンダナ', 'ドーン'],
+    };
+
+    expect(mergeImportedNotes(local, incoming, 's')).toEqual({
+      entries: [entry('s', '相棒', '搭檔'), entry('s', 'ミナ', '美娜')],
+      suggestions: [],
+      excluded: ['ドーン', 'ホンダナ'],
+    });
+  });
+});
+
+describe('deleteEntry（刪除條目，#214）', () => {
+  const notes = (): SeriesNotes => ({
+    entries: [entry('s', 'タロウ', '太郎', { locked: true }), entry('s', 'ホンダナ', '書架', { 類別: '用語' })],
+    suggestions: [
+      { seriesId: 's', 原文: 'ホンダナ', 建議譯文: '書櫃', 來源: { pageHash: 'h1' } },
+      { seriesId: 's', 原文: 'ホンダナ', 建議譯文: '架子', 來源: { pageHash: 'h2' }, ignored: true },
+      { seriesId: 's', 原文: 'タロウ', 建議譯文: '太朗', 來源: { pageHash: 'h1' } },
+    ],
+    excluded: [],
+  });
+
+  it('勾「之後不要再記」：條目與它還沒處理的建議修改拿掉（忽略過的留著），原文變成不記的詞', () => {
+    expect(deleteEntry(notes(), 'ホンダナ', { exclude: true })).toEqual({
+      entries: [entry('s', 'タロウ', '太郎', { locked: true })],
+      suggestions: [
+        { seriesId: 's', 原文: 'ホンダナ', 建議譯文: '架子', 來源: { pageHash: 'h2' }, ignored: true },
+        { seriesId: 's', 原文: 'タロウ', 建議譯文: '太朗', 來源: { pageHash: 'h1' } },
+      ],
+      excluded: ['ホンダナ'],
+    });
+  });
+
+  it('不勾：條目拿掉，但不記成不記的詞（LLM 之後可以重新記）；locked 的條目也能刪', () => {
+    const result = deleteEntry(notes(), 'タロウ', { exclude: false });
+    expect(result.entries.map((e) => e.原文)).toEqual(['ホンダナ']);
+    expect(result.suggestions.map((s) => s.原文)).toEqual(['ホンダナ', 'ホンダナ']);
+    expect(result.excluded).toEqual([]);
+  });
+
+  it('restoreExcluded：只把原文從不記的詞拿掉，條目不會回來', () => {
+    const deleted = deleteEntry(notes(), 'ホンダナ', { exclude: true });
+    expect(restoreExcluded(deleted, 'ホンダナ')).toEqual({ ...deleted, excluded: [] });
   });
 });
