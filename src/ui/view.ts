@@ -292,22 +292,21 @@ export interface AccountPageView {
   signedOut: string | undefined;
 }
 
-const KEEPS_ORIGINAL = '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音';
+const UNTRANSLATED_PAGES_KEEP_ORIGINAL = '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音';
+
+/** 帳號頁沒登入時「登入」上面的說明：正在用自備金鑰的話說不需要登入。 */
+export const signedOutText = (mode: TranslationMode): string =>
+  mode === 'ownKey'
+    ? `目前用自備金鑰翻譯，不需要登入。想改用內建翻譯的話可以登入，新帳號有 ${FREE_PAGES} 頁免費額度。`
+    : `尚未登入。登入後就能用內建翻譯，新帳號有 ${FREE_PAGES} 頁免費額度。`;
 
 export function accountPageView({ mode, signedIn, quota, justPaid, justSignedIn, hasOrigin }: AccountPageInput): AccountPageView {
-  const none = { notice: undefined, plan: undefined, subscribe: false, ownKeyNote: false, signedOut: undefined };
-  if (!signedIn)
-    return {
-      ...none,
-      signedOut:
-        mode === 'ownKey'
-          ? `目前用自備金鑰翻譯，不需要登入。想改用內建翻譯的話可以登入，新帳號有 ${FREE_PAGES} 頁免費額度。`
-          : `尚未登入。登入後就能用內建翻譯，新帳號有 ${FREE_PAGES} 頁免費額度。`,
-    };
-  if (!quota) return { ...none, ownKeyNote: mode === 'ownKey' };
+  const empty = { notice: undefined, plan: undefined, subscribe: false, ownKeyNote: false, signedOut: undefined };
+  if (!signedIn) return { ...empty, signedOut: signedOutText(mode) };
+  if (!quota) return { ...empty, ownKeyNote: mode === 'ownKey' };
   const usedUp = quota.remaining === 0;
   // 自備金鑰不會用到帳號的頁數：用完了也不必說明
-  const hosted = mode === 'hosted';
+  const usesAccount = mode === 'hosted';
   const meter = (total: number, usedUpText: string) => ({
     left: usedUp ? usedUpText : `剩 ${quota.remaining} / ${total} 頁`,
     fraction: quota.remaining / total,
@@ -317,21 +316,21 @@ export function accountPageView({ mode, signedIn, quota, justPaid, justSignedIn,
     justSignedIn && hasOrigin && !usedUp ? { tone: 'info', title: '✓ 已登入', body: '回到漫畫後會接著翻譯。', backToManga: true } : undefined;
   if (quota.plan === 'free')
     return {
-      ...none,
-      notice: hosted && usedUp ? { tone: 'warn', title: '免費額度已用完', body: `${KEEPS_ORIGINAL}。`, backToManga: false } : signedInNotice,
+      ...empty,
+      notice: usesAccount && usedUp ? { tone: 'warn', title: '免費額度已用完', body: `${UNTRANSLATED_PAGES_KEEP_ORIGINAL}。`, backToManga: false } : signedInNotice,
       plan: { name: '免費', note: `新帳號一次 ${FREE_PAGES} 頁，不會過期`, quotaLabel: '免費額度', ...meter(FREE_PAGES, '已用完') },
       subscribe: true,
-      ownKeyNote: !hosted,
+      ownKeyNote: !usesAccount,
     };
   const notice: AccountPageView['notice'] = justPaid
     ? { tone: 'info', title: '✓ 訂閱完成', body: `每月可翻 ${quota.limit} 頁。`, backToManga: hasOrigin }
-    : hosted && usedUp
-      ? { tone: 'warn', title: `本月額度已用完，${monthDay(quota.resetsAt)}重置`, body: `${KEEPS_ORIGINAL}，重置後就會繼續翻。`, backToManga: hasOrigin }
+    : usesAccount && usedUp
+      ? { tone: 'warn', title: `本月額度已用完，${monthDay(quota.resetsAt)}重置`, body: `${UNTRANSLATED_PAGES_KEEP_ORIGINAL}，重置後就會繼續翻。`, backToManga: hasOrigin }
       : signedInNotice;
   return {
-    ...none,
+    ...empty,
     notice,
     plan: { name: '訂閱（年繳）', note: undefined, quotaLabel: '本月額度', ...meter(quota.limit, '本月已用完') },
-    ownKeyNote: !hosted,
+    ownKeyNote: !usesAccount,
   };
 }

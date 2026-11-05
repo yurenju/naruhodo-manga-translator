@@ -18,9 +18,9 @@ export function blockedPagePath(step: RequestedStep, from?: number): string {
   return step === 'plan' ? `account.html${accountQuery(from)}` : `onboarding.html${onboardingQuery(step, from)}`;
 }
 
-/** 外掛自己的帳號與訂閱頁。 */
-export function accountUrl(from?: number): string {
-  return chrome.runtime.getURL(`account.html${accountQuery(from)}`);
+/** 外掛自己的帳號與訂閱頁（右鍵選單、設定頁的「管理帳號 →」：沒有來源漫畫分頁）。 */
+export function accountUrl(): string {
+  return chrome.runtime.getURL('account.html');
 }
 
 export function blockedPageUrl(step: RequestedStep, from?: number): string {

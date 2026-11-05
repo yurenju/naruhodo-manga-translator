@@ -24,12 +24,13 @@ import {
 } from '../shared/hosted-account-hooks.ts';
 import { saveHostedSession, type HostedSession } from '../shared/hosted-session.ts';
 import type { Message } from '../shared/messages.ts';
-import { paymentChange, watchPendingPayment } from '../shared/payment-return.ts';
+import { ownPaymentChange, watchPendingPayment } from '../shared/payment-return.ts';
+import type { TranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, Callout } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
 import { SignIn } from '../ui/sign-in.tsx';
 import { PaymentUnavailable, SubscribeButton, SubscriptionPrice } from '../ui/subscribe-button.tsx';
-import { accountPageView, accountPlanView } from '../ui/view.ts';
+import { accountPageView, accountPlanView, signedOutText } from '../ui/view.ts';
 
 const LOGO = 'icons/naruhodo-small.svg';
 
@@ -47,9 +48,9 @@ function backToManga(tabId: number) {
 function useAccountPayment(): { paying: boolean; settled: boolean } {
   const [state, setState] = useState({ paying: false, settled: false });
   useEffect(() => {
-    let previous: Parameters<typeof paymentChange>[1];
+    let previous: Parameters<typeof ownPaymentChange>[1];
     return watchPendingPayment((next) => {
-      const { mine, action } = paymentChange('account', previous, next);
+      const { mine, action } = ownPaymentChange('account', previous, next);
       previous = mine;
       if (action === 'wait') setState({ paying: true, settled: false });
       if (action === 'settled') setState({ paying: false, settled: true });
@@ -91,15 +92,13 @@ function SignedOut({ text, onSignedIn }: { text: string; onSignedIn: () => void 
   );
 }
 
-function Account({ session, justSignedIn }: { session: HostedSession; justSignedIn: boolean }) {
-  const mode = useTranslationMode();
+function Account({ session, mode, justSignedIn }: { session: HostedSession; mode: TranslationMode; justSignedIn: boolean }) {
   const quota = useHostedQuota(session);
   const payment = useAccountPayment();
   const [paymentFailed, runPayment] = usePaymentAction();
   const [deleting, setDeleting] = useState<'confirm' | 'busy' | undefined>(undefined);
   const [deleteFailed, setDeleteFailed] = useState(false);
 
-  if (mode === undefined) return null;
   if (deleting)
     return (
       <DeleteAccount
@@ -229,10 +228,10 @@ function App() {
       <main class="ac-card">
         <h1 class="ac-h1">帳號與訂閱</h1>
         {session ? (
-          <Account key={session.token} session={session} justSignedIn={justSignedIn} />
+          <Account key={session.token} session={session} mode={mode} justSignedIn={justSignedIn} />
         ) : (
           <SignedOut
-            text={accountPageView({ mode, signedIn: false, quota: undefined, justPaid: false, justSignedIn: false, hasOrigin: false }).signedOut!}
+            text={signedOutText(mode)}
             onSignedIn={() => setJustSignedIn(true)}
           />
         )}

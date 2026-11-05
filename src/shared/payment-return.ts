@@ -28,7 +28,7 @@ const NOTICE_KEY = 'subscribedNotice';
  * wait＝還在等付款（重新打開這一頁時付款還沒確認，也接著等）；settled＝本來在等、SW 清掉了（確認了，或關掉付款分頁 10 分鐘後放棄），
  * 向 Worker 讀一次方案決定是「訂閱完成」還是回到原本的畫面。mine＝之後要當 previous 傳回來的值。
  */
-export function paymentChange(
+export function ownPaymentChange(
   owner: Exclude<PaymentFrom, 'panel'>,
   previous: PendingPayment | undefined,
   next: PendingPayment | undefined,

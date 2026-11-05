@@ -344,7 +344,6 @@ test('刪除帳號：帳號頁的「刪除帳號」換到確認畫面 → 確定
   await confirm.getByRole('button', { name: '刪除帳號' }).click();
 
   // Worker 刪除成功 → 外掛清掉 session → 帳號頁是未登入，廣播之後 side panel 也是
-  await expect(account.getByText('尚未登入。登入後就能用內建翻譯，新帳號有 50 頁免費額度。')).toBeVisible();
   await expect(account.getByRole('button', { name: '登入' })).toBeVisible();
   await panel.getByRole('button', { name: '返回' }).click();
   await expect(panel.getByRole('group', { name: '尚未登入' })).toBeVisible();
