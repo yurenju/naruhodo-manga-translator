@@ -4,11 +4,12 @@
  * 全部以根元素 .naru-side-panel 為範圍，放進 shadow root（再載入 tokens.css、components.css）就完整。
  */
 import type { ComponentChildren } from 'preact';
-import { useId, useState } from 'preact/hooks';
+import { useEffect, useId, useState } from 'preact/hooks';
 import { MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
 import type { LineRef, ModelStatus, PageView } from '../shared/messages.ts';
 import { megabytes } from '../shared/model-download.ts';
 import type { PageMode } from '../shared/page-mode.ts';
+import { loadPunctuationFont } from '../shared/punctuation-face.ts';
 import type { StaleReason } from '../shared/series-notes.ts';
 import { Badge, Button, Callout, PageHeader, Progress, SegmentedControl, type SegmentOption } from './components.tsx';
 import { OwnKeyDataFlow } from './data-flow.tsx';
@@ -401,6 +402,8 @@ export function SidePanel(props: SidePanelProps) {
   const [furigana, setFurigana] = useState(true);
   const display: Display = pageMode === 'learn' ? { mode: 'learn', furigana } : { mode: 'read', level };
   const [page, setPage] = useState<PanelPage | undefined>(undefined);
+  // 逐字稿譯文的標點字型（side-panel.css 的 .translation）；外掛、產品網站的展示都 render 這個元件，所以在這裡載入
+  useEffect(() => void loadPunctuationFont(), []);
 
   const close = () => setPage(undefined);
   const screen = sidePanelScreen({ setupComplete: props.setupComplete ?? true, page });

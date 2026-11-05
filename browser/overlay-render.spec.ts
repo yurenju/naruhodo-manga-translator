@@ -78,9 +78,13 @@ test.describe('覆蓋渲染（ground truth）', () => {
    * 量某句譯文裡第一個 char 的墨跡（只讓它留下墨跡）。Windows 上把系統字型換成微軟正黑體：Windows 繁中的預設字型，
    * 直書標點最常出問題的就是它（裝了 Noto Sans TC 的電腦也量它）；打包的標點字型照舊排第一。ink 是在字的 em 正方形裡的範圍。
    */
-  async function glyphInk(page: Page, synthetic: string, id: string, char: string) {
-    // 原尺寸顯示，字形才夠大到能量
-    await render(page, synthetic, 880);
+  async function glyphInk(page: Page, synthetic: string, id: string, char: string, 譯文?: string) {
+    // 原尺寸顯示，字形才夠大到能量；給了譯文就換掉那一句（合成頁的參考譯文裡沒有的標點）
+    const pages = groundTruthPageTexts(synthetic).map(({ sub, text }) => ({
+      sub,
+      text: { ...text, balloons: text.balloons.map((b) => (b.id === id && 譯文 !== undefined ? { ...b, 譯文 } : b)) },
+    }));
+    await render(page, synthetic, 880, pages);
     const clip = await page.evaluate(({ id, char }) => {
       const host = document.querySelector('[data-naruhodo-overlay]')!;
       const tx = host.shadowRoot!.querySelector<HTMLElement>(`[data-balloon-id="${id}"], [data-loose-id="${id}"]`)!;
@@ -161,6 +165,27 @@ test.describe('覆蓋渲染（ground truth）', () => {
     const [cx, cy] = [(ink.left + ink.right + 1) / 2, (ink.top + ink.bottom + 1) / 2];
     expect(Math.abs(cx - ink.box / 2)).toBeLessThan(ink.box * 0.15);
     expect(Math.abs(cy - ink.box / 2)).toBeLessThan(ink.box * 0.15);
+  });
+
+  test('p01 的「！」直書時在欄的中間', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    const { vertical, ink } = await glyphInk(page, 'p01-basic', 't1', '！');
+    expect(vertical).toBe('vertical-rl');
+    // 微軟正黑體的直書「！」靠右（偏 28%）；打包的 Noto Sans TC 標點在中間
+    const cx = (ink.left + ink.right + 1) / 2;
+    expect(Math.abs(cx - ink.box / 2)).toBeLessThan(ink.box * 0.12);
+  });
+
+  test('破折號「――」直書時在欄的中間、每個佔滿一格', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/test-overlay.html`);
+    const { vertical, ink } = await glyphInk(page, 'p01-basic', 't1', '―', '早安――今天好早');
+    expect(vertical).toBe('vertical-rl');
+    // 微軟正黑體的 ― 只有半格長、靠右（偏 36%），兩個連起來像一條短線
+    const cx = (ink.left + ink.right + 1) / 2;
+    expect(Math.abs(cx - ink.box / 2)).toBeLessThan(ink.box * 0.12);
+    expect(ink.height).toBeGreaterThan(ink.box * 0.75);
   });
 
   // unit test 驗不到：content script 真的把 PNG data URL 貼在 Page 層的正確位置、縮放跟著 Page 層走

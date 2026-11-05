@@ -24,7 +24,7 @@ const SIDEWAYS = /[～〜ー]+/;
 /**
  * 直排時不轉、用字型直書字形的字：…‥ 在 mixed 下 Chrome 會把橫書字形轉 90 度（Unicode Vertical_Orientation=R），
  * 微軟正黑體、Yu Gothic 的橫書刪節號點在底線上，轉了就偏到欄的左邊。直書字形是置中的；覆蓋層打包的標點字型
- * 一定有（src/content/punctuation-font.ts），不靠系統字型。
+ * 一定有（src/shared/punctuation-font.ts），不靠系統字型。
  */
 const UPRIGHT = /[…‥]+/;
 

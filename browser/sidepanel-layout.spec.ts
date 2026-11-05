@@ -52,7 +52,7 @@ test('窄寬度下 side panel 沒有水平捲軸', async ({ context, sw, extensi
 });
 
 /**
- * 字型：side panel 只用系統字型（src/shared/tokens.css）。清單怎麼排由 src/shared/tokens.test.ts 檢查；
+ * 字型：side panel 只用系統字型（src/shared/tokens.css），譯文的幾個標點例外（打包的 Noto Sans TC）。清單怎麼排由 src/shared/tokens.test.ts 檢查；
  * 實際畫字用了哪個字型（缺字時 Chrome 會改用別的字型補、system-ui 會跟著作業系統語系），要真的 Chrome 才看得到。
  * 只在 Windows 與 macOS 跑：CI 的 Linux 沒有這兩個系統的字型，結果沒有意義。
  */
@@ -76,10 +76,13 @@ test('逐字稿的日文全部用日文系統字型、中文全部用中文系�
   };
   const japanese = ['Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic'];
   const chinese = ['PingFang TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei'];
+  // 譯文的標點用打包的 Noto Sans TC（src/shared/punctuation-face.ts）；CDP 報的是字型檔裡的名稱
+  const punctuation = 'Noto Sans TC';
   const ja = await fontsFor('ja');
   const zh = await fontsFor('zh-Hant');
   expect(ja.filter((f) => !japanese.includes(f)), `日文用了 ${ja.join('、')}`).toEqual([]);
-  expect(zh.filter((f) => !chinese.includes(f)), `中文用了 ${zh.join('、')}`).toEqual([]);
+  expect(zh.filter((f) => !chinese.includes(f) && f !== punctuation), `中文用了 ${zh.join('、')}`).toEqual([]);
+  expect(zh, `中文用了 ${zh.join('、')}`).toContain(punctuation);
 });
 
 test.describe('逐字稿出來之前', () => {
