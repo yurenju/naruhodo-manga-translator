@@ -13,9 +13,10 @@ export interface SiteCopy {
   hero: { title: string; lead: string; install: string; pricing: string };
   /** 首頁互動展示（#109）外框上的文字；展示裡面的外掛介面只有繁體中文 */
   demo: { caption: string; hint: string; replay: string };
+  /** 步驟內文的 `{shortcut}` 換成外掛快捷鍵的按鍵（Mac 是 ⌥⇧M，其他平台 Alt+Shift+M） */
   how: { title: string; steps: readonly { title: string; body: string }[] };
   /**
-   * 試翻頁（#169）。步驟內文的 `{puzzle}` 換成 Chrome 工具列的拼圖圖示、`{shortcut}` 換成 Alt+Shift+M 的按鍵；
+   * 試翻頁（#169）。步驟內文的 `{puzzle}` 換成 Chrome 工具列的拼圖圖示、`{shortcut}` 換成外掛快捷鍵的按鍵；
    * 漫畫本身（Practice Spread）是日文，不跟著語言換。
    */
   try: { title: string; lead: string; free: string; steps: readonly { title: string; body: string }[]; notInstalled: string; install: string; spreadAlt: string; puzzleLabel: string };
@@ -70,7 +71,7 @@ export const copy: Record<Locale, SiteCopy> = {
       title: '怎麼用',
       steps: [
         { title: '安裝並登入', body: '輸入 email，收到驗證碼貼回來就登入，不用設定密碼。' },
-        { title: '打開你在看的漫畫', body: '在漫畫頁上點外掛圖示，或按 Alt+Shift+M。' },
+        { title: '打開你在看的漫畫', body: '在漫畫頁上點外掛圖示，或按 {shortcut}。' },
         { title: '對照著看', body: '譯文疊在對話框上，原文與讀音都留著；已經翻過的頁面再看不會再算一次。' },
       ],
     },
@@ -163,7 +164,7 @@ export const copy: Record<Locale, SiteCopy> = {
       title: 'How it works',
       steps: [
         { title: 'Install and sign in', body: 'Enter your email and paste back the code we send. No password needed.' },
-        { title: "Open the manga you're reading", body: 'On the page, click the extension icon or press Alt+Shift+M.' },
+        { title: "Open the manga you're reading", body: 'On the page, click the extension icon or press {shortcut}.' },
         { title: 'Read side by side', body: 'Translations sit on the balloons, with the original text and readings kept. Revisiting a translated page never counts again.' },
       ],
     },
