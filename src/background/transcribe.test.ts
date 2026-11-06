@@ -1842,3 +1842,28 @@ describe('直式捲動的長 Page（spec #142）', () => {
     expect(published.at(-1)).toEqual([]);
   });
 });
+
+describe('OCR 用 Series Notes 的名字修形近字（#228）', () => {
+  const entry = (原文: string, seriesId = 'series-1'): NotesEntry => ({ seriesId, 原文, 讀音: '', 譯文: 原文, 類別: '人名', locked: false });
+
+  it('本機流水線的請求帶這部 Series 的 Notes 原文，別部 Series 的不帶', async () => {
+    const { transcriber, deps } = setup({ notes: memoryNotes([entry('桜井'), entry('柏木'), entry('別人', 'series-2')]) });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    expect(vi.mocked(deps.analyze).mock.calls.map(([request]) => request.notesNames)).toEqual([['桜井', '柏木']]);
+  });
+
+  it('Series 還在猜時先跑的 OCR 拿不到 Notes，不帶名字', async () => {
+    let decide!: (seriesId: string) => void;
+    const decided = new Promise<string>((r) => (decide = r));
+    const { transcriber, deps } = setup({ getSeriesId: () => decided, isSeriesPending: () => true, notes: memoryNotes([entry('桜井')]) });
+
+    const done = transcriber.update(1, [thumb('a1')], capture);
+    await vi.waitFor(() => expect(deps.analyze).toHaveBeenCalledTimes(1));
+    decide('series-1');
+    await done;
+
+    expect(vi.mocked(deps.analyze).mock.calls[0]![0].notesNames).toBeUndefined();
+  });
+});

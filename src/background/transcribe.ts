@@ -363,7 +363,9 @@ export function createTranscriber(deps: TranscriberDeps) {
     // 長 Page：已收 Line 的外框在這時才取，前一截剛收的也算進去
     const request = record.long ? { ...job.request, collected: collectedBoxes(record.text ?? EMPTY_TEXT) } : job.request;
     try {
-      text = await deps.analyze(request);
+      // OCR 讀成形近字的名字用 Notes 換回來（#228）；Series 還在猜（#186）時還沒有 Series，就不修
+      const notesNames = record.seriesId === undefined ? [] : (await ledger.list(record.seriesId)).map((e) => e.原文);
+      text = await deps.analyze(notesNames.length > 0 ? { ...request, notesNames } : request);
       trace('analyze:done', { pageHash: record.pageHash, anchorId: record.request.candidate.anchorId, ms: Date.now() - startedAt, balloons: text.balloons.length, looseText: text.looseText.length });
     } catch (e) {
       trace('analyze:error', { pageHash: record.pageHash, ms: Date.now() - startedAt, error: e });

@@ -10,9 +10,20 @@
 import type { RatioRect } from '../shared/page-text.ts';
 import type { OrtEngine } from './ort-engine.ts';
 import { createPageImage } from './page-image.ts';
-import type { Detection, PageImage } from './pipeline/analyze.ts';
+import type { Detection, PageImage, Recognized } from './pipeline/analyze.ts';
 import { area, intersection, type PixelBox } from './pipeline/boxes.ts';
+import type { Candidate } from './pipeline/name-fix.ts';
 import type { GrayImage } from './pipeline/reading-order.ts';
+
+/**
+ * 一段的 OCR 結果。ocrConfidence：真模型讀到的非標點字最低信心（ADR 0009）。
+ * candidates（選填，手寫的，#228）：第幾個字（code point）→ 那一步的候選，測修名字用；`npm run record:ocr` 重錄時照原文保留。
+ */
+export interface RecordedText {
+  原文: string;
+  ocrConfidence?: number;
+  candidates?: Record<string, Candidate[]>;
+}
 
 /** 真模型在一個範圍（整張合成圖，或 Spread 的一頁）上的結果；框是相對這個範圍的比例。 */
 export interface RecordedOcr {
@@ -20,9 +31,8 @@ export interface RecordedOcr {
   id: string;
   /** 合成圖裡的範圍 [x, y, w, h]（像素）。 */
   rect: PixelBox;
-  /** ocrConfidence：真模型讀到的非標點字最低信心（ADR 0009）。 */
-  balloons: { balloonBbox: RatioRect; textBbox: RatioRect; 原文: string; ocrConfidence?: number }[];
-  looseText: { bbox: RatioRect; 原文: string; ocrConfidence?: number }[];
+  balloons: ({ balloonBbox: RatioRect; textBbox: RatioRect } & RecordedText)[];
+  looseText: ({ bbox: RatioRect } & RecordedText)[];
 }
 
 const THUMB = 32;
@@ -106,7 +116,7 @@ export async function createFakeEngine(recorded: readonly RecordedOcr[], imageUr
 /** 認頁之後的部分：錄製的框換回 Page 像素當成偵測結果，recognize 用框對回錄到的字（unit test 直接用 Node 版的 matcher）。 */
 export function engineFrom(match: ReturnType<typeof createPageMatcher>, delayMs = 0): OrtEngine {
   /** detect 認出的頁上每段文字（Page 像素），給接下來的 recognize 對回原文。 */
-  const recognized = new WeakMap<PageImage, { textBbox: PixelBox; 原文: string; ocrConfidence?: number }[]>();
+  const recognized = new WeakMap<PageImage, ({ textBbox: PixelBox } & RecordedText)[]>();
 
   return {
     executionProvider: 'wasm',
@@ -121,8 +131,8 @@ export function engineFrom(match: ReturnType<typeof createPageMatcher>, delayMs 
       const toPage = ({ x, y, w, h }: RatioRect): PixelBox => [ax + x * aw, ay + y * ah, w * aw, h * ah];
       const same = (a: RatioRect, b: RatioRect) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
       recognized.set(image, [
-        ...balloons.map((b) => ({ textBbox: toPage(b.textBbox), 原文: b.原文, ocrConfidence: b.ocrConfidence })),
-        ...looseText.map((l) => ({ textBbox: toPage(l.bbox), 原文: l.原文, ocrConfidence: l.ocrConfidence })),
+        ...balloons.map(({ textBbox, ...text }) => ({ ...text, textBbox: toPage(textBbox) })),
+        ...looseText.map(({ bbox, ...text }) => ({ ...text, textBbox: toPage(bbox) })),
       ]);
       return [
         // 沒有外框的 Balloon（偵測到 text_bubble、沒有 bubble）錄下來時 balloonBbox 等於 textBbox
@@ -136,13 +146,18 @@ export function engineFrom(match: ReturnType<typeof createPageMatcher>, delayMs 
     async recognize(image, boxes) {
       const texts = recognized.get(image) ?? [];
       // 只錄了每段的最低信心，所以每個字都給這個值：analyzePage 算出來的最低信心就等於錄下來的
-      return boxes.map((box) => {
-        let best: { 原文: string; ocrConfidence?: number; cover: number } = { 原文: '', cover: 0 };
+      return boxes.map((box): Recognized => {
+        let best: RecordedText & { cover: number } = { 原文: '', cover: 0 };
         for (const t of texts) {
           const cover = intersection(box, t.textBbox) / area(t.textBbox);
           if (cover > best.cover) best = { ...t, cover };
         }
-        return { text: best.原文, confidences: [...best.原文].map(() => best.ocrConfidence ?? 1) };
+        const chars = [...best.原文];
+        return {
+          text: best.原文,
+          confidences: chars.map(() => best.ocrConfidence ?? 1),
+          ...(best.candidates ? { candidates: chars.map((_, i) => best.candidates![i]) } : {}),
+        };
       });
     },
   };
