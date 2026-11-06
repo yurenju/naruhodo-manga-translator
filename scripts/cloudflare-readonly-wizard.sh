@@ -202,11 +202,12 @@ finish() {
 # 隨時可以 Ctrl-C，之後重跑：已經寫好的值按 Enter 沿用。
 # ──────────────────────────────────────────────────────────────────────────
 
+source "$(dirname "${BASH_SOURCE[0]}")/wizard-helpers.sh"
+
 ENV_FILE="$HOME/.config/naruhodo/cloudflare-readonly.env"
 mkdir -p "$(dirname "$ENV_FILE")"
 
 WORKER_NAME='naruhodo-api'
-WORKER_CONFIG='worker/wrangler.jsonc'
 TOKEN_NAME='naruhodo-local-readonly'
 OP_ITEM='naruhodo-cloudflare-readonly'
 CF_API='https://api.cloudflare.com/client/v4'
@@ -235,13 +236,27 @@ cf() {
 cf_ok() { [[ "$HTTP_STATUS" =~ ^2 ]] && [[ "$(json_get 'success')" == true ]]; }
 cf_errors() { json_get 'errors.map(e => e.code + " " + e.message).join("; ")'; }
 
-# clear_clipboard：token 複製過之後清掉剪貼簿。
-clear_clipboard() {
-  if command -v clip.exe >/dev/null 2>&1; then printf '' | clip.exe
-  elif command -v pbcopy >/dev/null 2>&1; then printf '' | pbcopy
-  elif command -v wl-copy >/dev/null 2>&1; then wl-copy --clear
-  elif command -v xclip >/dev/null 2>&1; then printf '' | xclip -selection clipboard
-  fi 2>/dev/null || true
+# cf_upload_probe：上傳一個不相干的探測用 Worker（不碰 naruhodo-api），設定 HTTP_STATUS 與 RESPONSE。
+# 唯讀 token 應該被拒絕；萬一成功，呼叫端會馬上刪掉它。
+PROBE_WORKER='naruhodo-readonly-probe'
+cf_upload_probe() {
+  local out hdr dir
+  out=$(mktemp); hdr=$(mktemp); dir=$(mktemp -d)
+  printf 'Authorization: Bearer %s\n' "$CF_TOKEN" > "$hdr"
+  printf 'export default { fetch() { return new Response("probe"); } };\n' > "$dir/probe.js"
+  HTTP_STATUS=$(curl -sS -o "$out" -w '%{http_code}' -X PUT -H "@$hdr" \
+    -F 'metadata={"main_module":"probe.js","compatibility_date":"2026-10-01"};type=application/json' \
+    -F "probe.js=@$dir/probe.js;type=application/javascript+module" \
+    "$CF_API/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$PROBE_WORKER") || HTTP_STATUS=000
+  RESPONSE=$(cat "$out"); rm -rf "$out" "$hdr" "$dir"
+}
+
+# logged_in_to_wrangler：wrangler login 留下的 OAuth 登入還在。先把輸出存起來再比對：
+# 直接 `whoami | grep -q` 的話，pipefail 會把 whoami 的非零 exit code 或 SIGPIPE 當成「沒比對到」。
+logged_in_to_wrangler() {
+  local output
+  output=$(wrangler_unauthed whoami 2>&1 || true)
+  [[ "$output" != *"not authenticated"* ]]
 }
 
 # wrangler_unauthed ARGS…：不帶任何 token 跑 wrangler，看的是 wrangler login 留下的 OAuth 登入。
@@ -256,10 +271,8 @@ for tool in curl node op; do
   command -v "$tool" >/dev/null 2>&1 || { warn "需要 $tool，請先安裝"; exit 1; }
 done
 [[ -x node_modules/.bin/wrangler ]] || { warn "repo 裡還沒裝套件，先跑 npm ci"; exit 1; }
-D1_DATABASE_ID=$(node -e '
-  const m = /"database_id": "([0-9a-f-]{36})"/.exec(require("fs").readFileSync(process.argv[1], "utf8"));
-  process.stdout.write(m ? m[1] : "");' "$WORKER_CONFIG")
-[[ -n "$D1_DATABASE_ID" ]] || { warn "$WORKER_CONFIG 沒有正式的 D1 database_id"; exit 1; }
+D1_DATABASE_ID=$(production_database_id)
+[[ -n "$D1_DATABASE_ID" ]] || { warn "worker/wrangler.jsonc 沒有正式的 D1 database_id"; exit 1; }
 
 banner "本機唯讀 Cloudflare token（ADR 0011）"
 
@@ -326,8 +339,7 @@ else
     warn "參照的開頭是 op://，請再複製一次"
   done
   write_env CLOUDFLARE_API_TOKEN "$OP_REF"
-  clear_clipboard
-  note "已清空剪貼簿。"
+  copy_to_clipboard "" 2>/dev/null && note "已清空剪貼簿。"
 fi
 pause
 
@@ -350,7 +362,7 @@ note "✓ op run 拿得到 token，而且有效"
 pause
 
 # ── 5 ────────────────────────────────────────────────────────────────────
-stage "實測：D1 能讀、不能寫（自動）"
+stage "實測：能讀、不能寫（自動）"
 say "1. 對 production D1 跑 SELECT 1。"
 cf POST "/d1/database/$D1_DATABASE_ID/query" '{"sql":"SELECT 1 AS ok"}'
 if cf_ok; then
@@ -359,27 +371,36 @@ else
   warn "SELECT 失敗（HTTP $HTTP_STATUS $(cf_errors)）：回第 2 步確認 token 有 D1 → Read"
   exit 1
 fi
-say "2. 送一個真的會改資料的語句（建一張表），預期被拒絕。"
-note "token 設對的話不會有任何改動；萬一成功了，wizard 會馬上把表刪掉。"
-if confirm "要跑寫入測試嗎？"; then
-  cf POST "/d1/database/$D1_DATABASE_ID/query" '{"sql":"CREATE TABLE _readonly_probe (x INTEGER)"}'
-  if cf_ok; then
-    cf POST "/d1/database/$D1_DATABASE_ID/query" '{"sql":"DROP TABLE _readonly_probe"}'
-    warn "這把 token 能寫入 D1！已經刪掉測試表。到後台把這把 token 的 D1 改成 Read（或刪掉重建），再重跑"
-    exit 1
-  fi
-  note "✓ 寫入被拒絕（HTTP $HTTP_STATUS $(cf_errors)）"
-else
-  SKIPPED+=("D1 寫入測試沒跑：重跑這個 wizard 的第 5 步")
+say "接下來兩個寫入一定要被拒絕，這是整個設定的重點，所以不能跳過。token 設對的話不會有任何改動；"
+say "萬一成功了，wizard 會馬上刪掉建出來的東西，然後停下來。"
+say "2. 對 D1 送一個真的會改資料的語句（建一張表）。"
+cf POST "/d1/database/$D1_DATABASE_ID/query" '{"sql":"CREATE TABLE _readonly_probe (x INTEGER)"}'
+if cf_ok; then
+  cf POST "/d1/database/$D1_DATABASE_ID/query" '{"sql":"DROP TABLE _readonly_probe"}'
+  warn "這把 token 能寫入 D1！已經刪掉測試表。到後台把這把 token 的 D1 改成 Read（或刪掉重建），再重跑"
+  exit 1
 fi
+note "✓ D1 寫入被拒絕（HTTP $HTTP_STATUS $(cf_errors)）"
+say "3. 上傳一個不相干的探測用 Worker $PROBE_WORKER（不碰 $WORKER_NAME），測部署權限。"
+cf_upload_probe
+if [[ "$HTTP_STATUS" =~ ^2 ]]; then
+  cf DELETE "/workers/scripts/$PROBE_WORKER"
+  warn "這把 token 能部署 Worker！已經刪掉 $PROBE_WORKER。到後台拿掉這把 token 的 Workers Scripts 權限（或刪掉重建），再重跑"
+  exit 1
+fi
+note "✓ 部署被拒絕（HTTP $HTTP_STATUS $(cf_errors)）"
+note "Worker secrets 的寫入跟部署是同一個權限（Workers Scripts Edit），所以也一併確認了。"
 pause
 
 # ── 6 ────────────────────────────────────────────────────────────────────
 stage "實測：log（自動）"
 say "1. 查 $WORKER_NAME 最近一小時的 Workers Logs（npm run prod:logs 用的 API）。"
 while :; do
-  now=$(node -e 'process.stdout.write(String(Date.now()))')
-  cf POST /workers/observability/telemetry/query "{\"queryId\":\"naruhodo-wizard-check\",\"view\":\"events\",\"dry\":true,\"limit\":1,\"timeframe\":{\"from\":$((now - 3600000)),\"to\":$now},\"parameters\":{\"datasets\":[],\"filters\":[{\"key\":\"\$workers.scriptName\",\"operation\":\"eq\",\"type\":\"string\",\"value\":\"$WORKER_NAME\"}],\"limit\":1}}"
+  # 跟 prod:logs 用同一個 body（scripts/prod-access.ts 的 logsQueryBody）
+  query=$(node --input-type=module -e '
+    import { logsQueryBody } from "./scripts/prod-access.ts";
+    process.stdout.write(JSON.stringify(logsQueryBody({ sinceMs: 3_600_000, limit: 1 }, Date.now())));')
+  cf POST /workers/observability/telemetry/query "$query"
   if [[ "$HTTP_STATUS" =~ ^2 ]]; then
     note "✓ 查得到（Worker 開了 observability 之後才會有 log；現在可能還是空的）"
     break
@@ -412,7 +433,7 @@ pause
 stage "登出 wrangler"
 say "wrangler login 留下的 OAuth 登入有整個帳號的寫入權。登出後這台電腦對 Cloudflare 只能透過唯讀 token 讀。"
 warn "整台電腦生效：其他專案如果也靠 wrangler login，之後要各自設定 token（可以照 docs/agents/prod-access.md 的做法）。"
-if wrangler_unauthed whoami 2>&1 | grep -qi 'not authenticated'; then
+if ! logged_in_to_wrangler; then
   note "wrangler 已經沒有登入。"
 elif confirm "要登出 wrangler 嗎？（會向 Cloudflare 撤銷這組 OAuth 登入）"; then
   wrangler_unauthed logout || true
@@ -436,7 +457,7 @@ if (( ${#leftover[@]} )); then
     SKIPPED+=("舊的 wrangler OAuth 登入檔還在：${leftover[*]}")
   fi
 fi
-if wrangler_unauthed whoami 2>&1 | grep -qi 'not authenticated'; then
+if ! logged_in_to_wrangler; then
   note "✓ wrangler 沒有任何登入"
 else
   warn "wrangler whoami 看起來還有登入"

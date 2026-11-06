@@ -8,7 +8,7 @@
 - **用 GitHub Actions 部署，不用 Cloudflare 的 Git 整合（Workers Builds）。** Workers Builds 收到 push 就部署，不會等 GitHub 的 CI 通過；部署設定也只在 Cloudflare 後台。
 - **Worker 的部署順序是 migrations → deploy → 健康檢查（`GET /v1/health`，會查一次 D1）。** 健康檢查失敗就 `wrangler rollback` 退回上一版程式碼。`concurrency` 讓連續合併的部署排隊，不中斷跑到一半的 migration。
 - **live 的 key 只放在 Cloudflare 的 Worker secrets。** `CLAUDE_API_KEY`、`RESEND_API_KEY`、`PADDLE_API_KEY`、`PADDLE_PRICE_ID`、`PADDLE_WEBHOOK_SECRET` 本機與 GitHub 都不留。（原本由 `scripts/production-wizard.sh` 直接 pipe 給 `wrangler secret put`；ADR 0011 起本機沒有寫入權，改成在 Cloudflare 後台設定。）GitHub 只放一個權限受限的 `CLOUDFLARE_API_TOKEN`（只能部署這兩個 Worker 與 D1）；Paddle 的 client-side token 會出現在網頁原始碼，放 GitHub variables。
-- **部署 job 要 `vars.DEPLOY_ENABLED == 'true'` 才跑。** 由 wizard 最後一步打開：D1、secrets、網域都設好之前，合併不會部署出一個不能用的 Worker。
+- **部署 job 要 `vars.DEPLOY_ENABLED == 'true'` 才跑。** D1 與 GitHub 的 token 設好之前，合併不會部署出一個連不上資料庫的 Worker。原本由 wizard 最後一步、secrets 都設好之後才打開；ADR 0011 起本機不能部署，改成第 5 步打開，由 CI 做第一次部署（見 ADR 0011）。
 
 ## 不直覺的地方
 

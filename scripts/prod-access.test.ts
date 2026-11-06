@@ -23,6 +23,10 @@ describe('readOnlySqlProblem', () => {
     "SELECT * FROM audit WHERE note = 'delete; drop table'",
     'SELECT "update" FROM t',
     "SELECT replace(email, '@', ' at ') FROM accounts",
+    "SELECT 'it''s; DELETE' AS note",
+    'SELECT [weird;name] FROM t',
+    'PRAGMA user_version',
+    'PRAGMA main.index_list(accounts)',
   ])('放行唯讀語句：%s', (sql) => {
     expect(readOnlySqlProblem(sql)).toBeUndefined();
   });
@@ -35,6 +39,13 @@ describe('readOnlySqlProblem', () => {
     ['WITH x AS (SELECT 1) INSERT INTO t SELECT * FROM x', 'INSERT'],
     ['PRAGMA user_version = 3', 'PRAGMA'],
     ['WITH x AS (SELECT 1) REPLACE INTO t SELECT * FROM x', 'REPLACE'],
+    // 註解裡的引號不能把後面的語句藏成字串（code review 找到的繞過）
+    ["SELECT 1 -- '\n; DELETE FROM accounts; --'", '一個語句'],
+    ["SELECT 1 /* ' */ ; DELETE FROM accounts; /* ' */", '一個語句'],
+    ["SELECT 1 -- '\nUNION SELECT 1 FROM (DELETE FROM accounts) --'", 'DELETE'],
+    ["SELECT 'unterminated", '引號'],
+    ['PRAGMA foreign_keys(0)', 'PRAGMA foreign_keys'],
+    ['PRAGMA main.user_version(3)', 'PRAGMA user_version'],
     ['/* SELECT */ DROP TABLE accounts', 'DROP'],
     ['', '空'],
   ])('擋下：%s', (sql, reason) => {

@@ -15,7 +15,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BrowserContext, FrameLocator, Page } from '@playwright/test';
-import { parseEnvFile } from '../../scripts/paddle-tunnel.ts';
+import { parseEnvFile } from '../../scripts/env-file.ts';
 import { activateOnMockSite, expect, openSettings, selectTranslationMode, test } from '../fixtures.ts';
 import { signInFromPanel } from '../sign-in.ts';
 import { startWorker } from '../worker.ts';

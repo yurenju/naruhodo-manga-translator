@@ -31,30 +31,64 @@ export function readonlyEnvProblem(env: Record<string, string> | undefined): str
 // REPLACE 只擋 `REPLACE INTO`：replace() 是常用的字串函式
 const WRITE_KEYWORDS = /\b(INSERT|UPDATE|DELETE|REPLACE(?=\s+INTO\b)|UPSERT|CREATE|DROP|ALTER|ATTACH|DETACH|VACUUM|REINDEX|ANALYZE)\b/i;
 
-/** 拿掉字串、識別字引號與註解裡的內容，關鍵字檢查才不會被 `WHERE note = 'delete'` 誤判或被註解藏住。 */
-function stripLiteralsAndComments(sql: string): string {
-  return sql
-    .replace(/'(?:[^']|'')*'/g, "''")
-    .replace(/"(?:[^"]|"")*"/g, '""')
-    .replace(/`[^`]*`/g, '``')
-    .replace(/\[[^\]]*\]/g, '[]')
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ');
+/** 成對的引號：字串（'）、識別字（" ` [ ]）。 */
+const QUOTE_CLOSE: Record<string, string> = { "'": "'", '"': '"', '`': '`', '[': ']' };
+
+/**
+ * 由左到右掃一次，把字串、識別字引號與註解的內容換成空白，只留下 SQLite 會當成程式碼的部分；引號沒成對回傳 undefined。
+ * 引號與註解要一起處理：先拿掉其中一種的話，`-- '` 這種註解裡的引號會把後面的語句吃成字串，讓寫入躲過檢查。
+ */
+function codeOnly(sql: string): string | undefined {
+  let code = '';
+  let i = 0;
+  while (i < sql.length) {
+    const char = sql.charAt(i);
+    if (sql.startsWith('--', i)) {
+      const end = sql.indexOf('\n', i);
+      i = end === -1 ? sql.length : end;
+      code += ' ';
+    } else if (sql.startsWith('/*', i)) {
+      const end = sql.indexOf('*/', i + 2);
+      i = end === -1 ? sql.length : end + 2;
+      code += ' ';
+    } else if (QUOTE_CLOSE[char] !== undefined) {
+      const close = QUOTE_CLOSE[char];
+      let j = i + 1;
+      // ' " ` 用連續兩個表示自己（'it''s'）；[ ] 不能跳脫
+      while (j < sql.length && !(sql[j] === close && (close === ']' || sql[j + 1] !== close))) j += sql[j] === close ? 2 : 1;
+      if (j >= sql.length) return undefined;
+      code += `${char}${close}`;
+      i = j + 1;
+    } else {
+      code += char;
+      i += 1;
+    }
+  }
+  return code;
 }
+
+/** 帶參數也只是讀取的 PRAGMA（查結構與檢查）。其他 PRAGMA 只能不帶參數讀目前的值：`PRAGMA x(0)` 跟 `PRAGMA x = 0` 一樣會設定。 */
+const READ_PRAGMAS_WITH_ARGUMENT = ['table_info', 'table_xinfo', 'table_list', 'index_list', 'index_info', 'index_xinfo', 'foreign_key_list', 'foreign_key_check'];
 
 /**
  * SQL 是不是只讀；不是的話回傳原因。token 本身就不能寫，這是第二道防線（ADR 0011）：
  * 只接受單一個 SELECT／WITH／EXPLAIN／PRAGMA 語句，WITH 後面不能接寫入，PRAGMA 不能設定值。
  */
 export function readOnlySqlProblem(sql: string): string | undefined {
-  const code = stripLiteralsAndComments(sql).trim().replace(/;\s*$/, '');
+  const stripped = codeOnly(sql);
+  if (stripped === undefined) return '引號沒有成對';
+  const code = stripped.trim().replace(/;\s*$/, '');
   if (!code) return 'SQL 是空的';
   if (code.includes(';')) return '一次只能一個語句';
   const first = /^\w+/.exec(code)?.[0].toUpperCase();
   if (!first || !['SELECT', 'WITH', 'EXPLAIN', 'PRAGMA'].includes(first)) return `只接受 SELECT、WITH、EXPLAIN、PRAGMA 開頭的語句（收到 ${first ?? '空白'}）`;
   const write = WRITE_KEYWORDS.exec(code);
   if (write) return `唯讀：不能有 ${write[0].toUpperCase()}`;
-  if (first === 'PRAGMA' && code.includes('=')) return '唯讀：PRAGMA 不能設定值';
+  if (first === 'PRAGMA') {
+    if (code.includes('=')) return '唯讀：PRAGMA 不能設定值';
+    const name = /^PRAGMA\s+(?:\w+\.)?(\w+)/i.exec(code)?.[1]?.toLowerCase();
+    if (code.includes('(') && !READ_PRAGMAS_WITH_ARGUMENT.includes(name ?? '')) return `唯讀：PRAGMA ${name ?? ''} 帶參數會設定值，只能不帶參數讀`;
+  }
   return undefined;
 }
 
@@ -111,15 +145,22 @@ interface LogEvent {
   $metadata?: { level?: string; message?: unknown; error?: unknown; url?: string; statusCode?: number };
 }
 
+/** events 陣列：文件寫的是 result.events.events，也接受 result.events 直接是陣列。 */
+function logEventsIn(response: unknown): LogEvent[] | undefined {
+  const field = (value: unknown, key: string): unknown => (typeof value === 'object' && value !== null ? (value as Record<string, unknown>)[key] : undefined);
+  const events = field(field(response, 'result'), 'events');
+  const list = Array.isArray(events) ? events : field(events, 'events');
+  return Array.isArray(list) ? (list as LogEvent[]) : undefined;
+}
+
 /**
  * telemetry query 的回應整理成一行一筆：`時間 等級 訊息`。文件沒寫清楚回應的結構，
  * 找不到 events 陣列就回傳 undefined，呼叫端改印原始 JSON。
  */
 export function formatLogEvents(response: unknown): string[] | undefined {
-  const result = (response as { result?: { events?: { events?: unknown } | unknown[] } })?.result;
-  const raw = Array.isArray(result?.events) ? result.events : (result?.events as { events?: unknown } | undefined)?.events;
-  if (!Array.isArray(raw)) return undefined;
-  return (raw as LogEvent[])
+  const events = logEventsIn(response);
+  if (!events) return undefined;
+  return events
     .slice()
     .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
     .map((event) => {

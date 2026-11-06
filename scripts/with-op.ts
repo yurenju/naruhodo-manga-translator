@@ -12,7 +12,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { TEST_API_KEY_ENV } from '../src/testing/test-api-key.ts';
-import { parseEnvFile } from './paddle-tunnel.ts';
+import { parseEnvFile } from './env-file.ts';
 
 export const OP_ENV_FILE = join(homedir(), '.config', 'naruhodo', 'op.env');
 

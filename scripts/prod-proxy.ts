@@ -9,8 +9,8 @@
 import { spawn } from 'node:child_process';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
-import { experimental_readRawConfig } from 'wrangler';
 import { IDLE_TIMEOUT_MS, isLocalClient, logsQueryBody, parseLogsRequest, PROXY_HOST, PROXY_PORT, readOnlySqlProblem, WORKER_NAME } from './prod-access.ts';
+import { productionDatabaseId } from './production-config.ts';
 
 const token = process.env.CLOUDFLARE_API_TOKEN;
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -19,8 +19,7 @@ if (!token || !accountId) {
   process.exit(1);
 }
 
-const { rawConfig } = experimental_readRawConfig({ config: 'worker/wrangler.jsonc' });
-const databaseId = rawConfig.d1_databases?.[0]?.database_id;
+const databaseId = productionDatabaseId();
 if (!databaseId) {
   console.error('worker/wrangler.jsonc 最上層沒有 D1 的 database_id');
   process.exit(1);
@@ -63,7 +62,7 @@ function touch(): void {
   }, IDLE_TIMEOUT_MS);
 }
 
-function tail(req: IncomingMessage, res: ServerResponse): void {
+function tail(res: ServerResponse): void {
   // wrangler 從這個行程繼承 token；用 node 直接跑 wrangler.js，Windows 不必經過 npx.cmd
   const wrangler = join('node_modules', 'wrangler', 'bin', 'wrangler.js');
   const child = spawn(process.execPath, [wrangler, 'tail', WORKER_NAME, '--format', 'json'], {
@@ -75,19 +74,21 @@ function tail(req: IncomingMessage, res: ServerResponse): void {
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
   child.stdout.pipe(res, { end: false });
   child.stderr.on('data', (chunk) => process.stderr.write(chunk));
+  // 用 res 的 close 判斷客戶端（prod:tail）斷線：req 的 close 在 body 讀完時就觸發了，不代表斷線
   const stop = () => child.kill();
-  req.on('close', stop);
+  res.on('close', stop);
   child.on('exit', (code) => {
     activeTails -= 1;
     touch();
-    req.off('close', stop);
+    res.off('close', stop);
     res.end(code ? `${JSON.stringify({ error: `wrangler tail 結束（exit ${code}），錯誤在 prod:connect 的終端機` })}\n` : undefined);
   });
 }
 
 const server = createServer(async (req, res) => {
-  touch();
+  // 被拒絕的請求不算活動：不然瀏覽器裡的網頁一直打，proxy 就永遠不會閒置結束
   if (!isLocalClient(req.headers)) return send(res, 403, { error: '只接受本機 CLI 的請求（npm run prod:sql／prod:logs／prod:tail）' });
+  touch();
   if (req.method !== 'POST') return send(res, 405, { error: '只接受 POST' });
   const body = await readJson(req);
   if (body === undefined) return send(res, 400, { error: 'body 不是 JSON' });
@@ -111,7 +112,7 @@ const server = createServer(async (req, res) => {
       }
       case '/tail':
         console.log('tail 開始');
-        return tail(req, res);
+        return tail(res);
       default:
         return send(res, 404, { error: '只有 /sql、/logs、/tail' });
     }

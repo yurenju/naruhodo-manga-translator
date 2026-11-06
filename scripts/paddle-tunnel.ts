@@ -18,6 +18,7 @@ import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseEnvFile } from './env-file.ts';
 
 const WEBHOOK_PATH = '/webhooks/paddle';
 export const PADDLE_SANDBOX_ENV_FILE = join(homedir(), '.config', 'naruhodo', 'paddle-sandbox.env');
@@ -26,20 +27,6 @@ const CLOUDFLARED_CANDIDATES = [
   join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'cloudflared', 'cloudflared.exe'),
   join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'cloudflared', 'cloudflared.exe'),
 ];
-
-/** 讀 wizard 寫的 KEY='value' 檔（單引號內的 '\'' 還原成 '），也接受沒加引號或雙引號的值。 */
-export function parseEnvFile(text: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const line of text.split(/\r?\n/)) {
-    const [, key, raw] = /^([A-Z0-9_]+)=(.*)$/.exec(line) ?? [];
-    if (!key || raw === undefined) continue;
-    let value = raw;
-    if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1).replaceAll("'\\''", "'");
-    else if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
-    env[key] = value;
-  }
-  return env;
-}
 
 /** 驗 `Paddle-Signature: ts=…;h1=…`：HMAC-SHA256(secret, `${ts}:${rawBody}`)，可能有多個 h1（secret 輪替時）。 */
 export function verifyPaddleSignature(header: string, rawBody: string, secret: string): boolean {

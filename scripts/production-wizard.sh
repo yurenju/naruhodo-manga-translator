@@ -207,6 +207,8 @@ finish() {
 # 還沒好之前 wizard 會停在那一步，好了再重跑。
 # ──────────────────────────────────────────────────────────────────────────
 
+source "$(dirname "${BASH_SOURCE[0]}")/wizard-helpers.sh"
+
 ENV_FILE="$HOME/.config/naruhodo/production.env"
 mkdir -p "$(dirname "$ENV_FILE")"
 
@@ -263,16 +265,6 @@ missing_permissions() {
 
 WORKER_SETTINGS_URL='https://dash.cloudflare.com/?to=/:account/workers/services/view/naruhodo-api/production/settings'
 
-# copy_to_clipboard VALUE：放進剪貼簿，不顯示在畫面上；沒有剪貼簿工具就失敗。
-copy_to_clipboard() {
-  if command -v clip.exe >/dev/null 2>&1; then printf '%s' "$1" | clip.exe
-  elif command -v pbcopy >/dev/null 2>&1; then printf '%s' "$1" | pbcopy
-  elif command -v wl-copy >/dev/null 2>&1; then printf '%s' "$1" | wl-copy
-  elif command -v xclip >/dev/null 2>&1; then printf '%s' "$1" | xclip -selection clipboard
-  else return 1
-  fi
-}
-
 # dashboard_secret NAME VALUE：請你在 Cloudflare 後台把 VALUE 設成 Worker secret NAME。
 # 本機沒有寫入權（ADR 0011），值經剪貼簿交給你，設好後清掉剪貼簿。
 dashboard_secret() {
@@ -286,7 +278,7 @@ dashboard_secret() {
   pause "設定好 $1 後按 Enter"
   copy_to_clipboard "" || true
   CF_SECRETS+=("$1")
-  printf '  %s✓ set%s Worker secret %s\n' "$GREEN" "$RESET" "$1"
+  note "已清空剪貼簿。wizard 讀不到 Cloudflare 的 secrets，沒辦法替你確認 $1 有存上去；第 15 步的驗證會間接測到。"
 }
 
 # need_secret NAME：還沒設定、或已設定但要換新的，就回傳成功。本機讀不到 Worker 的 secrets，所以問你。
@@ -371,9 +363,7 @@ pause
 # ── 4 ────────────────────────────────────────────────────────────────────
 stage "正式的 D1 資料庫"
 say "D1 資料庫 $D1_NAME 的 database_id 寫在 $WORKER_CONFIG；migrations 由 CI 在每次部署前套用。"
-D1_DATABASE_ID=$(node -e '
-  const m = /"database_id": "([0-9a-f-]{36})"/.exec(require("fs").readFileSync(process.argv[1], "utf8"));
-  process.stdout.write(m ? m[1] : "");' "$WORKER_CONFIG")
+D1_DATABASE_ID=$(production_database_id)
 if [[ -n "$D1_DATABASE_ID" ]]; then
   note "$WORKER_CONFIG 已經有 database_id：$D1_DATABASE_ID，略過建立。"
 else
@@ -504,7 +494,7 @@ PADDLE_PRICE_ID=$(_existing PADDLE_PRICE_ID || true)
 PADDLE_NOTIFICATION_SETTING_ID=$(_existing PADDLE_NOTIFICATION_SETTING_ID || true)
 if [[ -n "$PADDLE_PRICE_ID" && -n "$PADDLE_NOTIFICATION_SETTING_ID" ]] \
   && ! confirm "Paddle 已經設定過，要換一把新的 API key 嗎？"; then
-  note "沿用 Cloudflare 上現有的 PADDLE_API_KEY。"
+  note "沿用 Cloudflare 上現有的 PADDLE_API_KEY（wizard 讀不到 secrets：不確定的話到後台 Variables and Secrets 看）。"
 else
   open_url "$PADDLE_DASHBOARD/settings/authentication"
   step "API keys 分頁 → New API key → Name：naruhodo-worker。"
@@ -626,7 +616,7 @@ note "付款流程要真的買一次才驗得到，見最後的提示。"
 pause
 
 finish
-(( ${#CF_SECRETS[@]} )) && note "設定了 ${#CF_SECRETS[@]} 個 Worker secret：${CF_SECRETS[*]}"
+(( ${#CF_SECRETS[@]} )) && note "請你在後台設定的 Worker secret（${#CF_SECRETS[@]} 個）：${CF_SECRETS[*]}"
 say "非秘密的 ID：$ENV_FILE"
 say "接下來："
 say "  • 再合併一個 PR 觸發部署：網站這時才會帶上 Paddle 的 client-side token，checkout 頁才會正常。"

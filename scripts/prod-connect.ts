@@ -3,7 +3,7 @@
  * 在 Terminal panel 跑，看到「連線中 →」就能用 prod:sql／prod:logs／prod:tail。
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { parseEnvFile } from './paddle-tunnel.ts';
+import { parseEnvFile } from './env-file.ts';
 import { READONLY_ENV_FILE, readonlyEnvProblem } from './prod-access.ts';
 import { runWithOp } from './with-op.ts';
 

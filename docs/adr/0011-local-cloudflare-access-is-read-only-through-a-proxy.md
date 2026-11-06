@@ -5,9 +5,12 @@
 ## 決定
 
 - **本機不留 `wrangler login`。** 唯讀 token 只放在 1Password，`~/.config/naruhodo/cloudflare-readonly.env` 只放 `op://` 參照與 Account ID。這份檔案跟 `op.env` 分開，`worker:dev`、`smoke` 不會拿到 Cloudflare token。
-- **查詢經過本機 proxy。** `npm run prod:connect` 用 `op run` 取一次 token，起一個只聽 127.0.0.1 的 proxy，閒置 30 分鐘自動結束。`prod:sql`、`prod:logs` 打這個 proxy，不打 Cloudflare。
+- **查詢經過本機 proxy。** `npm run prod:connect` 用 `op run` 取一次 token，起一個只聽 127.0.0.1 的 proxy，閒置 30 分鐘自動結束。`prod:sql`、`prod:logs`、`prod:tail` 打這個 proxy，不打 Cloudflare。
+- **Worker 開 Workers Logs（`observability`）。** 原本只有 `wrangler tail` 看即時的，bug 過去了就查不到；開了之後 `prod:logs` 查得到 7 天內的 log。
 - **proxy 只轉發白名單。** 只轉發三種請求：naruhodo 這個 D1 的查詢（SQL 只接受 `SELECT`／`WITH`／`PRAGMA`／`EXPLAIN` 開頭）、`naruhodo-api` 的歷史 log 查詢、`naruhodo-api` 的 tail。其他一律拒絕。
-- **Worker secrets 在 Cloudflare 後台手動改。** `production-wizard.sh` 不再建 D1、部署或 `wrangler secret put`（取代 ADR 0008 裡「由 wizard pipe 給 `wrangler secret put`」那段）。
+- **Worker secrets 在 Cloudflare 後台手動改。** `production-wizard.sh` 不再建 D1、部署或 `wrangler secret put`（取代 ADR 0008 裡「由 wizard pipe 給 `wrangler secret put`」那段）：key 驗證後經剪貼簿交給你貼到後台，D1 也在後台建。
+- **第一次部署也交給 CI，Worker 會先在沒有 secrets 的狀態上線。** 後台只能替已經存在的 Worker 設 secrets，本機又不能部署，所以 `production-wizard.sh` 在第 5 步就打開 `DEPLOY_ENABLED`（取代 ADR 0008 裡「wizard 最後一步才打開」那段）。健康檢查只查 D1，會通過；翻譯、寄信、付款在 secrets 設好之前都會失敗，產品還沒上線前這段空窗可以接受。
+- **`wrangler logout` 是整台電腦的事。** 其他專案如果也靠 `wrangler login`，登出後要各自建一把只碰自己資源的 token，照 `docs/agents/prod-access.md` 的做法。
 
 ## 不直覺的地方
 

@@ -1,13 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { findTunnelUrl, parseEnvFile, verifyPaddleSignature } from './paddle-tunnel.ts';
-
-describe('parseEnvFile', () => {
-  it('reads the wizard format, undoing its single-quote escape', () => {
-    const env = parseEnvFile("A='plain'\r\nB='it'\\''s'\n# comment\nC=bare\nD=\"double\"\n");
-    expect(env).toEqual({ A: 'plain', B: "it's", C: 'bare', D: 'double' });
-  });
-});
+import { findTunnelUrl, verifyPaddleSignature } from './paddle-tunnel.ts';
 
 describe('verifyPaddleSignature', () => {
   const secret = 'pdl_ntfset_test';
