@@ -36,6 +36,11 @@ export type PriorPage = TranslatedLine[];
 export interface TranslateInput {
   /** 作品名：Series 的 Original Title（#186），沒有就是讀者取的名稱；未命名的 Provisional Series 不送。 */
   seriesName?: string;
+  /**
+   * 中文作品名：作品卡的大字（猜的中文譯名，讀者改過名就是讀者的名稱）。原文出現作品名時譯文用它，
+   * 不照抄原名的假名。沒有作品名、或跟作品名一樣時不送。
+   */
+  seriesZhTitle?: string;
   /** v1 整份送。 */
   seriesNotes: NotesEntry[];
   /** 只用來理解前後文，不翻譯（ADR 0005）。 */

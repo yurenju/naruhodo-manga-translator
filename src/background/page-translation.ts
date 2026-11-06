@@ -9,7 +9,7 @@ import { matchingStripe, type Stripe } from '../shared/long-page.ts';
 import type { PageView } from '../shared/messages.ts';
 import { pageLines, type PageCharge, type PageText, type PageTranslation } from '../shared/page-text.ts';
 import { staleReason, usedNotes, type StaleReason, type TranslatorVersion } from '../shared/series-notes.ts';
-import { seriesNameForLlm, type Series } from '../shared/series.ts';
+import { seriesNameForLlm, seriesZhTitleForLlm, type Series } from '../shared/series.ts';
 import { createTrace } from '../shared/trace.ts';
 import type { NotesChanges, NotesEntry, PriorPage, TranslateInput, TranslateOutput, Translator } from '../shared/translator.ts';
 import { QuotaExhaustedError } from './hosted-translator.ts';
@@ -66,13 +66,17 @@ export interface LongPageRequest {
 
 const trace = createTrace('sw');
 
-/** 作品名送原名（#186），沒有就送讀者取的名稱；未命名的 Provisional Series 的名稱是自動產生的（網站＋日期），不送。 */
-function seriesName(series: Series | undefined): Pick<TranslateInput, 'seriesName'> {
+/**
+ * 作品名送原名（#186），沒有就送讀者取的名稱；未命名的 Provisional Series 的名稱是自動產生的（網站＋日期），不送。
+ * 另外送中文作品名，譯文才不會照抄原名的假名。
+ */
+function seriesName(series: Series | undefined): Pick<TranslateInput, 'seriesName' | 'seriesZhTitle'> {
   const name = seriesNameForLlm(series);
-  return name ? { seriesName: name } : {};
+  const zh = seriesZhTitleForLlm(series);
+  return { ...(name ? { seriesName: name } : {}), ...(zh ? { seriesZhTitle: zh } : {}) };
 }
 
-function toTranslateInput(text: PageText, seriesNotes: NotesEntry[], priorPages: PriorPage[]): Omit<TranslateInput, 'seriesName'> {
+function toTranslateInput(text: PageText, seriesNotes: NotesEntry[], priorPages: PriorPage[]): Omit<TranslateInput, 'seriesName' | 'seriesZhTitle'> {
   const items = [
     ...text.balloons.map((b) => ({ order: b.order, item: { id: b.id, kind: 'balloon' as const, 原文: b.原文, orientation: b.orientation } })),
     ...text.looseText.map((l) => ({ order: l.order, item: { id: l.id, kind: 'loose' as const, 原文: l.原文, orientation: l.orientation } })),

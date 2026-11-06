@@ -133,6 +133,21 @@ describe('翻譯', () => {
     expect(anthropic).not.toHaveBeenCalled();
   });
 
+  it('中文作品名也轉給 Anthropic；不是字串或超過 200 字回 400', async () => {
+    const anthropic = fakeAnthropic([ok]);
+    const named = { ...input, seriesName: 'ほしくずて穴', seriesZhTitle: '星屑之穴' };
+
+    const response = await post(TRANSLATE_PATH, named);
+    const wrongType = await post(TRANSLATE_PATH, { ...named, seriesZhTitle: 3 });
+    const tooLong = await post(TRANSLATE_PATH, { ...named, seriesZhTitle: '星'.repeat(201) });
+
+    expect(response.status).toBe(200);
+    expect(anthropic.calls[0]!.body).toEqual(translateRequest(named));
+    expect(wrongType.status).toBe(400);
+    expect(tooLong.status).toBe(400);
+    expect(anthropic.calls).toHaveLength(1);
+  });
+
   it('Anthropic 失敗回 502 與它的錯誤訊息', async () => {
     fakeAnthropic([() => Response.json({ error: { message: 'invalid x-api-key' } }, { status: 401 })]);
 

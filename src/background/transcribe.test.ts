@@ -225,6 +225,43 @@ describe('逐字稿：本機流水線＋Translator', () => {
     expect(calls.map((c) => c.seriesName)).toEqual(['星屑バンド']);
   });
 
+  it('猜到中文譯名的 Series：翻譯請求帶原名與中文作品名（作品卡的大字）', async () => {
+    const calls: TranslateInput[] = [];
+    const { transcriber } = setup({
+      getTranslator: () => translatorReturning('譯', calls),
+      getSeries: async (id) => ({ id, name: 'ほしくずて穴', provisional: true, createdAt: 0, originalTitles: ['ほしくずて穴'], zhTitle: '星屑之穴' }),
+    });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    expect(calls.map((c) => [c.seriesName, c.seriesZhTitle])).toEqual([['ほしくずて穴', '星屑之穴']]);
+  });
+
+  it('讀者改過名的 Series：中文作品名用讀者取的名稱', async () => {
+    const calls: TranslateInput[] = [];
+    const { transcriber } = setup({
+      getTranslator: () => translatorReturning('譯', calls),
+      getSeries: async (id) => ({ id, name: '星塵洞', provisional: false, createdAt: 0, originalTitles: ['ほしくずて穴'] }),
+    });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    expect(calls.map((c) => [c.seriesName, c.seriesZhTitle])).toEqual([['ほしくずて穴', '星塵洞']]);
+  });
+
+  it('沒有中文譯名、名稱就是原名的 Series：不送中文作品名', async () => {
+    const calls: TranslateInput[] = [];
+    const { transcriber } = setup({
+      getTranslator: () => translatorReturning('譯', calls),
+      getSeries: async (id) => ({ id, name: 'ほしくずて穴', provisional: false, createdAt: 0, originalTitles: ['ほしくずて穴'] }),
+    });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    expect(calls[0]).toMatchObject({ seriesName: 'ほしくずて穴' });
+    expect(calls[0]).not.toHaveProperty('seriesZhTitle');
+  });
+
   it('未命名的 Provisional Series（猜不出原名）：名稱是自動產生的，不當作品名送出', async () => {
     const calls: TranslateInput[] = [];
     const { transcriber } = setup({
@@ -236,6 +273,7 @@ describe('逐字稿：本機流水線＋Translator', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).not.toHaveProperty('seriesName');
+    expect(calls[0]).not.toHaveProperty('seriesZhTitle');
   });
 
   it('Translator 失敗時保留 kuromoji 讀音、標示未翻譯，並帶上錯誤訊息', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLAUDE_MODEL, notesRequest, parseNotesResponse, parseSeriesGuessResponse, parseTranslateResponse, seriesGuessRequest, translateRequest } from './claude-request.ts';
+import { CLAUDE_MODEL, COMPATIBLE_PROMPT_VERSIONS, notesRequest, PROMPT_VERSION, parseNotesResponse, parseSeriesGuessResponse, parseTranslateResponse, seriesGuessRequest, translateRequest } from './claude-request.ts';
 import type { NotesInput, TitleSignals, TranslateInput } from './translator.ts';
 
 const input: TranslateInput = {
@@ -58,6 +58,23 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
       '作品名：星屑バンド',
       '這一頁要翻譯的文字：\n[{"id":"b1","kind":"balloon","ja":"おはよう"}]',
     ]);
+  });
+
+  it('有中文作品名時跟原名一起送，原文出現作品名就用中文作品名，不照抄假名', () => {
+    const body = translateRequest({ ...input, priorPages: [], seriesName: 'ほしくずて穴', seriesZhTitle: '星屑之穴' });
+
+    expect(body.messages[0]?.content.map((c) => c.text)).toEqual([
+      '作品名：ほしくずて穴\n作品名的中文譯名：星屑之穴',
+      '這一頁要翻譯的文字：\n[{"id":"b1","kind":"balloon","ja":"おはよう"}]',
+    ]);
+    expect(body.system).toEqual(translateRequest(input).system);
+    // Series Notes 把作品名記成原名照抄時，以中文作品名為準（既有的 Notes 不用遷移）
+    expect(body.system[0]?.text).toMatch(/作品名的中文譯名[^\n]*平假名[^\n]*片假名[^\n]*Series Notes[^\n]*為準/);
+  });
+
+  it('改了 ① 的 prompt：PROMPT_VERSION 是 v10，v9 的快取照用', () => {
+    expect(PROMPT_VERSION).toBe('claude-text-v10');
+    expect(COMPATIBLE_PROMPT_VERSIONS).toContain('claude-text-v9');
   });
 
   it('沒有作品名時不送作品名', () => {

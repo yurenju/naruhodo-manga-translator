@@ -25,14 +25,16 @@ import type {
 
 export const CLAUDE_MODEL = 'claude-haiku-5-5';
 /** 寫進快取判斷過時用（#33）；改 ① 的 prompt 或 schema 就要改這個。② 的 prompt 不影響已快取的譯文，不用改。 */
-export const PROMPT_VERSION = 'claude-text-v9';
+export const PROMPT_VERSION = 'claude-text-v10';
 /**
  * 譯文跟 PROMPT_VERSION 一樣能用的舊版本：快取的頁不算過時（#38）。v7 → v8 只拿掉讀音、加了兩條譯文規則（#195），
  * 舊頁的譯文照用；讀音在命中快取時一律換成 kuromoji（page-translation.ts）。
  * v8 → v9 在 schema 加了整頁一份的 names（先寫出名字的中文譯名，名字裡的假名才不會照抄進譯文）；舊頁大多沒有名字的問題，照用，
  * 有問題的頁由讀者按「重新翻譯」。
+ * v9 → v10 在 user message 加了中文作品名、規定原文出現作品名時用它；舊頁只有提到作品名的那幾句可能照抄原名，照用，
+ * 一樣由讀者按「重新翻譯」。
  */
-export const COMPATIBLE_PROMPT_VERSIONS: readonly string[] = ['claude-text-v7', 'claude-text-v8'];
+export const COMPATIBLE_PROMPT_VERSIONS: readonly string[] = ['claude-text-v7', 'claude-text-v8', 'claude-text-v9'];
 
 const MAX_TOKENS = 16_000;
 
@@ -89,6 +91,7 @@ const TRANSLATE_TEXT = `你是日文漫畫翻譯助手，幫助讀者一邊看�
 翻譯時請遵守 Series Notes 的譯名。
 
 使用者可能會告訴你作品名（作品的原名，或讀者為這部作品取的名稱）。原文裡出現作品名時，那是作品名，不是狀聲詞；作品有官方中文譯名就用官方譯名。
+使用者給了作品名的中文譯名時，原文裡出現作品名（包括把它改寫成平假名、片假名或簡稱的寫法），zh 一律寫成這個中文譯名，不要照抄原名的假名；Series Notes 對作品名的譯法跟它不同時，以作品名的中文譯名為準。
 
 真實世界的樂團、品牌、作品名（例如歌手、商品、電影），用官方的中文寫法；沒有官方中文寫法就保留原文，不要自己音譯或意譯。這條只限現實中真的存在的名稱；作品裡虛構的歌手、偶像、團體、品牌，算作品裡特有的名稱，照下面專有名詞的規則翻成中文。
 
@@ -240,7 +243,10 @@ export function translateRequest(input: TranslateInput): MessagesRequest {
   const current = JSON.stringify(input.items.map(({ id, kind, 原文 }) => ({ id, kind, ja: 原文 })));
   // 作品名與 Prior Pages 每部、每頁都不同，放在 user message，不動 system 的 prompt cache
   const before: TextBlock[] = [
-    ...(input.seriesName ? [{ type: 'text' as const, text: `作品名：${input.seriesName}` }] : []),
+    ...(input.seriesName
+      ? [{ type: 'text' as const, text: `作品名：${input.seriesName}${input.seriesZhTitle ? `
+作品名的中文譯名：${input.seriesZhTitle}` : ''}` }]
+      : []),
     ...(input.priorPages.length > 0
       ? [{ type: 'text' as const, text: `context（前面的頁，依閱讀順序）：\n${JSON.stringify(input.priorPages.map(toWire))}` }]
       : []),
