@@ -144,13 +144,50 @@ export function largestRect(mask: ArrayLike<number>, w: number, h: number): Pixe
   return best;
 }
 
+/**
+ * 排版矩形至少要占文字框這麼多，才算沿泡泡內緣擦成功：合成頁 p01～p09 的 Balloon 最小 0.69；網點底的泡泡往外長
+ * 不過去、範圍只剩字周圍一圈時是 0.02～0.13。
+ */
+const MIN_FIT_RATIO = 0.4;
+/** 退路的橢圓：泡泡框內接橢圓的半徑往內縮半徑的 5%、至少 4px，避開框線（偵測框包含框線）。 */
+const BALLOON_INSET_RATIO = 0.05;
+const BALLOON_INSET_MIN = 4;
+
+/**
+ * Balloon 的擦除小圖：沿泡泡內緣長（eraseImage）。泡泡底是網點這類相鄰像素差很多的紋理時，往外長走不過去，
+ * 範圍只剩字周圍一圈：原文擦不乾淨（殘留）或排版矩形縮成一小塊。這時退回文字框＋padding 的矩形，但只留泡泡框
+ * 內接橢圓（往內縮）裡的部分，才不會蓋過框線、擦到泡泡外；排版矩形是這塊裡面最大的矩形。
+ * 中央找不到底色時照舊回傳 undefined（呼叫端退回單色矩形）。
+ */
+export function eraseBalloon(page: RgbaImage, balloon: Box, text: Box): BalloonEraseImage | undefined {
+  const grown = eraseImage(page, balloon, text);
+  if (!grown) return undefined;
+  if (residue(page, grown, text) <= RESIDUE_LIMIT && grown.fit[2] * grown.fit[3] >= MIN_FIT_RATIO * text.w * text.h) return grown;
+  const rect = eraseRect(page, text);
+  const [ex, ey, ew, eh] = rect.box;
+  const cx = balloon.x + balloon.w / 2;
+  const cy = balloon.y + balloon.h / 2;
+  const inset = (radius: number) => radius - Math.max(BALLOON_INSET_MIN, radius * BALLOON_INSET_RATIO);
+  const rx = inset(balloon.w / 2);
+  const ry = inset(balloon.h / 2);
+  const mask = new Uint8Array(ew * eh);
+  for (let y = 0; y < eh; y++)
+    for (let x = 0; x < ew; x++) {
+      if (Math.hypot((ex + x + 0.5 - cx) / rx, (ey + y + 0.5 - cy) / ry) < 1) mask[y * ew + x] = 1;
+      else rect.rgba[(y * ew + x) * 4 + 3] = 0;
+    }
+  const [fx, fy, fw, fh] = largestRect(mask, ew, eh);
+  return { ...rect, fit: [ex + fx, ey + fy, fw, fh] };
+}
+
 /** 殘留墨水：亮度跟擦除底色差這麼多以上。 */
 const INK_TOLERANCE = 64;
 /**
- * Loose Text 擦完後，文字框中央一半範圍內沒擦到的墨水超過這個比例，就退回矩形（#151 的 prototype）：合成頁 p09 的
- * 5 段都是 0；2px 細線穿過 60px 的文字框約 6.7%（線要保留）；字黏在線上沒擦掉時是幾成。
+ * Loose Text 與 Balloon 擦完後，文字框中央一半範圍內沒擦到的墨水超過這個比例，就退回矩形（#151 的 prototype）：合成頁
+ * p09 的 5 段 Loose Text 都是 0；2px 細線穿過 60px 的文字框約 6.7%（線要保留）；字黏在線上沒擦掉時是幾成；網點底的
+ * 泡泡沿背景長不過去時是大半。
  */
-const LOOSE_RESIDUE_LIMIT = 0.08;
+const RESIDUE_LIMIT = 0.08;
 
 /**
  * Loose Text 的擦除小圖（#151，spec #142「Loose Text 原地覆蓋」）：沒有泡泡框線擋著，所以範圍只在文字框附近
@@ -159,7 +196,7 @@ const LOOSE_RESIDUE_LIMIT = 0.08;
  */
 export function eraseLooseText(page: RgbaImage, text: Box): EraseImage {
   const grown = eraseImage(page, text, text);
-  return grown && residue(page, grown, text) <= LOOSE_RESIDUE_LIMIT ? grown : eraseRect(page, text);
+  return grown && residue(page, grown, text) <= RESIDUE_LIMIT ? grown : eraseRect(page, text);
 }
 
 /** 文字框中央一半範圍內，沒被擦到、又跟底色差很多（墨水）的像素比例。 */
