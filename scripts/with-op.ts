@@ -26,6 +26,16 @@ export function opEnvProblem(text: string | undefined): string | undefined {
   return undefined;
 }
 
+/** 用 op run 帶 envFile 跑 command：開始時跳一次 1Password 授權，值只在子行程的環境變數裡；結束時用子行程的 exit code 結束。 */
+export function runWithOp(envFile: string, command: string[]): void {
+  const child = spawn('op', ['run', '--env-file', envFile, '--', ...command], { stdio: 'inherit' });
+  child.on('error', (error: NodeJS.ErrnoException) => {
+    console.error(error.code === 'ENOENT' ? '找不到 op（1Password CLI）：https://developer.1password.com/docs/cli/get-started/' : error.message);
+    process.exit(1);
+  });
+  child.on('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+}
+
 function main(command: string[]): void {
   if (command.length === 0) {
     console.error('用法：node scripts/with-op.ts <指令…>');
@@ -36,12 +46,7 @@ function main(command: string[]): void {
     console.error(problem);
     process.exit(1);
   }
-  const child = spawn('op', ['run', '--env-file', OP_ENV_FILE, '--', ...command], { stdio: 'inherit' });
-  child.on('error', (error: NodeJS.ErrnoException) => {
-    console.error(error.code === 'ENOENT' ? '找不到 op（1Password CLI）：https://developer.1password.com/docs/cli/get-started/' : error.message);
-    process.exit(1);
-  });
-  child.on('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+  runWithOp(OP_ENV_FILE, command);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main(process.argv.slice(2));

@@ -197,7 +197,8 @@ finish() {
 #
 #   bash scripts/production-wizard.sh      （Windows 用 Git Bash；需要 curl、node、gh，以及 npm ci 裝好的套件）
 #
-# live 的 key 只放在 Cloudflare 的 Worker secrets：輸入後直接 pipe 給 `wrangler secret put`，不寫檔、不印出來。
+# live 的 key 只放在 Cloudflare 的 Worker secrets。本機對 Cloudflare 沒有寫入權（ADR 0011）：wizard 驗證 key 後放進剪貼簿，
+# 請你貼到 Cloudflare 後台，不寫檔、不印出來。建 D1 也在後台；部署與 migrations 由 CI 做（ADR 0008）。
 # ENV_FILE 只存不是秘密的 ID（Cloudflare account、D1、Paddle 的 product／price／webhook、client-side token），
 # 重跑時用來跳過做過的步驟。GitHub 拿到 CLOUDFLARE_API_TOKEN（secret）與 CLOUDFLARE_ACCOUNT_ID、PADDLE_CLIENT_TOKEN、
 # DEPLOY_ENABLED（variables），名字對應 .github/workflows/ci.yml。
@@ -214,7 +215,6 @@ API_ORIGIN="https://api.$DOMAIN"
 SITE_ORIGIN="https://$DOMAIN"
 MAIL_DOMAIN="mail.$DOMAIN"
 WORKER_CONFIG='worker/wrangler.jsonc'
-SITE_CONFIG='site/wrangler.jsonc'
 D1_NAME='naruhodo'
 PADDLE_API_BASE_URL='https://api.paddle.com'
 PADDLE_DASHBOARD='https://vendors.paddle.com'
@@ -225,8 +225,6 @@ WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.act
 
 CF_SECRETS=() # 這次設定到 Cloudflare 的 Worker secrets
 
-wrangler() { npx --no-install wrangler "$@"; }
-
 # json_get EXPR: 從 RESPONSE 取欄位，例如 json_get 'data.id'；取不到就是空字串。
 json_get() {
   printf '%s' "$RESPONSE" | node -e '
@@ -234,14 +232,6 @@ json_get() {
       let v; try { v = new Function("o", "return o." + process.argv[1])(JSON.parse(s)); } catch { v = undefined; }
       process.stdout.write(v == null ? "" : String(v));
     });' "$1"
-}
-
-# d1_id：Cloudflare 上名為 D1_NAME 的資料庫 id；還沒建立就是空字串。
-d1_id() {
-  wrangler d1 list --json 2>/dev/null | node -e '
-    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
-      try { const db = JSON.parse(s).find(x => x.name === process.argv[1]); process.stdout.write(db ? db.uuid : ""); } catch {}
-    });' "$D1_NAME"
 }
 
 # api METHOD URL HEADERS [JSON]: 呼叫外部 API，設定 HTTP_STATUS 與 RESPONSE。HEADERS 可以有多行。
@@ -271,30 +261,37 @@ missing_permissions() {
   printf '%s' "${missing[*]}"
 }
 
-# worker_secret_exists NAME：Cloudflare 上的 Worker 已經有這個 secret。
-worker_secret_exists() {
-  local list; list=$(wrangler secret list -c "$WORKER_CONFIG" --format json 2>/dev/null) || return 1
-  printf '%s' "$list" | node -e '
-    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
-      try { process.exit(JSON.parse(s).some(x => x.name === process.argv[1]) ? 0 : 1); } catch { process.exit(1); }
-    });' "$1"
-}
+WORKER_SETTINGS_URL='https://dash.cloudflare.com/?to=/:account/workers/services/view/naruhodo-api/production/settings'
 
-# put_worker_secret NAME VALUE：經由 stdin 交給 wrangler，值不會出現在指令參數與畫面上。
-put_worker_secret() {
-  if printf '%s' "$2" | wrangler secret put "$1" -c "$WORKER_CONFIG" >/dev/null 2>&1; then
-    CF_SECRETS+=("$1")
-    printf '  %s✓ set%s Worker secret %s\n' "$GREEN" "$RESET" "$1"
-  else
-    warn "wrangler secret put $1 失敗；確認 wrangler 登入的帳號，再重跑"
-    exit 1
+# copy_to_clipboard VALUE：放進剪貼簿，不顯示在畫面上；沒有剪貼簿工具就失敗。
+copy_to_clipboard() {
+  if command -v clip.exe >/dev/null 2>&1; then printf '%s' "$1" | clip.exe
+  elif command -v pbcopy >/dev/null 2>&1; then printf '%s' "$1" | pbcopy
+  elif command -v wl-copy >/dev/null 2>&1; then printf '%s' "$1" | wl-copy
+  elif command -v xclip >/dev/null 2>&1; then printf '%s' "$1" | xclip -selection clipboard
+  else return 1
   fi
 }
 
-# need_secret NAME：還沒設定、或已設定但要換新的，就回傳成功。
+# dashboard_secret NAME VALUE：請你在 Cloudflare 後台把 VALUE 設成 Worker secret NAME。
+# 本機沒有寫入權（ADR 0011），值經剪貼簿交給你，設好後清掉剪貼簿。
+dashboard_secret() {
+  if ! copy_to_clipboard "$2"; then
+    warn "找不到剪貼簿工具（clip.exe、pbcopy、wl-copy、xclip），沒辦法把 $1 交給你；裝好後重跑"
+    exit 1
+  fi
+  open_url "$WORKER_SETTINGS_URL"
+  step "naruhodo-api → Settings → Variables and Secrets → Add。"
+  step "Type 選 Secret，Variable name 填 $1，Value 按 Ctrl+V 貼上（已經在剪貼簿裡）→ Deploy。"
+  pause "設定好 $1 後按 Enter"
+  copy_to_clipboard "" || true
+  CF_SECRETS+=("$1")
+  printf '  %s✓ set%s Worker secret %s\n' "$GREEN" "$RESET" "$1"
+}
+
+# need_secret NAME：還沒設定、或已設定但要換新的，就回傳成功。本機讀不到 Worker 的 secrets，所以問你。
 need_secret() {
-  worker_secret_exists "$1" || return 0
-  note "Cloudflare 上已經有 $1。"
+  confirm "Cloudflare 上的 naruhodo-api 已經有 secret $1 了嗎？（後台 Settings → Variables and Secrets）" || return 0
   confirm "要換成新的嗎？"
 }
 
@@ -310,23 +307,19 @@ wait_for() {
 
 run_wizard() {
 
-TOTAL_STAGES=16
+TOTAL_STAGES=15
 
 cd "$(git rev-parse --show-toplevel)"
 for tool in curl node gh; do
   command -v "$tool" >/dev/null 2>&1 || { warn "需要 $tool，請先安裝"; exit 1; }
 done
-[[ -x node_modules/.bin/wrangler ]] || { warn "repo 裡還沒裝套件，先跑 npm ci"; exit 1; }
 
 banner "Naruhodo production 開通（#97）"
 
 # ── 1 ────────────────────────────────────────────────────────────────────
-stage "登入 wrangler 與 gh"
-say "wizard 用本機登入的 wrangler 建 D1、部署、設定 Worker secrets，用 gh 設定 GitHub 的 secret 與 variables。"
-if ! wrangler whoami --json >/dev/null 2>&1; then
-  step "瀏覽器會打開 Cloudflare 的授權頁：用擁有 $DOMAIN 的帳號登入並允許。"
-  wrangler login
-fi
+stage "登入 gh"
+say "wizard 用 gh 設定 GitHub 的 secret 與 variables。"
+say "本機對 Cloudflare 只有唯讀（ADR 0011）：建 D1、設定 Worker secrets 都在 Cloudflare 後台由你操作，部署由 CI 做。"
 if ! gh auth status >/dev/null 2>&1; then
   step "gh 還沒登入，接著執行 gh auth login。"
   gh auth login
@@ -346,13 +339,6 @@ pause "確認是 Workers Paid 後按 Enter"
 stage "GitHub Actions 用的 Cloudflare API token"
 say "CI 用這個 token 部署網站與 Worker、套用 D1 migrations。權限只開需要的，外洩也碰不到 DNS 或其他服務。"
 CLOUDFLARE_ACCOUNT_ID=$(_existing CLOUDFLARE_ACCOUNT_ID || true)
-if [[ -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
-  CLOUDFLARE_ACCOUNT_ID=$(wrangler whoami 2>&1 | grep -oE '\b[0-9a-f]{32}\b' | head -n 1 || true)
-  if [[ -n "$CLOUDFLARE_ACCOUNT_ID" ]]; then
-    note "wrangler whoami 讀到的 Account ID：$CLOUDFLARE_ACCOUNT_ID"
-    confirm "是擁有 $DOMAIN 的那個帳號嗎？" || CLOUDFLARE_ACCOUNT_ID=""
-  fi
-fi
 if [[ -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
   step "Cloudflare 後台按 Ctrl+K，搜尋「Copy account ID」並選擇（或 Workers & Pages → Account Details）。"
   ask CLOUDFLARE_ACCOUNT_ID "貼上 Account ID："
@@ -383,57 +369,64 @@ fi
 pause
 
 # ── 4 ────────────────────────────────────────────────────────────────────
-stage "正式的 D1 資料庫（自動）"
-say "建立 D1 資料庫 $D1_NAME（位置：亞太），把 database_id 寫進 $WORKER_CONFIG，再套用 migrations。"
-D1_DATABASE_ID=$(d1_id)
+stage "正式的 D1 資料庫"
+say "D1 資料庫 $D1_NAME 的 database_id 寫在 $WORKER_CONFIG；migrations 由 CI 在每次部署前套用。"
+D1_DATABASE_ID=$(node -e '
+  const m = /"database_id": "([0-9a-f-]{36})"/.exec(require("fs").readFileSync(process.argv[1], "utf8"));
+  process.stdout.write(m ? m[1] : "");' "$WORKER_CONFIG")
 if [[ -n "$D1_DATABASE_ID" ]]; then
-  note "已經有 $D1_NAME：$D1_DATABASE_ID，略過建立。"
-elif confirm "要建立 D1 資料庫 $D1_NAME 嗎？"; then
-  wrangler d1 create "$D1_NAME" --location apac >/dev/null
-  D1_DATABASE_ID=$(d1_id)
-  [[ -n "$D1_DATABASE_ID" ]] || { warn "建立後找不到 $D1_NAME，請看上面的錯誤"; exit 1; }
+  note "$WORKER_CONFIG 已經有 database_id：$D1_DATABASE_ID，略過建立。"
 else
-  warn "沒有 D1 就不能部署 Worker；之後重跑這個 wizard。"; exit 1
+  open_url "https://dash.cloudflare.com/?to=/:account/workers/d1"
+  step "Create Database → 名稱填 $D1_NAME，Location 選 Asia-Pacific → Create。"
+  step "在資料庫頁面複製 Database ID（UUID）。"
+  while :; do
+    ask D1_DATABASE_ID "貼上 Database ID："
+    [[ "$D1_DATABASE_ID" =~ ^[0-9a-f-]{36}$ ]] && break
+    warn "Database ID 是 36 個字元的 UUID，請再貼一次"
+  done
+  # 只換最上層（production）那一個：它在檔案裡最先出現；env.dev／env.test 的本機 D1 維持 "local"
+  node -e '
+    const fs = require("fs"); const [file, id] = process.argv.slice(1);
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(`"database_id": "local"`, `"database_id": "${id}"`));
+  ' "$WORKER_CONFIG" "$D1_DATABASE_ID"
+  printf '  %s✓ wrote%s database_id → %s\n' "$GREEN" "$RESET" "$WORKER_CONFIG"
+  note "這是 repo 裡的檔案：下一步會請你把這個改動開 PR 合併，CI 部署時會套用 migrations。"
 fi
 write_env D1_DATABASE_ID "$D1_DATABASE_ID"
-# 只換最上層（production）那一個：它在檔案裡最先出現；env.dev／env.test 的本機 D1 維持 "local"
-node -e '
-  const fs = require("fs"); const [file, id] = process.argv.slice(1);
-  const text = fs.readFileSync(file, "utf8");
-  if (!text.includes(`"database_id": "${id}"`)) fs.writeFileSync(file, text.replace(`"database_id": "local"`, `"database_id": "${id}"`));
-' "$WORKER_CONFIG" "$D1_DATABASE_ID"
-printf '  %s✓ wrote%s database_id → %s\n' "$GREEN" "$RESET" "$WORKER_CONFIG"
-note "這是 repo 裡的檔案：最後一步會請你把這個改動開 PR 合併。"
-step "接著套用 migrations：wrangler 會列出要套用的檔案，請你確認。"
-wrangler d1 migrations apply "$D1_NAME" --remote -c "$WORKER_CONFIG"
 pause
 
 # ── 5 ────────────────────────────────────────────────────────────────────
-stage "第一次部署 Worker 與網站（自動）"
-say "從這台電腦部署一次：Worker 要先存在，接下來才能設定 secrets。"
-say "部署時 Cloudflare 會自動建 api.$DOMAIN 與 $DOMAIN 的 DNS 記錄和 HTTPS 憑證。"
-say "網站這次還沒有 Paddle 的 client-side token，checkout 頁要等開通自動部署後的下一次部署才會正常。"
-if curl -fsS -o /dev/null "$API_ORIGIN/v1/health" 2>/dev/null && curl -fsS -o /dev/null "$SITE_ORIGIN/zh-tw/" 2>/dev/null \
-  && ! confirm "Worker 與網站都已經上線了，要重新部署嗎？"; then
-  note "略過部署。"
+stage "打開自動部署，由 CI 第一次部署"
+say "Worker 要先存在，才能在後台設定 secrets。本機不能部署（ADR 0011），所以打開 DEPLOY_ENABLED，"
+say "讓 CI 在合併到 main 後部署 Worker 與網站（ADR 0008）。部署時 Cloudflare 會自動建 api.$DOMAIN 與 $DOMAIN 的 DNS 記錄和 HTTPS 憑證。"
+say "Worker 這時還沒有 secrets：健康檢查只查 D1，會通過；翻譯、寄信、付款要等後面的步驟設好 secrets 才會正常。"
+if curl -fsS -o /dev/null "$API_ORIGIN/v1/health" 2>/dev/null && curl -fsS -o /dev/null "$SITE_ORIGIN/zh-tw/" 2>/dev/null; then
+  note "Worker 與網站都已經上線，略過。"
+  [[ "$(gh variable get DEPLOY_ENABLED 2>/dev/null || true)" == true ]] || set_var DEPLOY_ENABLED true
 else
-  confirm "要部署嗎？" || { warn "沒有部署就不能設定 secrets；之後重跑。"; exit 1; }
-  wrangler deploy -c "$WORKER_CONFIG"
-  npm run site:build
-  wrangler deploy -c "$SITE_CONFIG"
-fi
-say "等 $API_ORIGIN/v1/health 與 $SITE_ORIGIN 回應（最多各一分鐘）…"
-if wait_for "$API_ORIGIN/v1/health"; then
-  note "✓ Worker 健康檢查通過（D1 連得上）"
-else
-  warn "Worker 還沒有回應"
-  SKIPPED+=("$API_ORIGIN/v1/health 沒有回應：看 Cloudflare 後台 naruhodo-api 的 Custom Domains 與 log")
-fi
-if wait_for "$SITE_ORIGIN/zh-tw/"; then
-  note "✓ 網站上線"
-else
-  warn "網站還沒有回應"
-  SKIPPED+=("$SITE_ORIGIN 沒有回應：看 Cloudflare 後台 naruhodo-site 的 Custom Domains")
+  confirm "要打開自動部署嗎？" || { warn "沒有部署就不能設定 secrets；之後重跑。"; exit 1; }
+  set_var DEPLOY_ENABLED true
+  if git diff --quiet -- "$WORKER_CONFIG"; then
+    step "開一個 PR 合併到 main（任何改動都可以），觸發第一次部署。"
+  else
+    step "把 $WORKER_CONFIG 的 database_id 開 PR 合併到 main，觸發第一次部署。"
+  fi
+  step "在 GitHub Actions 等 deploy-worker 與 deploy-site 跑完。"
+  pause "兩個部署都跑完後按 Enter"
+  say "等 $API_ORIGIN/v1/health 與 $SITE_ORIGIN 回應（最多各一分鐘）…"
+  if wait_for "$API_ORIGIN/v1/health"; then
+    note "✓ Worker 健康檢查通過（D1 連得上）"
+  else
+    warn "Worker 還沒有回應：看 GitHub Actions 的 deploy-worker 與 Cloudflare 後台 naruhodo-api 的 Custom Domains；好了再重跑"
+    exit 1
+  fi
+  if wait_for "$SITE_ORIGIN/zh-tw/"; then
+    note "✓ 網站上線"
+  else
+    warn "網站還沒有回應"
+    SKIPPED+=("$SITE_ORIGIN 沒有回應：看 Cloudflare 後台 naruhodo-site 的 Custom Domains")
+  fi
 fi
 pause
 
@@ -453,7 +446,7 @@ anthropic-version: 2023-06-01"
     api_ok && break
     warn "Anthropic 拒絕這把 key（HTTP $HTTP_STATUS $(json_get 'error.type')），請重貼"
   done
-  put_worker_secret CLAUDE_API_KEY "$CLAUDE_API_KEY"
+  dashboard_secret CLAUDE_API_KEY "$CLAUDE_API_KEY"
   unset CLAUDE_API_KEY
 fi
 pause
@@ -483,7 +476,7 @@ if need_secret RESEND_API_KEY; then
     [[ "$RESEND_API_KEY" == re_* ]] && break
     warn "Resend 的 key 開頭是 re_，請重貼"
   done
-  put_worker_secret RESEND_API_KEY "$RESEND_API_KEY"
+  dashboard_secret RESEND_API_KEY "$RESEND_API_KEY"
   unset RESEND_API_KEY
 fi
 note "第 15 步會實際寄一封驗證碼信給你，確認這把 key 能用。"
@@ -509,7 +502,7 @@ say "這把 key 只留在記憶體：接下來用它建立 price 與 webhook，�
 PADDLE_API_KEY=""
 PADDLE_PRICE_ID=$(_existing PADDLE_PRICE_ID || true)
 PADDLE_NOTIFICATION_SETTING_ID=$(_existing PADDLE_NOTIFICATION_SETTING_ID || true)
-if [[ -n "$PADDLE_PRICE_ID" && -n "$PADDLE_NOTIFICATION_SETTING_ID" ]] && worker_secret_exists PADDLE_API_KEY \
+if [[ -n "$PADDLE_PRICE_ID" && -n "$PADDLE_NOTIFICATION_SETTING_ID" ]] \
   && ! confirm "Paddle 已經設定過，要換一把新的 API key 嗎？"; then
   note "沿用 Cloudflare 上現有的 PADDLE_API_KEY。"
 else
@@ -582,29 +575,29 @@ elif confirm "要建立產品與 price 嗎？"; then
 else
   warn "沒有 price 就不能訂閱；之後重跑。"; exit 1
 fi
-if need_secret PADDLE_PRICE_ID; then put_worker_secret PADDLE_PRICE_ID "$PADDLE_PRICE_ID"; fi
+if need_secret PADDLE_PRICE_ID; then dashboard_secret PADDLE_PRICE_ID "$PADDLE_PRICE_ID"; fi
 pause
 
 # ── 14 ───────────────────────────────────────────────────────────────────
 stage "webhook destination 與 secret（自動）"
 say "建立 notification destination $API_ORIGIN/webhooks/paddle，訂閱訂閱相關事件與 adjustment.updated"
-say "（全額退款時 Worker 立即取消訂閱，#97）。Paddle 回傳的簽章 secret 直接存成 PADDLE_WEBHOOK_SECRET，不顯示。"
+say "（全額退款時 Worker 立即取消訂閱，#97）。Paddle 回傳的簽章 secret 經剪貼簿交給你存成 PADDLE_WEBHOOK_SECRET，不顯示。"
 if [[ -n "$PADDLE_NOTIFICATION_SETTING_ID" ]]; then
   note "已經建立過：$PADDLE_NOTIFICATION_SETTING_ID，略過。"
-  worker_secret_exists PADDLE_WEBHOOK_SECRET \
-    || SKIPPED+=("PADDLE_WEBHOOK_SECRET 不在 Cloudflare：到 Paddle 後台刪掉這個 notification destination，清掉 $ENV_FILE 的 PADDLE_NOTIFICATION_SETTING_ID 後重跑")
+  note "Cloudflare 上沒有 PADDLE_WEBHOOK_SECRET 的話：到 Paddle 後台 Developer tools → Notifications 複製這個 destination 的"
+  note "secret key，照 Worker secret 的方式貼到 Cloudflare 後台。"
 elif [[ -z "$PADDLE_API_KEY" ]]; then
   warn "這次沒有輸入 Paddle API key，無法建立；重跑並在第 10 步換 key。"; exit 1
 elif confirm "要建立 webhook destination 嗎？"; then
   paddle_api POST /notification-settings "{\"description\":\"naruhodo production\",\"type\":\"url\",\"destination\":\"$API_ORIGIN/webhooks/paddle\",\"subscribed_events\":$WEBHOOK_EVENTS,\"traffic_source\":\"all\"}"
   api_ok || paddle_fail "create notification setting"
-  put_worker_secret PADDLE_WEBHOOK_SECRET "$(json_get 'data.endpoint_secret_key')"
+  dashboard_secret PADDLE_WEBHOOK_SECRET "$(json_get 'data.endpoint_secret_key')"
   write_env PADDLE_NOTIFICATION_SETTING_ID "$(json_get 'data.id')"
 else
   warn "沒有 webhook，Worker 就不知道誰訂閱了；之後重跑。"; exit 1
 fi
 if [[ -n "$PADDLE_API_KEY" ]]; then
-  put_worker_secret PADDLE_API_KEY "$PADDLE_API_KEY"
+  dashboard_secret PADDLE_API_KEY "$PADDLE_API_KEY"
   PADDLE_API_KEY=""
 fi
 pause
@@ -632,25 +625,11 @@ fi
 note "付款流程要真的買一次才驗得到，見最後的提示。"
 pause
 
-# ── 16 ───────────────────────────────────────────────────────────────────
-stage "打開自動部署"
-say "打開 DEPLOY_ENABLED 之後，合併到 main 的 PR 只要 CI 通過，就會自動部署網站與 Worker（ADR 0008）。"
-if git diff --quiet -- "$WORKER_CONFIG"; then
-  note "$WORKER_CONFIG 沒有待 commit 的改動。"
-else
-  warn "$WORKER_CONFIG 的 database_id 還沒 commit：開 PR 合併後會觸發第一次自動部署，網站也會帶上 client-side token。"
-fi
-if confirm "要打開自動部署嗎？"; then
-  set_var DEPLOY_ENABLED true
-else
-  SKIPPED+=("自動部署還沒打開：gh variable set DEPLOY_ENABLED --body true")
-fi
-
 finish
 (( ${#CF_SECRETS[@]} )) && note "設定了 ${#CF_SECRETS[@]} 個 Worker secret：${CF_SECRETS[*]}"
 say "非秘密的 ID：$ENV_FILE"
 say "接下來："
-say "  • 把 $WORKER_CONFIG 的 database_id 開 PR 合併，觸發第一次自動部署。"
+say "  • 再合併一個 PR 觸發部署：網站這時才會帶上 Paddle 的 client-side token，checkout 頁才會正常。"
 say "  • 用 100% 折扣碼在 $SITE_ORIGIN 實際訂閱一次，確認外掛顯示本月額度（Paddle 的 go-live checklist 也這樣測）。"
 say "  • 上線日把 PRIVACY.md、TERMS.md、REFUND.md 的生效日期改掉，再用 release.yml 發一版外掛。"
 }

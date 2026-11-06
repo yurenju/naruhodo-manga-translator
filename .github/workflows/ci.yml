@@ -43,7 +43,7 @@ jobs:
           retention-days: 7
 
   # 合併到 main、上面兩個 job 都通過後自動部署網站與 Worker（ADR 0008）。
-  # vars.DEPLOY_ENABLED 由 scripts/production-wizard.sh 最後一步打開：還沒設好 Cloudflare 與 secrets 之前，合併不會部署。
+  # vars.DEPLOY_ENABLED 由 scripts/production-wizard.sh 第 5 步打開：D1 還沒建立、GitHub 的 token 還沒設好之前，合併不會部署。
   # CLOUDFLARE_API_TOKEN 只有部署網站、Worker 與 D1 的權限，Worker 的 secrets 只存在 Cloudflare，這裡讀不到。
   deploy-site:
     needs: [check, browser]

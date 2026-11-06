@@ -26,6 +26,10 @@
     "smoke": "node scripts/with-op.ts npm run smoke:run",
     "smoke:run": "vitest run --config vitest.smoke.config.ts && npm run build:e2e && playwright test --config playwright.smoke.config.ts",
     "worker:dev": "node scripts/with-op.ts node scripts/worker-dev.ts",
+    "prod:connect": "node scripts/prod-connect.ts",
+    "prod:sql": "node scripts/prod-query.ts sql",
+    "prod:logs": "node scripts/prod-query.ts logs",
+    "prod:tail": "node scripts/prod-query.ts tail",
     "smoke:paddle": "npm run build:e2e && playwright test --config playwright.smoke-paddle.config.ts"
   },
   "dependencies": {
