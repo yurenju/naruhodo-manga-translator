@@ -32,7 +32,7 @@ import { createClaudeTranslator } from './claude-translator.ts';
 import { subImageRect, thumbnailSize, toImageRect, toSubRect } from './crop.ts';
 import { eraseLuminance } from './erase-color.ts';
 import { createKuromojiReading } from './kuromoji-reading.ts';
-import { eraseImage, eraseLooseText, meanLuminance, type EraseImage } from './erase-image.ts';
+import { eraseBalloon, eraseLooseText, meanLuminance, type EraseImage } from './erase-image.ts';
 import { createLocalPipeline } from './local-pipeline.ts';
 import { detectExecutionProvider } from './models/model-files.ts';
 import { pageRgba } from './page-image.ts';
@@ -188,7 +188,7 @@ function eraseBalloons(balloons: BalloonText[], page: RgbaImage): BalloonText[] 
   return balloons.map((b) => {
     const text = ratioToBox(b.textBbox, page);
     const luminance = eraseLuminance(gray, expandBox(text, ERASE_PADDING));
-    const erase = eraseImage(page, ratioToBox(b.balloonBbox, page), text);
+    const erase = eraseBalloon(page, ratioToBox(b.balloonBbox, page), text);
     // 排版矩形（#150）只有 Balloon 有；Loose Text 的排版區是文字框本身
     return erase ? { ...b, eraseLuminance: luminance, erase: { ...encodeErase(erase, page), fit: boxToRatio(tupleBox(erase.fit), page) } } : { ...b, eraseLuminance: luminance };
   });

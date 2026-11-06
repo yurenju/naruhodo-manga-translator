@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { RgbaImage } from '../shared/pixels.ts';
 import { readGroundTruth, readRgba, type GtBox } from '../testing/synthetic.ts';
-import { eraseImage, eraseLooseText, largestRect, meanLuminance, type EraseImage } from './erase-image.ts';
+import { eraseBalloon, eraseImage, eraseLooseText, largestRect, meanLuminance, type EraseImage } from './erase-image.ts';
 import type { RecordedOcr } from './fake-engine.ts';
 
 type Rgb = [number, number, number];
@@ -99,6 +99,38 @@ describe('eraseImage（擦除範圍沿泡泡內緣，顏色從背景內插）', 
     // 擦除範圍是橢圓內緣（半徑約 37.5×47.5）跟文字框＋3px 的交集，內接矩形約 53×67
     expect(fw * fh).toBeGreaterThan(0.9 * 53 * 67);
     expect(inside(fx, fy) && inside(fx + fw - 1, fy + fh - 1)).toBe(true);
+  });
+
+  // 網點底的泡泡：相鄰像素亮度差太多，往外長走不過去，只剩起點附近幾個像素。文字框（TEXT）的角在泡泡外
+  for (const { name, dots, halo } of [
+    { name: '深網點（原文擦不乾淨）', dots: [150, 240], halo: false },
+    // 字（35～65 × 40～80）外圍 2px 白描邊：沿描邊長得到、字被包住擦掉，範圍卻只有描邊圍起來那塊
+    { name: '淡網點加白描邊（原文擦得掉，但範圍只剩字周圍、排版矩形太小）', dots: [200, 250], halo: true },
+  ]) {
+    it(`${name}：退回文字框＋padding 的矩形但不出泡泡框線，字擦乾淨、排版矩形不會縮成一小塊`, () => {
+      const [dark, light] = dots as [number, number];
+      const { image, inside, balloon } = balloonPage((x, y): Rgb => {
+        if (halo && x >= 33 && x < 67 && y >= 38 && y < 82) return [255, 255, 255];
+        return (x + y) % 2 ? [dark, dark, dark] : [light, light, light];
+      });
+
+      const erase = eraseBalloon(image, balloon, TEXT)!;
+
+      for (const [x, y] of erased(erase)) expect(inside(x, y), `(${x}, ${y}) 在泡泡框線上或外面`).toBe(true);
+      expect(erase.fit[2] * erase.fit[3]).toBeGreaterThan(0.4 * TEXT.w * TEXT.h);
+      const done = new Set(erased(erase).map(([x, y]) => `${x},${y}`));
+      const [fx, fy, fw, fh] = erase.fit;
+      for (let y = fy; y < fy + fh; y++) for (let x = fx; x < fx + fw; x++) expect(done.has(`${x},${y}`), `(${x}, ${y}) 不在擦除範圍內`).toBe(true);
+      // balloonPage 的字是 35～65 × 40～80 的橫線
+      const result = composite(image, erase);
+      for (let y = 40; y < 80; y++) for (let x = 35; x < 65; x++) expect(pixel(result, x, y)[0], `(${x}, ${y}) 殘留墨水`).toBeGreaterThan(dark - 10);
+    });
+  }
+
+  it('白底泡泡：eraseBalloon 跟 eraseImage 一樣沿泡泡內緣擦', () => {
+    const { image, balloon } = balloonPage(() => [255, 255, 255]);
+
+    expect(eraseBalloon(image, balloon, TEXT)).toEqual(eraseImage(image, balloon, TEXT));
   });
 
   it('文字框中央完全找不到接近底色的像素：回傳 undefined（呼叫端退回矩形）', () => {
@@ -217,7 +249,7 @@ describe('largestRect（範圍內面積最大的軸對齊矩形）', () => {
   });
 });
 
-describe('eraseImage：合成頁 p09（真模型錄下的框）', () => {
+describe('eraseBalloon：合成頁 p09（真模型錄下的框）', () => {
   const id = 'p09-erase';
   const image = readRgba(id);
   // 同一頁不畫字：完美擦除後應該長的樣子
@@ -261,7 +293,7 @@ describe('eraseImage：合成頁 p09（真模型錄下的框）', () => {
     const truth = gt.texts.reduce((best, t) => (overlap(t.textBbox, text) > overlap(best.textBbox, text) ? t : best));
 
     it(`${truth.id}（${truth.shape}）：擦除範圍不出泡泡框線；貼回後框線、接縫、框外都跟沒有字的頁一樣，文字框內沒有殘留墨水`, () => {
-      const erase = eraseImage(image, px(balloon.balloonBbox), text);
+      const erase = eraseBalloon(image, px(balloon.balloonBbox), text);
 
       expect(erase, '退回了矩形').toBeDefined();
       // 框線 3px：擦除範圍不超出框線外緣（1.5px）。連體泡泡可以在相連的兩個泡泡裡。閃光泡泡沒有外框，
