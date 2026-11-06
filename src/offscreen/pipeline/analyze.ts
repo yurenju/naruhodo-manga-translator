@@ -4,6 +4,7 @@
  */
 import type { BalloonText, LooseText, Orientation, PageText, RatioRect } from '../../shared/page-text.ts';
 import { area, intersection, union, type PixelBox } from './boxes.ts';
+import { fixNames, type Candidate, type SegmentNameFix } from './name-fix.ts';
 import { readingOrder, type GrayImage } from './reading-order.ts';
 
 export const DETECTION_LABELS = ['bubble', 'text_bubble', 'text_free'] as const;
@@ -31,6 +32,8 @@ export interface Recognized {
   text: string;
   /** text 每個字（code point）的信心：解碼那一步 softmax 的最高機率。 */
   confidences: number[];
+  /** text 每個字解碼那一步的前幾名候選（機率高的在前），修名字用（#228）；沒有候選的字是 undefined。只在 offscreen 用完就丟。 */
+  candidates?: (readonly Candidate[] | undefined)[];
 }
 
 export interface Engine {
@@ -129,9 +132,9 @@ const OCR_CONFIDENCE_THRESHOLD = 0.25;
 /** 算最低信心時不看的字：標點、符號、空白、長音（ー 在 Unicode 算字母）。 */
 const NOT_COUNTED = /[\p{P}\p{S}\p{Z}ーｰ]/u;
 
-/** 非標點字的最低信心；沒有非標點字時 undefined。 */
-function minConfidence({ text, confidences }: Recognized): number | undefined {
-  const counted = [...text].flatMap((char, i) => (NOT_COUNTED.test(char) ? [] : [confidences[i] ?? 1]));
+/** 非標點字的最低信心；沒有非標點字時 undefined。skip：不算的位置（用 Notes 修過的字，#228）。 */
+function minConfidence({ text, confidences }: Recognized, skip: ReadonlySet<number>): number | undefined {
+  const counted = [...text].flatMap((char, i) => (NOT_COUNTED.test(char) || skip.has(i) ? [] : [confidences[i] ?? 1]));
   return counted.length ? Math.min(...counted) : undefined;
 }
 
@@ -144,9 +147,10 @@ const MIN_KEPT_CHARS = 4;
  * 被門檻擋下的段，如果不可靠的字全擠在句尾（例如句尾加了假名注音的名字被讀成「177」），剪掉句尾那段、留下前面可靠的部分；
  * 不可靠的字夾在句子中間、或剪完剩太少，回傳 undefined（照樣整段 unreadable）。
  */
-function dropShakyTail(ocr: Recognized): { kept: Recognized; dropped: string } | undefined {
+function dropShakyTail(ocr: Recognized, skip: ReadonlySet<number>): { kept: Recognized; dropped: string } | undefined {
   const chars = [...ocr.text];
-  const shaky = (i: number) => !NOT_COUNTED.test(chars[i]!) && (ocr.confidences[i] ?? 1) < SHAKY_CONFIDENCE;
+  // 用 Notes 修過的字（#228）算可靠
+  const shaky = (i: number) => !NOT_COUNTED.test(chars[i]!) && !skip.has(i) && (ocr.confidences[i] ?? 1) < SHAKY_CONFIDENCE;
   const lastSure = chars.findLastIndex((char, i) => !NOT_COUNTED.test(char) && !shaky(i));
   // 句尾那段從最後一個可靠字之後的第一個不可靠字開始；中間夾的標點跟著剪，可靠字後面原本的標點留著
   const cut = chars.findIndex((_, i) => i > lastSure && shaky(i));
@@ -156,11 +160,19 @@ function dropShakyTail(ocr: Recognized): { kept: Recognized; dropped: string } |
   return { kept: { text: head.join(''), confidences: ocr.confidences.slice(0, cut) }, dropped: chars.slice(cut).join('') };
 }
 
-/**
- * accept：收不收一個框（外框，0～1 比例）；不收的不做 OCR、不出現在結果。長 Page 用它擋掉被可見範圍切到的框
- * 與已收過的框（spec #142）；閱讀順序仍然看整頁的框排。
- */
-export async function analyzePage(engine: Engine, image: PageImage, reading: (ja: string) => string, accept?: (box: RatioRect) => boolean): Promise<PageText> {
+export interface AnalyzeOptions {
+  /**
+   * 收不收一個框（外框，0～1 比例）；不收的不做 OCR、不出現在結果。長 Page 用它擋掉被可見範圍切到的框
+   * 與已收過的框（spec #142）；閱讀順序仍然看整頁的框排。
+   */
+  accept?: (box: RatioRect) => boolean;
+  /** 這部 Series 的 Notes 條目原文：OCR 讀成形近字的名字換回來（#228）。 */
+  notesNames?: readonly string[];
+  /** 每修一處呼叫一次（id 是這段在結果裡的 id），給 trace 記。 */
+  onNameFix?: (fix: SegmentNameFix) => void;
+}
+
+export async function analyzePage(engine: Engine, image: PageImage, reading: (ja: string) => string, { accept, notesNames = [], onNameFix }: AnalyzeOptions = {}): Promise<PageText> {
   const { width, height } = image;
   const ratio = ([x, y, w, h]: PixelBox): RatioRect => ({ x: x / width, y: y / height, w: w / width, h: h / height });
   const detections = nms((await engine.detect(image)).filter((d) => d.score >= SCORE_THRESHOLD));
@@ -178,13 +190,18 @@ export async function analyzePage(engine: Engine, image: PageImage, reading: (ja
   let order = 0;
   units.forEach((unit, i) => {
     const raw = recognized[i] ?? { text: '', confidences: [] };
-    if (!hasText(raw.text)) return;
+    // 修名字在算信心、unreadable 與讀音之前：之後全部用修過的原文
+    const fixed = fixNames(raw.text, raw.candidates ?? [], notesNames);
+    if (!hasText(fixed.text)) return;
     order++;
-    const rawConfidence = minConfidence(raw);
-    const trimmed = rawConfidence !== undefined && rawConfidence < OCR_CONFIDENCE_THRESHOLD ? dropShakyTail(raw) : undefined;
-    const ocr = trimmed?.kept ?? raw;
-    const 原文 = ocr.text;
-    const ocrConfidence = minConfidence(ocr);
+    const { fixes } = fixed;
+    const skip = new Set(fixes.map((f) => f.at));
+    const named = { ...raw, text: fixed.text };
+    const namedConfidence = minConfidence(named, skip);
+    // 被門檻擋下時，不可靠的字全在句尾就剪掉那段（ADR 0009 的「句尾雜訊」）
+    const trimmed = namedConfidence !== undefined && namedConfidence < OCR_CONFIDENCE_THRESHOLD ? dropShakyTail(named, skip) : undefined;
+    const 原文 = trimmed?.kept.text ?? named.text;
+    const ocrConfidence = trimmed ? minConfidence(trimmed.kept, skip) : namedConfidence;
     const common = {
       order,
       orientation: orientation(unit.textBbox),
@@ -196,15 +213,17 @@ export async function analyzePage(engine: Engine, image: PageImage, reading: (ja
       ...(ocrConfidence === undefined ? {} : { ocrConfidence }),
       ...(trimmed ? { ocrDropped: trimmed.dropped } : {}),
     } as const;
+    const id = unit.kind === 'balloon' ? `b${result.balloons.length + 1}` : `l${result.looseText.length + 1}`;
+    for (const fix of fixes) onNameFix?.({ id, ...fix });
     if (unit.kind === 'balloon') {
       result.balloons.push({
-        id: `b${result.balloons.length + 1}`,
+        id,
         ...common,
         balloonBbox: ratio(unit.bbox),
         textBbox: ratio(unit.textBbox),
       } satisfies BalloonText);
     } else {
-      result.looseText.push({ id: `l${result.looseText.length + 1}`, ...common, bbox: ratio(unit.bbox) } satisfies LooseText);
+      result.looseText.push({ id, ...common, bbox: ratio(unit.bbox) } satisfies LooseText);
     }
   });
   return result;

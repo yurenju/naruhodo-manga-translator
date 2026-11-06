@@ -32,10 +32,11 @@ import { createClaudeTranslator } from './claude-translator.ts';
 import { subImageRect, thumbnailSize, toImageRect, toSubRect } from './crop.ts';
 import { eraseLuminance } from './erase-color.ts';
 import { createKuromojiReading } from './kuromoji-reading.ts';
-import { eraseImage, eraseLooseText, meanLuminance, type EraseImage } from './erase-image.ts';
+import { eraseBalloon, eraseLooseText, meanLuminance, type EraseImage } from './erase-image.ts';
 import { createLocalPipeline } from './local-pipeline.ts';
 import { detectExecutionProvider } from './models/model-files.ts';
 import { pageRgba } from './page-image.ts';
+import type { SegmentNameFix } from './pipeline/name-fix.ts';
 import { cropImage, splitSpread } from './spread.ts';
 
 const trace = createTrace('offscreen');
@@ -133,7 +134,7 @@ const pipeline = createLocalPipeline({
  * 從截圖裁出全解析度的 Page（Spread 的一頁用 subRect）跑本機流水線（座標換算與縮圖相同）；順便從同一張截圖算每個 Balloon 的擦除底色
  * （原地覆蓋用，canvas 網站的 canvas 是 tainted，content script 讀不到像素）。
  */
-async function analyze({ screenshot, viewport, candidate, subRect, collected = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
+async function analyze({ screenshot, viewport, candidate, subRect, collected = [], notesNames = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
   if (__E2E__ && config) pipeline.configure(config);
   const bitmap = await createImageBitmap(await (await fetch(screenshot)).blob());
   try {
@@ -150,7 +151,10 @@ async function analyze({ screenshot, viewport, candidate, subRect, collected = [
         }
       : undefined;
     const startedAt = performance.now();
-    const analyzed = await pipeline.analyze(bitmap, rect, accept);
+    // OCR 原本讀到的字只出現在 trace（#228）。長 Page 的 id 是這一截的編號，併進整個 Page 時會重編
+    const nameFixes: SegmentNameFix[] = [];
+    const analyzed = await pipeline.analyze(bitmap, rect, { accept, notesNames, onNameFix: (fix) => nameFixes.push(fix) });
+    if (nameFixes.length > 0) trace('ocr:nameFix', { anchorId: candidate.anchorId, subRect, fixes: nameFixes });
     // 被切到、重疊而不收的框；tooTall＝比可見範圍還高，永遠收不到（已知限制）
     if (__DEBUG__ && slice && rejected.length > 0) trace('longPage:rejected', { anchorId: candidate.anchorId, slice, rejected });
     const eraseStartedAt = performance.now();
@@ -188,7 +192,7 @@ function eraseBalloons(balloons: BalloonText[], page: RgbaImage): BalloonText[] 
   return balloons.map((b) => {
     const text = ratioToBox(b.textBbox, page);
     const luminance = eraseLuminance(gray, expandBox(text, ERASE_PADDING));
-    const erase = eraseImage(page, ratioToBox(b.balloonBbox, page), text);
+    const erase = eraseBalloon(page, ratioToBox(b.balloonBbox, page), text);
     // 排版矩形（#150）只有 Balloon 有；Loose Text 的排版區是文字框本身
     return erase ? { ...b, eraseLuminance: luminance, erase: { ...encodeErase(erase, page), fit: boxToRatio(tupleBox(erase.fit), page) } } : { ...b, eraseLuminance: luminance };
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PixelBox } from './boxes.ts';
 import { analyzePage, type Detection, type Engine, type PageImage } from './analyze.ts';
+import type { Candidate } from './name-fix.ts';
 
 /** 1000×2000 的全白頁：整頁是背景、沒有 Panel，順序只看座標（右先、上先）。 */
 function whitePage(): PageImage {
@@ -152,7 +153,7 @@ describe('analyzePage：偵測結果 → Balloon／Loose Text', () => {
     );
 
     // 只收沒碰到上緣的框；Balloon 看的是外框
-    const page = await analyzePage(engine, whitePage(), (ja) => ja, (box) => box.y > 0);
+    const page = await analyzePage(engine, whitePage(), (ja) => ja, { accept: (box) => box.y > 0 });
 
     expect(page.balloons.map((b) => [b.id, b.order, b.原文])).toEqual([['b1', 1, 'のこる']]);
     expect(engine.crops).toHaveLength(1);
@@ -232,5 +233,66 @@ describe('analyzePage：OCR 信心門檻（ADR 0009）', () => {
 
     expect(b1).toMatchObject({ 原文: 'あいうえお', unreadable: false, ocrConfidence: 0.3 });
     expect(b1).not.toHaveProperty('ocrDropped');
+  });
+});
+
+describe('analyzePage：用 Series Notes 的名字修形近字（#228）', () => {
+  /** 一個 Balloon，OCR 讀出 text；candidates 是「第幾個字 → 那一步的候選」，其他字沒有候選、信心 0.99。 */
+  async function analyzeOne(text: string, names: string[], candidates: Record<number, Candidate[]>, confidences?: number[]) {
+    const ocr = {
+      text,
+      confidences: confidences ?? [...text].map(() => 0.99),
+      candidates: [...text].map((_, i) => candidates[i]),
+    };
+    const engine = fakeEngine([det('text_bubble', [800, 100, 50, 200])], { 800: ocr });
+    const fixes: unknown[] = [];
+    const page = await analyzePage(engine, whitePage(), (ja) => `讀音:${ja}`, { notesNames: names, onNameFix: (fix) => fixes.push(fix) });
+    return { balloon: page.balloons[0]!, fixes };
+  }
+
+  it('正確的字在前 3 名候選、機率 ≥ 0.05 就換掉；修過的字不算進最低信心，讀音用修過的原文', async () => {
+    // 「丼」的信心 0.2 本來會被門檻 0.25 擋下
+    const { balloon, fixes } = await analyzeOne('桜丼さん', ['桜井'], { 1: [{ text: '丼', probability: 0.2 }, { text: '井', probability: 0.15 }, { text: '并', probability: 0.1 }] }, [0.9, 0.2, 0.8, 0.95]);
+
+    expect(balloon.原文).toBe('桜井さん');
+    expect(balloon.讀音).toBe('讀音:桜井さん');
+    expect(balloon.ocrConfidence).toBe(0.8);
+    expect(balloon.unreadable).toBe(false);
+    expect(fixes).toEqual([{ id: 'b1', at: 1, from: '丼', to: '井', probability: 0.15 }]);
+  });
+
+  it('正確的字不在前 3 名，或機率低於 0.05，就不換', async () => {
+    const fourth = await analyzeOne('桜丼さん', ['桜井'], {
+      1: [{ text: '丼', probability: 0.5 }, { text: '并', probability: 0.2 }, { text: '弁', probability: 0.15 }, { text: '井', probability: 0.1 }],
+    });
+    const unlikely = await analyzeOne('桜丼さん', ['桜井'], { 1: [{ text: '丼', probability: 0.9 }, { text: '井', probability: 0.049 }] });
+
+    expect([fourth.balloon.原文, unlikely.balloon.原文]).toEqual(['桜丼さん', '桜丼さん']);
+    expect([...fourth.fixes, ...unlikely.fixes]).toEqual([]);
+  });
+
+  it('差兩個字、差的字是假名、名字只有一個字，都不換', async () => {
+    const both = [{ text: '丼', probability: 0.5 }, { text: '井', probability: 0.4 }];
+    const twoOff = await analyzeOne('松丼さん', ['桜井'], { 0: [{ text: '松', probability: 0.5 }, { text: '桜', probability: 0.4 }], 1: both });
+    const kana = await analyzeOne('桜いさん', ['桜井'], { 1: [{ text: 'い', probability: 0.5 }, { text: '井', probability: 0.4 }] });
+    const single = await analyzeOne('丼さん', ['井'], { 0: both });
+
+    expect([twoOff.balloon.原文, kana.balloon.原文, single.balloon.原文]).toEqual(['松丼さん', '桜いさん', '丼さん']);
+  });
+
+  it('名字其他位置只有假名對上的不換（避免只靠假名對上）', async () => {
+    const { balloon } = await analyzeOne('みな丼です', ['みな井'], { 2: [{ text: '丼', probability: 0.5 }, { text: '井', probability: 0.4 }] });
+
+    expect(balloon.原文).toBe('みな丼です');
+  });
+
+  it('同一段有兩個名字各差一個字，兩處都換', async () => {
+    const { balloon, fixes } = await analyzeOne('桜丼と柏本', ['桜井', '柏木'], {
+      1: [{ text: '丼', probability: 0.5 }, { text: '井', probability: 0.4 }],
+      4: [{ text: '本', probability: 0.6 }, { text: '木', probability: 0.3 }],
+    });
+
+    expect(balloon.原文).toBe('桜井と柏木');
+    expect(fixes.map((f) => (f as { to: string }).to)).toEqual(['井', '木']);
   });
 });

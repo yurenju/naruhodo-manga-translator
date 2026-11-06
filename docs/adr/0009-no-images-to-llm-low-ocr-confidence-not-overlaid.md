@@ -7,7 +7,7 @@
 ## 決定
 
 - **任何情況都不把圖片（整頁或 crop）送給 LLM**，包括 Own API Key 與 Hosted Translation。
-- **OCR 沒把握的句子在本機擋下。** OCR 解碼時記下每一步 softmax 的最高機率，PageText 每段存「非標點字的最低信心」（標點、符號、長音、`―…〜` 不算）。最低信心 **< 0.25** 的段當成 `unreadable`：不覆蓋，side panel 照常列出原文。Balloon 與 Loose Text 都適用。
+- **OCR 沒把握的句子在本機擋下。** OCR 解碼時記下每一步 softmax 的最高機率，PageText 每段存「非標點字的最低信心」（標點、符號、長音、`―…〜` 不算）。最低信心 **< 0.25** 的段當成 `unreadable`：不覆蓋，side panel 照常列出原文。Balloon 與 Loose Text 都適用。用 Series Notes 的名字修回來的字（#228）不算進最低信心：能換是因為 Notes 有這個名字、OCR 也把它列為候選，不是 OCR 本身的把握。
 - **LLM 判斷是亂碼的段（`unreadable`）也不覆蓋。** 兩者任一成立就是 `unreadable`；LLM 讀得懂，也不會把本機擋下的段改回來。
 - 不送候選字、不為了 OCR 的不確定性改翻譯呼叫（①）的 prompt、① 不回傳修正後的原文。
 

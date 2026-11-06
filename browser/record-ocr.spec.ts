@@ -4,11 +4,21 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { readGroundTruth, SYNTHETIC_IDS } from '../src/testing/synthetic.ts';
-import type { RecordedOcr } from '../src/offscreen/fake-engine.ts';
+import type { RecordedOcr, RecordedText } from '../src/offscreen/fake-engine.ts';
 import { E2E_PIPELINE, test } from './fixtures.ts';
 
 const SYNTHETIC = new URL('../testdata/synthetic/out/', import.meta.url);
 const OUTPUT = new URL('../testdata/synthetic/recorded-ocr.json', import.meta.url);
+
+/** 手寫的候選字（#228）：同一個範圍裡原文沒變的段照樣保留，模型讀出別的字就丟掉（之前寫的候選對不上了）。 */
+async function keptCandidates(): Promise<(id: string, rect: readonly number[], 原文: string) => Pick<RecordedText, 'candidates'>> {
+  const previous = JSON.parse(await readFile(OUTPUT, 'utf8')) as RecordedOcr[];
+  return (id, rect, 原文) => {
+    const range = previous.find((r) => r.id === id && r.rect.join() === rect.join());
+    const candidates = [...(range?.balloons ?? []), ...(range?.looseText ?? [])].find((t) => t.原文 === 原文)?.candidates;
+    return candidates ? { candidates } : {};
+  };
+}
 
 test('錄下真模型在合成頁上的結果', async ({ context, extensionId, mockSite }) => {
   test.setTimeout(5 * 60_000);
@@ -16,6 +26,7 @@ test('錄下真模型在合成頁上的結果', async ({ context, extensionId, m
   await page.goto(`chrome-extension://${extensionId}/test-pipeline.html`);
   const config = E2E_PIPELINE(mockSite);
 
+  const kept = await keptCandidates();
   const recorded: RecordedOcr[] = [];
   for (const id of SYNTHETIC_IDS) {
     const gt = readGroundTruth(id);
@@ -24,11 +35,12 @@ test('錄下真模型在合成頁上的結果', async ({ context, extensionId, m
     const rects = [[0, 0, gt.width, gt.height] as const, ...(gt.pages.length > 1 ? gt.pages.map((p) => p.bbox) : [])];
     for (const [x, y, width, height] of rects) {
       const { text } = await page.evaluate(([url, config, rect]) => globalThis.__analyzeImage(url, config, rect), [dataUrl, config, { x, y, width, height }] as const);
+      const rect = [x, y, width, height] as const;
       recorded.push({
         id,
-        rect: [x, y, width, height],
-        balloons: text.balloons.map(({ balloonBbox, textBbox, 原文, ocrConfidence }) => ({ balloonBbox, textBbox, 原文, ocrConfidence })),
-        looseText: text.looseText.map(({ bbox, 原文, ocrConfidence }) => ({ bbox, 原文, ocrConfidence })),
+        rect: [...rect],
+        balloons: text.balloons.map(({ balloonBbox, textBbox, 原文, ocrConfidence }) => ({ balloonBbox, textBbox, 原文, ocrConfidence, ...kept(id, rect, 原文) })),
+        looseText: text.looseText.map(({ bbox, 原文, ocrConfidence }) => ({ bbox, 原文, ocrConfidence, ...kept(id, rect, 原文) })),
       });
       console.log(`${id} [${x}, ${y}, ${width}, ${height}]：${text.balloons.length} 個 Balloon、${text.looseText.length} 段 Loose Text`);
     }

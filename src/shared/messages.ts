@@ -328,6 +328,8 @@ export interface AnalyzeRequest {
   subRect?: RatioRect;
   /** 長 Page（candidate.visible）才有：已收 Line 的外框（Page 座標），這一截裡跟它們重疊的框不做 OCR。 */
   collected?: RatioRect[];
+  /** 這頁 Series 的 Notes 條目原文：OCR 讀成形近字的名字換回來（#228）。Series 還在猜時沒有。 */
+  notesNames?: string[];
   /** e2e build 才會帶。 */
   pipeline?: PipelineConfig;
 }

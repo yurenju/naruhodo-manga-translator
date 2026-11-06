@@ -77,3 +77,16 @@ describe('FakeEngine 重播', () => {
     });
   }
 });
+
+describe('FakeEngine 重播候選字（#228）', () => {
+  it('錄製資料帶候選字的段，有 Notes 的名字就照規則修；沒有名字照錄下來的原文', async () => {
+    const r = recorded.find((x) => x.id === 'p02-ruby')!;
+    const image = () => pageImage(cropGray(readGray(r.id), r.rect));
+
+    const withNames = await analyzePage(engineFrom(match), image(), () => '', { notesNames: ['霧嶋湊'] });
+    const without = await analyzePage(engineFrom(match), image(), () => '');
+
+    expect(withNames.balloons.map((b) => b.原文)).toContain('転校生の霧嶋湊ですよろしく');
+    expect(without.balloons.map((b) => b.原文)).toContain('転校生の霧島湊ですよろしく');
+  });
+});
