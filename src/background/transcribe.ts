@@ -86,6 +86,11 @@ interface SeenPage {
 }
 
 /** 一個 tab 在一部 Series 裡依序看過的頁（舊的在前）。 */
+/** 翻好了但一句都沒有（全部 unreadable，例如話末推薦縮圖、空白頁）：當 Prior Pages 沒有內容。 */
+function isEmpty(page: SeenPage): boolean {
+  return page.lines?.length === 0;
+}
+
 interface SeenPages {
   seriesId: string | undefined;
   pages: SeenPage[];
@@ -255,10 +260,10 @@ export function createTranscriber(deps: TranscriberDeps) {
 
   /**
    * 這頁的 Prior Pages 位置：這一批之前最近看過的頁，接著同一批裡閱讀順序在前的頁，取最後 2 頁
-   * （還沒翻好的也算位置，送出時才略過）。
+   * （還沒翻好的也算位置，送出時才略過）。翻好但一句都沒有的頁（話末推薦縮圖、空白頁）不算，往前補到有句子的頁。
    */
   function priorOf(tab: TabState, record: PageRecord): SeenPage[] {
-    const pages = seen.get(tab.tabId)?.pages ?? [];
+    const pages = (seen.get(tab.tabId)?.pages ?? []).filter((p) => !isEmpty(p));
     const before = pages.filter((p) => findSamePage(tab.pages, p.pageHash) === undefined);
     const earlier = earlierInBatch(tab, record).flatMap((p) => findSamePage(pages, p.pageHash) ?? []);
     return [...before, ...earlier].slice(-PRIOR_PAGES);
@@ -281,7 +286,7 @@ export function createTranscriber(deps: TranscriberDeps) {
    * 放在最後（離這次最近），一樣算在 PRIOR_PAGES 之內。
    */
   function priorPages(job: Job): PriorPage[] {
-    const pages = job.prior.flatMap((p) => (p.lines ? [p.lines] : []));
+    const pages = job.prior.flatMap((p) => (p.lines && !isEmpty(p) ? [p.lines] : []));
     const same = job.added && job.record.text ? translatedLines(job.record.text, job.added) : [];
     return (same.length > 0 ? [...pages, same] : pages).slice(-PRIOR_PAGES);
   }

@@ -1352,7 +1352,50 @@ describe('Prior Pages（ADR 0005）', () => {
     expect(priorOf(inputs)).toEqual([[], [], ['a1', 'a2']]);
   });
 
-  it('跳過 unreadable 的句子；整頁都 unreadable 的頁送空的', async () => {
+  it('整頁都 unreadable 的頁（話末推薦縮圖、空白頁）不佔名額：往前補到有句子的頁', async () => {
+    const inputs: TranslateInput[] = [];
+    const translator = translatorWithNotes([], inputs);
+    const empty = new Set(['a3', 'a4']);
+    const { transcriber } = setup({
+      analyze: analyzeByAnchor,
+      getTranslator: () => ({
+        ...translator,
+        async translatePage(input) {
+          const output = await translator.translatePage(input);
+          if (!empty.has(input.items[0]!.原文)) return output;
+          return { ...output, items: output.items.map((i) => ({ ...i, 譯文: '', unreadable: true })) };
+        },
+      }),
+    });
+
+    for (const anchor of ['a1', 'a2', 'a3', 'a4', 'a5']) await transcriber.update(1, [thumb(anchor)], capture);
+
+    expect(inputs.at(-1)!.priorPages.map((p) => p[0]?.原文)).toEqual(['a1', 'a2']);
+  });
+
+  it('同一批裡在前的頁翻完才知道是空白頁：送出時略過，不送空頁', async () => {
+    const inputs: TranslateInput[] = [];
+    const translator = translatorWithNotes([], inputs);
+    const { transcriber } = setup({
+      analyze: analyzeByAnchor,
+      getTranslator: () => ({
+        ...translator,
+        async translatePage(input) {
+          const output = await translator.translatePage(input);
+          if (input.items[0]!.原文 !== 'a2') return output;
+          return { ...output, items: output.items.map((i) => ({ ...i, 譯文: '', unreadable: true })) };
+        },
+      }),
+    });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+    // Spread：右頁 a2 是空白頁
+    await transcriber.update(1, [thumb('a2'), thumb('a3')], capture);
+
+    expect(inputs.at(-1)!.priorPages.map((p) => p[0]?.原文)).toEqual(['a1']);
+  });
+
+  it('跳過 unreadable 的句子', async () => {
     const inputs: TranslateInput[] = [];
     const translator = translatorWithNotes([], inputs);
     const { transcriber } = setup({
