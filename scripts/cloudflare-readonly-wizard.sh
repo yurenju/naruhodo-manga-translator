@@ -307,13 +307,12 @@ else
   open_url "https://dash.cloudflare.com/?to=/:account/api-tokens"
   step "Account API tokens → Create Token → 最下面的 Custom token → Get started。"
   step "Token name 填 $TOKEN_NAME。"
-  step "Permissions 加三列，全部選 Read："
-  note "    D1 → Read"
-  note "    Workers Tail → Read"
-  note "    Workers Observability → Read"
-  note "    （畫面上的名稱可能略有不同：選最接近的唯讀項。不要加任何 Edit。）"
-  step "Client IP address filtering 留空；TTL 選一年。"
-  step "Continue to summary → 確認只有上面三個 Read → Create Token → 複製 token（只會顯示一次）。"
+  step "Permission policies 保持 Entire Account，用搜尋框找這兩個權限並勾選："
+  note "    搜尋 D1 → D1 勾 Read"
+  note "    搜尋 Metadata → Workers 勾 Metadata Read-only（涵蓋 tail 與歷史 log；不要勾 Content Read-only、Editor、Admin）"
+  note "    標著 Legacy 的 Workers Tail、Workers Observability 都不用勾：Metadata Read-only 已經包含。"
+  step "Token expiration 選一年；IP 留空（All IP addresses allowed）。"
+  step "Review token：Permission policies 只有 D1 Read 與 Workers Metadata Read-Only → Create token → 複製 token（只會顯示一次）。"
   while :; do
     ask_secret CF_TOKEN "貼上 token（輸入不會顯示）："
     cf GET /tokens/verify
@@ -406,9 +405,8 @@ while :; do
     break
   fi
   if [[ "$HTTP_STATUS" == 401 || "$HTTP_STATUS" == 403 ]]; then
-    warn "沒有權限（HTTP $HTTP_STATUS $(cf_errors)）：這個 API 的文件只列了 Workers Observability 的 Edit。"
-    note "ADR 0011 接受改成 Edit：它只能改 log 設定，碰不到程式碼、資料與 secrets，proxy 也只轉發查詢。"
-    step "後台 Account API tokens → $TOKEN_NAME 的 ⋯ → Edit：Workers Observability 改成 Edit → Continue → Update token（token 值不變）。"
+    warn "沒有權限（HTTP $HTTP_STATUS $(cf_errors)）"
+    step "後台 Account API tokens → $TOKEN_NAME 的 ⋯ → Edit：確認有 Workers → Metadata Read-only → Update token（token 值不變）。"
     confirm "改好了，要再試一次嗎？" && continue
     SKIPPED+=("歷史 log 查不了：npm run prod:logs 不能用，只剩 prod:tail")
     break
@@ -425,7 +423,7 @@ if cf_ok; then
   note "✓ tail 開得起來"
 else
   warn "開 tail 失敗（HTTP $HTTP_STATUS $(cf_errors)）"
-  SKIPPED+=("tail 開不起來：確認 token 有 Workers Tail → Read")
+  SKIPPED+=("tail 開不起來：確認 token 有 Workers → Metadata Read-only")
 fi
 pause
 

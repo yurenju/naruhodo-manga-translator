@@ -16,7 +16,7 @@
 
 - **proxy 存在是為了減少 1Password 授權次數。** 1Password CLI 每個終端機 session 授權一次，agent 每次執行指令都是新的行程。如果每個查詢各自 `op run`，一次除錯會跳十幾次授權。改成 proxy 後，一次除錯只授權一次，token 也只存在 proxy 行程的記憶體裡。
 - **白名單補上 token 做不到的範圍限制。** D1 Read 對整個帳號有效，不能限定單一資料庫，同一帳號下其他專案的資料庫也讀得到。所以「只碰 naruhodo 的資源」靠 proxy 的白名單來做。SQL 開頭檢查是第二道防線，token 本身就不能寫。
-- **查歷史 log 的 API 文件只列了 Workers Observability Write 權限。** 如果 Read 權限查不了，token 就帶 Observability Write：它只能改 log 設定，碰不到程式碼、資料與 secrets，proxy 也只轉發查詢。
+- **token 只有兩個權限：D1 Read 與 Workers Metadata Read-Only。** 查歷史 log 的 API 文件只列了 Workers Observability Write，原本打算 Read 查不了就接受 Write；實際建立時 Cloudflare 已經改成新的角色模型，Workers Metadata Read-Only 就能查歷史 log 與 tail，不需要任何 Write。標著 Legacy 的 Workers Tail、Workers Observability 都不用另外勾。
 
 ## 不採用的做法
 
