@@ -36,6 +36,7 @@ import { eraseImage, eraseLooseText, meanLuminance, type EraseImage } from './er
 import { createLocalPipeline } from './local-pipeline.ts';
 import { detectExecutionProvider } from './models/model-files.ts';
 import { pageRgba } from './page-image.ts';
+import type { SegmentNameFix } from './pipeline/name-fix.ts';
 import { cropImage, splitSpread } from './spread.ts';
 
 const trace = createTrace('offscreen');
@@ -133,7 +134,7 @@ const pipeline = createLocalPipeline({
  * 從截圖裁出全解析度的 Page（Spread 的一頁用 subRect）跑本機流水線（座標換算與縮圖相同）；順便從同一張截圖算每個 Balloon 的擦除底色
  * （原地覆蓋用，canvas 網站的 canvas 是 tainted，content script 讀不到像素）。
  */
-async function analyze({ screenshot, viewport, candidate, subRect, collected = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
+async function analyze({ screenshot, viewport, candidate, subRect, collected = [], notesNames = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
   if (__E2E__ && config) pipeline.configure(config);
   const bitmap = await createImageBitmap(await (await fetch(screenshot)).blob());
   try {
@@ -150,7 +151,10 @@ async function analyze({ screenshot, viewport, candidate, subRect, collected = [
         }
       : undefined;
     const startedAt = performance.now();
-    const analyzed = await pipeline.analyze(bitmap, rect, accept);
+    // OCR 原本讀到的字只出現在 trace（#228）。長 Page 的 id 是這一截的編號，併進整個 Page 時會重編
+    const nameFixes: SegmentNameFix[] = [];
+    const analyzed = await pipeline.analyze(bitmap, rect, { accept, notesNames, onNameFix: (fix) => nameFixes.push(fix) });
+    if (nameFixes.length > 0) trace('ocr:nameFix', { anchorId: candidate.anchorId, subRect, fixes: nameFixes });
     // 被切到、重疊而不收的框；tooTall＝比可見範圍還高，永遠收不到（已知限制）
     if (__DEBUG__ && slice && rejected.length > 0) trace('longPage:rejected', { anchorId: candidate.anchorId, slice, rejected });
     const eraseStartedAt = performance.now();

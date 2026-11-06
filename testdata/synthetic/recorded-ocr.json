@@ -146,7 +146,23 @@
           "h": 0.109375
         },
         "原文": "転校生の霧島湊ですよろしく",
-        "ocrConfidence": 0.9735911998246063
+        "ocrConfidence": 0.9735911998246063,
+        "candidates": {
+          "5": [
+            {
+              "text": "島",
+              "probability": 0.62
+            },
+            {
+              "text": "嶋",
+              "probability": 0.31
+            },
+            {
+              "text": "鳥",
+              "probability": 0.04
+            }
+          ]
+        }
       },
       {
         "balloonBbox": {

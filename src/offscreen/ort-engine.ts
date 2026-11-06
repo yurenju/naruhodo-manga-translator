@@ -10,6 +10,7 @@
 import type * as Ort from 'onnxruntime-web';
 import type { ExecutionProvider } from './models/model-files.ts';
 import { DETECTION_LABELS, type Detection, type Engine, type PageImage, type Recognized } from './pipeline/analyze.ts';
+import { TOP_CANDIDATES, type Candidate } from './pipeline/name-fix.ts';
 import type { PixelBox } from './pipeline/boxes.ts';
 import { createTrace } from '../shared/trace.ts';
 
@@ -54,6 +55,27 @@ export interface OrtEngine extends Engine {
  */
 export function sessionExecutionProviders(ep: ExecutionProvider): Record<'detector' | 'encoder' | 'decoder', ExecutionProvider> {
   return { detector: 'wasm', encoder: ep, decoder: ep };
+}
+
+/**
+ * 解碼一步的前 TOP_CANDIDATES 名 token（修名字用，#228） 與 softmax 機率（機率高的在前）。logits 從 offset 起是這一步整個字表的值。
+ * 第 1 名的機率就是這個字的 OCR 信心（ADR 0009）。
+ */
+export function topCandidates(logits: Float32Array, offset: number, vocabSize: number): { id: number; probability: number }[] {
+  const k = TOP_CANDIDATES;
+  const top: { id: number; logit: number }[] = [];
+  for (let v = 0; v < vocabSize; v++) {
+    const logit = logits[offset + v]!;
+    if (top.length === k && logit <= top[k - 1]!.logit) continue;
+    let i = Math.min(top.length, k - 1);
+    while (i > 0 && top[i - 1]!.logit < logit) i--;
+    top.splice(i, 0, { id: v, logit });
+    if (top.length > k) top.pop();
+  }
+  const max = top[0]?.logit ?? 0;
+  let sum = 0;
+  for (let v = 0; v < vocabSize; v++) sum += Math.exp(logits[offset + v]! - max);
+  return top.map(({ id, logit }) => ({ id, probability: Math.exp(logit - max) / sum }));
 }
 
 export async function createOrtEngine(
@@ -141,7 +163,10 @@ export async function createOrtEngine(
     const sequences: bigint[][] = Array.from({ length: n }, () => [CLS]);
     /** 每一步選中的 token 的 softmax 機率（OCR 信心，ADR 0009），跟 sequences 去掉 CLS 後一一對應。 */
     const probabilities: number[][] = Array.from({ length: n }, () => []);
+    /** 每一步的前 3 名候選（修名字用，#228），跟 probabilities 一一對應。 */
+    const stepCandidates: Candidate[][][] = Array.from({ length: n }, () => []);
     const done = new Array<boolean>(n).fill(false);
+    const tokenText = (id: number) => (vocab[id] ?? '').replace(/^##/, '');
     for (let step = 0; step < MAX_TOKENS && done.includes(false); step++) {
       decodeSteps++;
       const length = sequences[0]!.length;
@@ -157,22 +182,14 @@ export async function createOrtEngine(
         if (done[k]) {
           sequences[k]!.push(0n);
           probabilities[k]!.push(1);
+          stepCandidates[k]!.push([]);
           continue;
         }
-        const offset = (k * length + length - 1) * vocabSize;
-        let best = 0;
-        let bestValue = -Infinity;
-        for (let v = 0; v < vocabSize; v++) {
-          if (data[offset + v]! > bestValue) {
-            bestValue = data[offset + v]!;
-            best = v;
-          }
-        }
-        // 最高的 softmax 機率＝1 / Σ exp(logit − 最大 logit)
-        let sum = 0;
-        for (let v = 0; v < vocabSize; v++) sum += Math.exp(data[offset + v]! - bestValue);
+        const top = topCandidates(data, (k * length + length - 1) * vocabSize, vocabSize);
+        const best = top[0]!.id;
         sequences[k]!.push(BigInt(best));
-        probabilities[k]!.push(1 / sum);
+        probabilities[k]!.push(top[0]!.probability);
+        stepCandidates[k]!.push(top.map(({ id, probability }) => ({ text: tokenText(id), probability })));
         if (best === SEP) done[k] = true;
       }
     }
@@ -189,13 +206,14 @@ export async function createOrtEngine(
     return sequences.map((seq, k) => {
       const tokens = seq
         .slice(1)
-        .map((t, step) => ({ id: Number(t), probability: probabilities[k]![step]! }))
+        .map((t, step) => ({ id: Number(t), probability: probabilities[k]![step]!, candidates: stepCandidates[k]![step]! }))
         .filter(({ id }) => id > LAST_SPECIAL)
-        .map(({ id, probability }) => ({ text: (vocab[id] ?? '').replace(/^##/, ''), probability }));
-      // 一個 token 可能不只一個字：每個字都用那個 token 的機率
+        .map(({ id, probability, candidates }) => ({ text: tokenText(id), probability, candidates }));
+      // 一個 token 可能不只一個字：每個字都用那個 token 的機率與候選
       return {
         text: tokens.map((t) => t.text).join(''),
         confidences: tokens.flatMap((t) => [...t.text].map(() => t.probability)),
+        candidates: tokens.flatMap((t) => [...t.text].map(() => t.candidates)),
       };
     });
   }

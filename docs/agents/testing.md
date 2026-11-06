@@ -55,7 +55,7 @@ Ticket sessions and ordinary changes run unit + browser test only.
 
 ## FakeEngine and the recording
 
-Browser tests replace the ONNX models with FakeEngine (`src/offscreen/fake-engine.ts`). It recognises which synthetic page it was given by comparing thumbnails, then replays what the real models returned on that page: `testdata/synthetic/recorded-ocr.json`. So browser tests see the real models' boxes and text (including their mistakes), just without running them.
+Browser tests replace the ONNX models with FakeEngine (`src/offscreen/fake-engine.ts`). It recognises which synthetic page it was given by comparing thumbnails, then replays what the real models returned on that page: `testdata/synthetic/recorded-ocr.json`. So browser tests see the real models' boxes and text (including their mistakes), just without running them. A segment may also carry hand-written `candidates` (code point index → that decoding step's candidates) for the Series Notes name fix (#228); re-recording keeps them while the segment's text stays the same.
 
 Re-record when the models, detection or OCR change: `npm run site:build && npm run record:ocr`, then commit the JSON and run e2e. The same command also re-records `practice-spread/ocr.json`, the text the Worker uses to recognise the Practice Spread (real OCR on the website's practice page, wasm and WebGPU); re-record it too when the Practice Spread image changes. If FakeEngine throws "認不出這是哪張合成頁", the page it was given is not one of the recorded ranges (a new mock-site layout, or a crop the extension did not make before).
 

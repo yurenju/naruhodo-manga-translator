@@ -4,6 +4,7 @@
  */
 import type { BalloonText, LooseText, Orientation, PageText, RatioRect } from '../../shared/page-text.ts';
 import { area, intersection, union, type PixelBox } from './boxes.ts';
+import { fixNames, type Candidate, type SegmentNameFix } from './name-fix.ts';
 import { readingOrder, type GrayImage } from './reading-order.ts';
 
 export const DETECTION_LABELS = ['bubble', 'text_bubble', 'text_free'] as const;
@@ -31,6 +32,8 @@ export interface Recognized {
   text: string;
   /** text 每個字（code point）的信心：解碼那一步 softmax 的最高機率。 */
   confidences: number[];
+  /** text 每個字解碼那一步的前幾名候選（機率高的在前），修名字用（#228）；沒有候選的字是 undefined。只在 offscreen 用完就丟。 */
+  candidates?: (readonly Candidate[] | undefined)[];
 }
 
 export interface Engine {
@@ -129,17 +132,25 @@ const OCR_CONFIDENCE_THRESHOLD = 0.25;
 /** 算最低信心時不看的字：標點、符號、空白、長音（ー 在 Unicode 算字母）。 */
 const NOT_COUNTED = /[\p{P}\p{S}\p{Z}ーｰ]/u;
 
-/** 非標點字的最低信心；沒有非標點字時 undefined。 */
-function minConfidence({ text, confidences }: Recognized): number | undefined {
-  const counted = [...text].flatMap((char, i) => (NOT_COUNTED.test(char) ? [] : [confidences[i] ?? 1]));
+/** 非標點字的最低信心；沒有非標點字時 undefined。skip：不算的位置（用 Notes 修過的字，#228）。 */
+function minConfidence({ text, confidences }: Recognized, skip: ReadonlySet<number>): number | undefined {
+  const counted = [...text].flatMap((char, i) => (NOT_COUNTED.test(char) || skip.has(i) ? [] : [confidences[i] ?? 1]));
   return counted.length ? Math.min(...counted) : undefined;
 }
 
-/**
- * accept：收不收一個框（外框，0～1 比例）；不收的不做 OCR、不出現在結果。長 Page 用它擋掉被可見範圍切到的框
- * 與已收過的框（spec #142）；閱讀順序仍然看整頁的框排。
- */
-export async function analyzePage(engine: Engine, image: PageImage, reading: (ja: string) => string, accept?: (box: RatioRect) => boolean): Promise<PageText> {
+export interface AnalyzeOptions {
+  /**
+   * 收不收一個框（外框，0～1 比例）；不收的不做 OCR、不出現在結果。長 Page 用它擋掉被可見範圍切到的框
+   * 與已收過的框（spec #142）；閱讀順序仍然看整頁的框排。
+   */
+  accept?: (box: RatioRect) => boolean;
+  /** 這部 Series 的 Notes 條目原文：OCR 讀成形近字的名字換回來（#228）。 */
+  notesNames?: readonly string[];
+  /** 每修一處呼叫一次（id 是這段在結果裡的 id），給 trace 記。 */
+  onNameFix?: (fix: SegmentNameFix) => void;
+}
+
+export async function analyzePage(engine: Engine, image: PageImage, reading: (ja: string) => string, { accept, notesNames = [], onNameFix }: AnalyzeOptions = {}): Promise<PageText> {
   const { width, height } = image;
   const ratio = ([x, y, w, h]: PixelBox): RatioRect => ({ x: x / width, y: y / height, w: w / width, h: h / height });
   const detections = nms((await engine.detect(image)).filter((d) => d.score >= SCORE_THRESHOLD));
@@ -156,11 +167,12 @@ export async function analyzePage(engine: Engine, image: PageImage, reading: (ja
   const result: PageText = { balloons: [], looseText: [] };
   let order = 0;
   units.forEach((unit, i) => {
-    const ocr = recognized[i] ?? { text: '', confidences: [] };
-    const 原文 = ocr.text;
+    const raw = recognized[i] ?? { text: '', confidences: [] };
+    // 修名字在算信心、unreadable 與讀音之前：之後全部用修過的原文
+    const { text: 原文, fixes } = fixNames(raw.text, raw.candidates ?? [], notesNames);
     if (!hasText(原文)) return;
     order++;
-    const ocrConfidence = minConfidence(ocr);
+    const ocrConfidence = minConfidence({ ...raw, text: 原文 }, new Set(fixes.map((f) => f.at)));
     const common = {
       order,
       orientation: orientation(unit.textBbox),
@@ -171,15 +183,17 @@ export async function analyzePage(engine: Engine, image: PageImage, reading: (ja
       unreadable: ocrConfidence !== undefined && ocrConfidence < OCR_CONFIDENCE_THRESHOLD,
       ...(ocrConfidence === undefined ? {} : { ocrConfidence }),
     } as const;
+    const id = unit.kind === 'balloon' ? `b${result.balloons.length + 1}` : `l${result.looseText.length + 1}`;
+    for (const fix of fixes) onNameFix?.({ id, ...fix });
     if (unit.kind === 'balloon') {
       result.balloons.push({
-        id: `b${result.balloons.length + 1}`,
+        id,
         ...common,
         balloonBbox: ratio(unit.bbox),
         textBbox: ratio(unit.textBbox),
       } satisfies BalloonText);
     } else {
-      result.looseText.push({ id: `l${result.looseText.length + 1}`, ...common, bbox: ratio(unit.bbox) } satisfies LooseText);
+      result.looseText.push({ id, ...common, bbox: ratio(unit.bbox) } satisfies LooseText);
     }
   });
   return result;
