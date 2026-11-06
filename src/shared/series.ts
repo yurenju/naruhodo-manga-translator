@@ -15,7 +15,10 @@ export interface Series {
    * 跟其中一個相同就是同一部作品。#186 以前建的 Series 沒有這個欄位。
    */
   originalTitles?: string[];
-  /** 建立時猜的中文譯名，只當顯示用的副標，之後不更新；讀者改名就拿掉（以讀者的名稱為準）。 */
+  /**
+   * 建立時猜的中文譯名，之後不更新、不拿來比對；作品卡的大字，也當中文作品名送給翻譯（譯文才不照抄原名的假名）。
+   * 讀者改名就拿掉（以讀者的名稱為準）。
+   */
   zhTitle?: string;
 }
 
@@ -52,4 +55,14 @@ export const normalizeTitle = (title: string) => title.normalize('NFKC').replace
 export function seriesNameForLlm(series: Series | undefined): string | undefined {
   if (!series) return undefined;
   return series.originalTitles?.[0] ?? (series.provisional ? undefined : series.name);
+}
+
+/**
+ * 送給翻譯 LLM 的中文作品名：跟作品卡的大字一樣，猜的中文譯名優先（存在 Series 上、不每話重猜），讀者改過名
+ * （拿掉了 zhTitle）就是讀者的名稱。沒有作品名、或跟作品名一樣（名稱就是原名）時沒有。
+ */
+export function seriesZhTitleForLlm(series: Series | undefined): string | undefined {
+  const name = seriesNameForLlm(series);
+  const zh = series?.zhTitle ?? series?.name;
+  return name && zh && zh !== name ? zh : undefined;
 }

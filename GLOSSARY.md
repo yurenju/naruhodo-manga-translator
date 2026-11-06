@@ -9,7 +9,7 @@ A Series the reader has not confirmed yet. Created automatically when translatio
 _Avoid_: unsorted, inbox
 
 **Original Title** (原名)
-The title of a Series in its original language, as guessed by the LLM from the page's title text (document title, og:title, first headings), without episode or volume numbers, label, author or site name; subtitles and the names of side stories and sequels are kept. Two pages whose Original Titles are equal after normalization (NFKC, collapsed spaces) belong to the same Series, even on different sites. A Series can have several, recorded when the reader chooses or merges into it. Also the series name sent to the translator. The Chinese translation guessed alongside it is only a display subtitle.
+The title of a Series in its original language, as guessed by the LLM from the page's title text (document title, og:title, first headings), without episode or volume numbers, label, author or site name; subtitles and the names of side stories and sequels are kept. Two pages whose Original Titles are equal after normalization (NFKC, collapsed spaces) belong to the same Series, even on different sites. A Series can have several, recorded when the reader chooses or merges into it. Also the series name sent to the translator. The Chinese translation guessed alongside it is never used for matching; it is the Series card's title and is sent to the translator as the series' Chinese name, so the title is not copied into translations in kana (the reader's own name replaces it once they rename the Series).
 _Avoid_: series name (that is what the reader sees), work ID
 
 **Episode** (話)

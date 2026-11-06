@@ -56,8 +56,9 @@ const MAX_SERIES_NAME = 200;
 
 export function parseTranslateInput(body: unknown): TranslateInput | undefined {
   if (!isObject(body)) return undefined;
-  const { seriesName } = body;
-  if (seriesName !== undefined && !(isString(seriesName) && seriesName.length <= MAX_SERIES_NAME)) return undefined;
+  const { seriesName, seriesZhTitle } = body;
+  const isName = (v: unknown): v is string | undefined => v === undefined || (isString(v) && v.length <= MAX_SERIES_NAME);
+  if (!isName(seriesName) || !isName(seriesZhTitle)) return undefined;
   const seriesNotes = all(body.seriesNotes, note);
   const priorPages = all(body.priorPages, priorPage);
   const items = all(body.items, item);
@@ -66,6 +67,7 @@ export function parseTranslateInput(body: unknown): TranslateInput | undefined {
   const page = body.pageUsageRecordId;
   return {
     ...(seriesName === undefined ? {} : { seriesName }),
+    ...(seriesZhTitle === undefined ? {} : { seriesZhTitle }),
     seriesNotes,
     priorPages,
     items,
