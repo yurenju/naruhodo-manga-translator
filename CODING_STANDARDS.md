@@ -40,6 +40,6 @@ Why: the extension is released by hand and goes through Web Store review, and re
 
 ## A new Worker secret is set before merge
 
-A change that makes the Worker read a new secret says in the PR to run `wrangler secret put <NAME> -c worker/wrangler.jsonc` before merging, and the secret is listed in the comment at the top of `worker/wrangler.jsonc`.
+A change that makes the Worker read a new secret says in the PR to add it in the Cloudflare dashboard (naruhodo-api → Settings → Variables and Secrets) before merging, and the secret is listed in the comment at the top of `worker/wrangler.jsonc`. This machine cannot `wrangler secret put` (ADR 0011).
 
 Why: `wrangler deploy` does not check that secrets exist, so the deploy on merge succeeds and the Worker fails only when a request reaches the code (ADR 0008). Vars and bindings are checked by `scripts/wrangler-config.test.ts`; secrets cannot be, because only Cloudflare holds them.
