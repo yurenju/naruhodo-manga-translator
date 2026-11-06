@@ -135,6 +135,27 @@ function minConfidence({ text, confidences }: Recognized): number | undefined {
   return counted.length ? Math.min(...counted) : undefined;
 }
 
+/** 剪句尾雜訊時，信心低於這個值的字算不可靠（ADR 0009 的「句尾雜訊」）。 */
+const SHAKY_CONFIDENCE = 0.5;
+/** 剪完至少要留下這麼多個可靠的非標點字，才算「大部分可讀」。 */
+const MIN_KEPT_CHARS = 4;
+
+/**
+ * 被門檻擋下的段，如果不可靠的字全擠在句尾（例如句尾加了假名注音的名字被讀成「177」），剪掉句尾那段、留下前面可靠的部分；
+ * 不可靠的字夾在句子中間、或剪完剩太少，回傳 undefined（照樣整段 unreadable）。
+ */
+function dropShakyTail(ocr: Recognized): { kept: Recognized; dropped: string } | undefined {
+  const chars = [...ocr.text];
+  const shaky = (i: number) => !NOT_COUNTED.test(chars[i]!) && (ocr.confidences[i] ?? 1) < SHAKY_CONFIDENCE;
+  const lastSure = chars.findLastIndex((char, i) => !NOT_COUNTED.test(char) && !shaky(i));
+  // 句尾那段從最後一個可靠字之後的第一個不可靠字開始；中間夾的標點跟著剪，可靠字後面原本的標點留著
+  const cut = chars.findIndex((_, i) => i > lastSure && shaky(i));
+  if (lastSure < 0 || cut < 0) return undefined;
+  const head = chars.slice(0, cut);
+  if (head.some((_, i) => shaky(i)) || head.filter((char) => !NOT_COUNTED.test(char)).length < MIN_KEPT_CHARS) return undefined;
+  return { kept: { text: head.join(''), confidences: ocr.confidences.slice(0, cut) }, dropped: chars.slice(cut).join('') };
+}
+
 /**
  * accept：收不收一個框（外框，0～1 比例）；不收的不做 OCR、不出現在結果。長 Page 用它擋掉被可見範圍切到的框
  * 與已收過的框（spec #142）；閱讀順序仍然看整頁的框排。
@@ -156,10 +177,13 @@ export async function analyzePage(engine: Engine, image: PageImage, reading: (ja
   const result: PageText = { balloons: [], looseText: [] };
   let order = 0;
   units.forEach((unit, i) => {
-    const ocr = recognized[i] ?? { text: '', confidences: [] };
-    const 原文 = ocr.text;
-    if (!hasText(原文)) return;
+    const raw = recognized[i] ?? { text: '', confidences: [] };
+    if (!hasText(raw.text)) return;
     order++;
+    const rawConfidence = minConfidence(raw);
+    const trimmed = rawConfidence !== undefined && rawConfidence < OCR_CONFIDENCE_THRESHOLD ? dropShakyTail(raw) : undefined;
+    const ocr = trimmed?.kept ?? raw;
+    const 原文 = ocr.text;
     const ocrConfidence = minConfidence(ocr);
     const common = {
       order,
@@ -170,6 +194,7 @@ export async function analyzePage(engine: Engine, image: PageImage, reading: (ja
       譯文: '',
       unreadable: ocrConfidence !== undefined && ocrConfidence < OCR_CONFIDENCE_THRESHOLD,
       ...(ocrConfidence === undefined ? {} : { ocrConfidence }),
+      ...(trimmed ? { ocrDropped: trimmed.dropped } : {}),
     } as const;
     if (unit.kind === 'balloon') {
       result.balloons.push({

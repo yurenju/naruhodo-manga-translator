@@ -189,4 +189,48 @@ describe('analyzePage：OCR 信心門檻（ADR 0009）', () => {
       ['さ。', false],
     ]);
   });
+
+  // 真實網站：句尾加了假名注音的名字與「!!」被讀成「177」，前面每個字信心都是 1（離線重跑 manga-ocr 的逐字信心）
+  const sure = (n: number) => Array<number>(n).fill(1);
+
+  it('低信心的字全擠在句尾、前面至少 4 個可靠的字：剪掉句尾那段，其餘照常翻譯', async () => {
+    const [b1] = await analyzeWith({ text: '人を傷つけちゃいけないぞ177', confidences: [...sure(12), 0.26, 0.37, 0.2] });
+
+    expect(b1).toMatchObject({ 原文: '人を傷つけちゃいけないぞ', unreadable: false, ocrConfidence: 1, ocrDropped: '177' });
+  });
+
+  it('句尾剪掉的那段裡夾的標點一起剪；剪完留下句子原本的標點', async () => {
+    const [b1] = await analyzeWith({ text: 'あいうえ!x!y', confidences: [...sure(5), 0.1, 0.9, 0.3] });
+
+    expect(b1).toMatchObject({ 原文: 'あいうえ!', unreadable: false, ocrDropped: 'x!y' });
+  });
+
+  it('低信心的字夾在句子中間：照樣整段 unreadable、原文不動', async () => {
+    // 真實網站的 Loose Text 亂碼「学校楽とりよ一緒に勉強したいな〜中田はあ」
+    const text = '学校楽とりよ一緒に勉強したいな〜中田はあ';
+    const confidences = [0.93, 0.99, 0.26, 0.94, 0.31, 0.78, 1, 0.99, 1, 0.98, 0.97, 1, 0.97, 0.76, 0.96, 0.52, 0.33, 0.24, 0.18, 0.29];
+    const [b1] = await analyzeWith({ text, confidences });
+
+    expect(b1).toMatchObject({ 原文: text, unreadable: true, ocrConfidence: 0.18 });
+    expect(b1).not.toHaveProperty('ocrDropped');
+  });
+
+  it('剪完剩不到 4 個可靠的字：整段 unreadable', async () => {
+    const balloons = await analyzeWith(
+      { text: 'あいうx', confidences: [...sure(3), 0.1] },
+      { text: 'ブク...', confidences: [0.29, 0.22, 0.42, 1, 1] },
+    );
+
+    expect(balloons.map((b) => [b.原文, b.unreadable])).toEqual([
+      ['あいうx', true],
+      ['ブク...', true],
+    ]);
+  });
+
+  it('句尾信心介於 0.25 與 0.5、整段沒被門檻擋：原文不剪', async () => {
+    const [b1] = await analyzeWith({ text: 'あいうえお', confidences: [...sure(4), 0.3] });
+
+    expect(b1).toMatchObject({ 原文: 'あいうえお', unreadable: false, ocrConfidence: 0.3 });
+    expect(b1).not.toHaveProperty('ocrDropped');
+  });
 });

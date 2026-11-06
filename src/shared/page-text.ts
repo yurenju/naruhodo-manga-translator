@@ -41,8 +41,10 @@ export interface BalloonText {
   譯文: string;
   /** LLM 判斷是 OCR 亂碼，或 OCR 最低信心低於門檻（ADR 0009）：不覆蓋，side panel 列出原文。 */
   unreadable: boolean;
-  /** OCR 非標點字的最低信心（ADR 0009）。舊快取沒有。 */
+  /** OCR 非標點字的最低信心（ADR 0009）。剪過句尾雜訊的是剪完那段的。舊快取沒有。 */
   ocrConfidence?: number;
+  /** OCR 句尾不可靠、被剪掉不送翻譯的那段（ADR 0009 的「句尾雜訊」）。只有剪過的段有，trace 核對用。 */
+  ocrDropped?: string;
   /** LLM 判斷是 Sound Effect（狀聲詞，GLOSSARY）。Balloon 不看這個欄位，照樣覆蓋。舊快取沒有。 */
   sfx?: boolean;
   /** 原地覆蓋的擦除底色：文字框（外擴 3px）裡最常出現的亮度 0～255，取自截圖（#32）。沒有時當白底。 */
@@ -67,6 +69,7 @@ export interface LooseText {
   譯文: string;
   unreadable: boolean;
   ocrConfidence?: number;
+  ocrDropped?: string;
   /** LLM 判斷是 Sound Effect（狀聲詞，GLOSSARY）：不覆蓋，譯文只在 tooltip 與 side panel。舊快取沒有：整頁的 Loose Text 都不覆蓋。 */
   sfx?: boolean;
   /** 擦除範圍的平均亮度 0～255（#151）：低於 128 用白字。沒有擦除小圖時也拿來塗矩形。 */
