@@ -169,8 +169,8 @@ async function analyze({ screenshot, viewport, candidate, subRect, collected = [
         // 擦除小圖（Balloon #149、Loose Text #151）佔的時間，已含在 ms 裡
         eraseMs: Math.round(performance.now() - eraseStartedAt),
         eraseFallbacks: text.balloons.filter((b) => !b.erase).map((b) => b.id),
-        balloons: text.balloons.map(({ id, order, orientation, 原文, ocrConfidence, balloonBbox, textBbox }) => ({ id, order, orientation, 原文, ocrConfidence, balloonBbox, textBbox })),
-        looseText: text.looseText.map(({ id, order, orientation, 原文, ocrConfidence, bbox }) => ({ id, order, orientation, 原文, ocrConfidence, bbox })),
+        balloons: text.balloons.map(({ id, order, orientation, 原文, ocrConfidence, ocrDropped, balloonBbox, textBbox }) => ({ id, order, orientation, 原文, ocrConfidence, ocrDropped, balloonBbox, textBbox })),
+        looseText: text.looseText.map(({ id, order, orientation, 原文, ocrConfidence, ocrDropped, bbox }) => ({ id, order, orientation, 原文, ocrConfidence, ocrDropped, bbox })),
         // 這時還沒翻譯，unreadable 只會來自 OCR 信心門檻（ADR 0009）
         lowConfidence: [...text.balloons, ...text.looseText].filter((t) => t.unreadable).length,
         detections: detectionImage(bitmap, rect, text),
