@@ -99,9 +99,9 @@ describe('額度快用完（#237）', () => {
     await sync.quotaChanged(true);
 
     expect(badges).toEqual([
-      [1, 'low'],
-      [2, 'low'],
-      [3, 'low'],
+      [1, 'lowQuota'],
+      [2, 'lowQuota'],
+      [3, 'lowQuota'],
     ]);
   });
 

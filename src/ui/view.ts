@@ -1,6 +1,4 @@
-import { FREE_PAGES, MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
-// 剩這麼多頁以下，底部那一行與帳號頁的進度條改用警告色（不另外跳 Callout），跟圖示的橘點同一個門檻（#237）
-import { LOW_QUOTA } from '../shared/quota-indicator.ts';
+import { FREE_PAGES, LOW_QUOTA, MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
 import type { PageView } from '../shared/messages.ts';
 import type { SeriesOption } from '../shared/series.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';

@@ -19,7 +19,7 @@ export interface AnchorStatus {
 }
 
 /** 圖示 badge：翻譯中 …、有問題 !、已啟動沒事是一個綠點，額度快用完（#237）是橘點。 */
-export type ActionBadge = 'busy' | 'problem' | 'low' | 'on';
+export type ActionBadge = 'busy' | 'problem' | 'lowQuota' | 'on';
 
 export interface PageStatusInput {
   /** 這個 tab 畫面上的 Page。 */
@@ -92,6 +92,6 @@ export function pageStatus(input: PageStatusInput): { anchors: AnchorStatus[]; b
   return {
     anchors: [...byAnchor].map(([anchorId, status]) => ({ anchorId, ...status })),
     // 出問題 > 翻譯中 > 快用完 > 平常：翻譯中先顯示藍色，翻完再變回橘色
-    badge: problems ? 'problem' : busy ? 'busy' : input.lowQuota ? 'low' : 'on',
+    badge: problems ? 'problem' : busy ? 'busy' : input.lowQuota ? 'lowQuota' : 'on',
   };
 }

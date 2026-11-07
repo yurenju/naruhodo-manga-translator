@@ -119,7 +119,7 @@ describe('額度快用完（#237）', () => {
   const translated = page('a3', 'h3', { state: 'done', text, translated: true });
 
   it('平常的綠點換成橘點；翻譯中先顯示藍色，出問題仍是紅色', () => {
-    expect(pageStatus(input([translated], { lowQuota: true })).badge).toBe('low');
+    expect(pageStatus(input([translated], { lowQuota: true })).badge).toBe('lowQuota');
     expect(pageStatus(input([analyzing], { lowQuota: true })).badge).toBe('busy');
     expect(pageStatus(input([analyzing, failed], { lowQuota: true })).badge).toBe('problem');
   });
