@@ -120,7 +120,7 @@ _Avoid_: user (ambiguous with reader), member, profile
 
 **Translated Page** (已翻譯頁)
 The unit every limit counts: one Page whose translation came back from Hosted Translation, including one the reader asked to translate again. Viewing an already translated Page again, a translation that failed, or the Practice Spread is not a Translated Page; a Spread is two.
-_Avoid_: credit, token, request
+_Avoid_: credit, 點數, token, request
 
 **Free Pages** (免費額度)
 The 50 Translated Pages every new Account gets once, roughly two Episodes. Never reset. Not used while a Subscription is active; whatever is left is usable again after it ends.

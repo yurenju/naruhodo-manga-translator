@@ -87,3 +87,31 @@ describe('Page 狀態送到 content script 與圖示 badge', () => {
     expect(badges.at(-1)).toEqual([1, undefined]);
   });
 });
+
+describe('額度快用完（#237）', () => {
+  it('所有已啟動的 tab 都換成橘點，之後才啟動的也是；沒啟動的不動', async () => {
+    const { sync, badges } = setup();
+    await Promise.all([sync.activated(1), sync.activated(2)]);
+    badges.length = 0;
+
+    await sync.quotaChanged(true);
+    await sync.activated(3);
+    await sync.quotaChanged(true);
+
+    expect(badges).toEqual([
+      [1, 'lowQuota'],
+      [2, 'lowQuota'],
+      [3, 'lowQuota'],
+    ]);
+  });
+
+  it('額度又夠了（訂閱、重置）：回到綠點', async () => {
+    const { sync, badges } = setup();
+    await sync.activated(1);
+    await sync.quotaChanged(true);
+
+    await sync.quotaChanged(false);
+
+    expect(badges.at(-1)).toEqual([1, 'on']);
+  });
+});

@@ -32,6 +32,8 @@ import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { accountUrl, blockedPageUrl } from '../shared/account-page.ts';
 import { onboardingUrl, saveInstallState, saveOnboarding } from '../shared/onboarding.ts';
 import type { ActionBadge, StatusAction } from '../shared/page-status.ts';
+import { quotaIndicator } from '../shared/quota-indicator.ts';
+import { createQuotaIndicatorSync, type QuotaLookup } from './quota-indicator-sync.ts';
 import { saveSidePanelOnActivation, watchSidePanelOnActivation } from '../shared/side-panel-setting.ts';
 import { loadPendingPayment, savePendingPayment, showSubscribedNotice } from '../shared/payment-return.ts';
 import { createTrace } from '../shared/trace.ts';
@@ -179,8 +181,12 @@ const offscreenTranslator: Translator = {
 async function hostedTranslator(): Promise<Translator | undefined> {
   const token = await hostedSessionToken();
   if (!token) return undefined;
-  const onSignedOut = () => void clearHostedSession().then(() => notifyPanel({ type: 'session:changed' }));
-  const onQuotaChanged = () => notifyPanel({ type: 'quota:changed' });
+  // SW 自己送的訊息自己收不到：圖示的剩餘頁數（#237）直接更新
+  const onSignedOut = () =>
+    void clearHostedSession().then(() => {
+      notifyPanel({ type: 'session:changed' });
+      refreshQuotaIndicator();
+    });
   return createHostedTranslator({
     apiUrl: HOSTED_API_URL,
     token,
@@ -188,8 +194,14 @@ async function hostedTranslator(): Promise<Translator | undefined> {
     sleep,
     now: () => performance.now(),
     onSignedOut,
-    onQuotaChanged,
+    onQuotaChanged: quotaChanged,
   });
+}
+
+/** 剩餘額度變了（扣了一頁、Worker 說用完了）：side panel 重新讀，圖示的剩餘頁數（#237）也更新。 */
+function quotaChanged(): void {
+  notifyPanel({ type: 'quota:changed' });
+  refreshQuotaIndicator();
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -307,6 +319,8 @@ const transcriber = createTranscriber({
 const accessChanged = () => {
   void transcriber.translateUntranslated().catch((e: unknown) => console.warn('translate after access change failed', e));
   void pageStatus.accessChanged();
+  // 登入登出、切換翻譯模式、付款完成：剩餘頁數也可能變了
+  refreshQuotaIndicator();
 };
 watchDataConsent(accessChanged);
 watchTranslationMode(accessChanged);
@@ -336,9 +350,39 @@ if (!__E2E__) void installed.then(handleInstalled);
 const BADGES: Record<ActionBadge, { text: string; color: string }> = {
   busy: { text: '…', color: '#2F6FDB' },
   problem: { text: '!', color: '#C0392B' },
+  // 額度快用完（#237）：綠點換成橘點。badge 只能設底色，但在真實 Chrome 看過，黃色圖示上的橘點邊界清楚，不必自己用 setIcon 合成
+  lowQuota: { text: ' ', color: '#E8710A' },
   // 已啟動、沒事：一個小小的綠色標記
   on: { text: ' ', color: '#2E8B57' },
 };
+
+/** 內建翻譯、已登入時的剩餘額度；自備金鑰或沒登入（包含 token 已失效）是 none。 */
+async function lookupQuota(): Promise<QuotaLookup> {
+  if ((await loadTranslationMode()) !== 'hosted') return { kind: 'none' };
+  const token = await hostedSessionToken();
+  if (!token) return { kind: 'none' };
+  const result = await hostedAccount.account(token);
+  if (result.ok) return { kind: 'quota', quota: result.account.quota };
+  return result.reason === 'signedOut' ? { kind: 'none' } : { kind: 'unknown' };
+}
+
+/**
+ * 不開側邊欄也看得到剩餘頁數（#237）：圖示的 hover 提示、快用完的橘點、右鍵選單「帳號與訂閱」的文字。
+ * 跟 side panel 重新讀額度的時機一樣（扣了一頁、登入登出、付款完成），SW 每次啟動也讀一次。
+ */
+const quotaIndicatorSync = createQuotaIndicatorSync({
+  lookup: lookupQuota,
+  async show({ title, menuTitle, lowQuota }) {
+    await chrome.action.setTitle({ title });
+    // 選單還沒建好（SW 剛啟動）時會失敗：建好之後會再更新一次
+    chrome.contextMenus.update(MENU_ACCOUNT, { title: menuTitle }, () => void chrome.runtime.lastError);
+    await pageStatus.quotaChanged(lowQuota);
+  },
+});
+
+function refreshQuotaIndicator(): void {
+  void quotaIndicatorSync.refresh();
+}
 
 const pageStatus = createPageStatusSync({
   send(tabId, anchors) {
@@ -616,7 +660,9 @@ const createMenus = () =>
     });
     chrome.contextMenus.create({ id: MENU_OPEN_PANEL, title: '打開側邊欄', contexts: ['action'] });
     // 不管有沒有登入、用哪一種翻譯方式都在：帳號的事都到這一頁（#213）
-    chrome.contextMenus.create({ id: MENU_ACCOUNT, title: '帳號與訂閱', contexts: ['action'] });
+    chrome.contextMenus.create({ id: MENU_ACCOUNT, title: quotaIndicator(undefined).menuTitle, contexts: ['action'] });
+    // 快用完時改成「帳號與訂閱・剩 N 頁」（#237）；hover 提示也在這時第一次設定
+    refreshQuotaIndicator();
   });
 createMenus();
 
@@ -753,6 +799,10 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
     }
     case 'session:changed':
       accessChanged();
+      return false;
+    // 頁面發現額度變了（例如已經訂閱過）：side panel 自己會收到，SW 更新圖示的剩餘頁數（#237）
+    case 'quota:changed':
+      refreshQuotaIndicator();
       return false;
     case 'panel:getModelStatus':
       void getModelStatus().then(sendResponse);

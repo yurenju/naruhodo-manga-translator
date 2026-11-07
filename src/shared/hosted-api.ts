@@ -79,6 +79,11 @@ export const FREE_PAGES = 50;
  */
 export const YEARLY_PRICE_USD = 20;
 export const MONTHLY_PAGES = 800;
+/**
+ * 剩這麼多頁以下算快用完（大約一話）：圖示的綠點換成橘點、右鍵選單帶上剩餘頁數（#237），
+ * side panel 底部那一行與帳號頁的進度條改用警告色。免費額度與本月額度同一個門檻。
+ */
+export const LOW_QUOTA = 25;
 /** 年費攤到每個月的平均（文案的「平均每月 US$1.67」），兩位小數 */
 export const MONTHLY_AVERAGE_USD = (YEARLY_PRICE_USD / 12).toFixed(2);
 

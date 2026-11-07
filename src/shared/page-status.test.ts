@@ -16,6 +16,7 @@ const input = (pages: PageView[], more: Partial<PageStatusInput> = {}): PageStat
   model: ready,
   translating: new Set(),
   access: undefined,
+  lowQuota: false,
   ...more,
 });
 
@@ -109,5 +110,17 @@ describe('出問題：可以點的紅色小標籤，圖示是 !', () => {
     );
 
     expect(status).toEqual({ anchors: [{ anchorId: 'a1', working: { text: '辨識文字…' } }], badge: 'problem' });
+  });
+});
+
+describe('額度快用完（#237）', () => {
+  const analyzing = page('a1', 'h1', { state: 'analyzing' });
+  const failed = page('a2', 'h2', { state: 'error', message: 'boom' });
+  const translated = page('a3', 'h3', { state: 'done', text, translated: true });
+
+  it('平常的綠點換成橘點；翻譯中先顯示藍色，出問題仍是紅色', () => {
+    expect(pageStatus(input([translated], { lowQuota: true })).badge).toBe('lowQuota');
+    expect(pageStatus(input([analyzing], { lowQuota: true })).badge).toBe('busy');
+    expect(pageStatus(input([analyzing, failed], { lowQuota: true })).badge).toBe('problem');
   });
 });

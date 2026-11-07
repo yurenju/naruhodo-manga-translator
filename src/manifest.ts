@@ -1,5 +1,6 @@
 // 版本號只寫在 package.json，由 release workflow 更新（.github/workflows/release.yml）
 import pkg from '../package.json' with { type: 'json' };
+import { ACTION_NAME } from './shared/quota-indicator.ts';
 
 /** 外掛 icon 的尺寸：工具列 16/32、管理頁 48、安裝與 Web Store 128。PNG 由 scripts/icons.ts 從 SVG 母檔產出。 */
 export const ICON_SIZES = [16, 32, 48, 128] as const;
@@ -31,7 +32,8 @@ export function buildManifest({ e2e, debug = false }: { e2e: boolean; debug?: bo
     // e2e 與 debug build 不靠點圖示拿 activeTab，改由測試或 agent 送 test:activate 啟動（debug：#112）
     ...(e2e || debug ? { host_permissions: ['<all_urls>'] } : {}),
     background: { service_worker: 'background.js', type: 'module' },
-    action: { default_title: '漫畫翻譯：在這個分頁啟動或停止', default_icon: icons },
+    // hover 提示：內建翻譯、已登入時 SW 在第二行加上剩餘頁數（#237）
+    action: { default_title: ACTION_NAME, default_icon: icons },
     side_panel: { default_path: 'sidepanel.html' },
     // 讓外掛頁面（offscreen document）crossOriginIsolated，onnxruntime-web 的 wasm 才能用 SharedArrayBuffer 多執行緒。
     // 外掛頁面只載入自己的檔案、data URL，以及有 CORS 的 Hugging Face 下載，require-corp 不會擋到。

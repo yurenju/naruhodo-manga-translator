@@ -1,6 +1,6 @@
 /**
  * 把每個 tab 的 Page 狀態（shared/page-status.ts）送到 content script、設成圖示 badge（#185）。
- * 依據：transcriber 每次 publish 的 PageView、工作送出 LLM 的事件、offscreen 廣播的模型狀態。
+ * 依據：transcriber 每次 publish 的 PageView、工作送出 LLM 的事件、offscreen 廣播的模型狀態、額度快用完了沒（#237）。
  * 內容沒變就不重送（模型下載進度、每次擷取都會觸發）。
  */
 import type { ModelStatus, PageView } from '../shared/messages.ts';
@@ -27,6 +27,8 @@ interface TabStatus {
 export function createPageStatusSync(deps: PageStatusSyncDeps) {
   const tabs = new Map<number, TabStatus>();
   let model: ModelStatus = { state: 'idle' };
+  /** 內建翻譯的額度快用完（#237）：全域的，每個 tab 的綠點都換成橘點。 */
+  let lowQuota = false;
 
   async function refresh(tabId: number): Promise<void> {
     const tab = tabs.get(tabId);
@@ -34,7 +36,7 @@ export function createPageStatusSync(deps: PageStatusSyncDeps) {
     const access = tab.pages.some(untranslatedWithoutReason) ? await deps.accessProblem() : undefined;
     // 期間停止了
     if (tabs.get(tabId) !== tab) return;
-    const { anchors, badge } = pageStatus({ pages: tab.pages, model, translating: tab.translating, access });
+    const { anchors, badge } = pageStatus({ pages: tab.pages, model, translating: tab.translating, access, lowQuota });
     const sent = JSON.stringify(anchors);
     if (sent !== tab.sent) {
       tab.sent = sent;
@@ -68,6 +70,11 @@ export function createPageStatusSync(deps: PageStatusSyncDeps) {
     },
     /** 能不能翻譯可能變了（同意、登入、模式）。 */
     async accessChanged(): Promise<void> {
+      await Promise.all([...tabs.keys()].map(refresh));
+    },
+    /** 剩餘額度變了（#237）：快用完時已啟動的 tab 都換成橘點，額度又夠了換回綠點。 */
+    async quotaChanged(low: boolean): Promise<void> {
+      lowQuota = low;
       await Promise.all([...tabs.keys()].map(refresh));
     },
     /** 啟動：badge 是小點。 */
