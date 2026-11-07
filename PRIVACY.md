@@ -1,6 +1,6 @@
 # Naruhodo Privacy Policy
 
-Effective date: 2026-11-02
+Effective date: 2026-11-07
 Publisher: Sad Coder, Inc.
 
 Naruhodo is a Chrome extension that translates Japanese manga on screen into Traditional Chinese, in place. This policy explains what data the extension and the Naruhodo service handle, where the data goes, and how long it is kept.
@@ -62,10 +62,12 @@ Only Hosted Translation uses the Naruhodo service. It keeps:
 | A SHA-256 hash of your email address and how many sign-in codes were tried for it in the past hour | Limiting how many sign-in codes can be tried. Deleted when you sign in. Otherwise the count expires one hour after the first try and is deleted later, the next time anyone requests a sign-in code |
 | A hash of each sign-in token, when it was created and last used, and when you signed out | Keeping you signed in. A token stops working after 180 days without use, or when you sign out |
 | Free pages remaining; for subscribers, the start of the current monthly period and pages used in it | Your page quota |
-| One usage record for each successful translation or Series Notes request: the time, the kind of request, token counts and cost, whether it was the practice page on our website, and for a Series Notes request, which page's translation record it belongs to | Usage and cost accounting. Usage records contain no text, translations, series names or page addresses |
+| One usage record for each successful translation, Series Notes or series title guess request: the time, the kind of request, the AI model used, token counts (including tokens written to and read from Anthropic's prompt cache) and cost, whether it was the practice page on our website, and for a Series Notes request, which page's translation record it belongs to | Usage and cost accounting. Usage records contain no text, translations, series names, page titles or page addresses |
 | A SHA-256 hash of each email address that has received free pages, and when | Making sure free pages are given only once per email address |
 | Your Paddle subscription and customer identifiers, subscription status, start date, end of the paid period, whether cancellation is scheduled, and the time of the last update from Paddle | Your subscription |
 | Identifiers of the payment notifications Paddle has sent, and when they arrived | Processing each notification only once. They contain no account or email information |
+
+When Anthropic charges for a request whose answer cannot be used (for example, an incomplete answer), the service creates no usage record. It writes only the kind of request, the AI model, token counts, cost and the reason to its service logs, which are kept for 7 days. These log lines contain no account information, text or translations.
 
 The service also uses your IP address and email address to limit how often sign-in codes can be requested and tried. Apart from the hourly count above, it does not store them for this purpose.
 
@@ -92,8 +94,8 @@ Data on your computer stays until you delete it:
 **Deleting your account** (Settings → Delete account in the extension):
 
 - If you have a subscription, it is cancelled first: it stays usable until the end of the paid year and will not renew. If a renewal payment has failed and is still being retried, or the subscription is paused, it is cancelled immediately, so no further payment is attempted. **Payments already made are not refunded automatically.** If the cancellation fails, nothing is deleted and you can try again.
-- The service then deletes your account, all of your sign-in tokens (signing you out on every computer), your page quota, your usage records, your subscription record, any sign-in code not yet used for your email address, and the count of sign-in codes tried for it.
-- The service keeps only the SHA-256 hash of your email address and when it received free pages, so that registering again with the same email address does not give free pages again, plus the payment notification identifiers described above. **After deletion, the service keeps no copy of your email address.**
+- The service then deletes your account, all of your sign-in tokens (signing you out on every computer), your page quota, your subscription record, any sign-in code not yet used for your email address, and the count of sign-in codes tried for it. Your usage records are kept anonymously: the link to your account is removed, and only the numbers stay, so that our costs can be checked against Anthropic's bills.
+- The service keeps only the SHA-256 hash of your email address and when it received free pages, so that registering again with the same email address does not give free pages again, plus the anonymous usage records and the payment notification identifiers described above. **After deletion, the service keeps no copy of your email address.**
 - Data held by third parties is not deleted by the Naruhodo service: Paddle keeps its customer, subscription and transaction records under its own policy and its legal record-keeping obligations, and Resend keeps its email delivery records under its own policy.
 - On your computer, deleting your account only signs you out. The translation cache, Series, Series Notes and settings stay.
 

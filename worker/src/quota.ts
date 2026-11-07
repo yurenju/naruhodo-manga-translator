@@ -3,7 +3,7 @@
  * Free Pages 不動，訂閱結束後剩下的照常可用。D1 schema 在 worker/migrations/0002_free_pages.sql、0003_subscriptions.sql。
  */
 import { FREE_PAGES, type Quota } from '../../src/shared/hosted-api.ts';
-import type { Usage } from '../../src/shared/translator.ts';
+import type { CallInfo } from '../../src/shared/translator.ts';
 import { sha256 } from './hash.ts';
 import { activeSubscription, monthlyCycle } from './subscription.ts';
 
@@ -60,7 +60,8 @@ export async function deductPage(db: D1Database, accountId: string, { now, limit
   return result.meta.changes === 1;
 }
 
-export type UsageKind = 'translate' | 'notes';
+/** series_guess：猜作品原名（#186），不扣頁、不屬於任何一頁。 */
+export type UsageKind = 'translate' | 'notes' | 'series_guess';
 
 /** 長 Page 的接續翻譯（spec #142「計費」）：第一次翻譯之後多久內、最多幾次接續不扣頁。 */
 export const CONTINUATION_WINDOW_MS = 60 * 60 * 1000;
@@ -80,17 +81,18 @@ export async function continuable(db: D1Database, accountId: string, pageRecordI
 }
 
 /**
- * 一次 Anthropic 呼叫的用量：只有時間、種類、tokens 與成本，不存任何內容；回傳這筆紀錄的 id 與它歸屬的翻譯紀錄。
+ * 一次 Anthropic 呼叫的用量：只有時間、種類、tokens、成本與模型，不存任何內容；回傳這筆紀錄的 id 與它歸屬的翻譯紀錄。
  * pageRecordId 是 client 帶來的同一頁的翻譯紀錄 id，條件不符就當作沒帶（歸屬是 undefined）：
  * - Notes：是這個 Account 的翻譯紀錄才記。
  * - 翻譯（長 Page 的接續）：要能接續（CONTINUABLE）才記；記了就是不扣頁的接續。
+ * - 猜作品原名：不屬於任何一頁，呼叫端不帶。
  * practice：Practice Spread 的翻譯（#169），不扣頁、不算進任何額度。
  */
 export async function recordUsage(
   db: D1Database,
   accountId: string,
   kind: UsageKind,
-  usage: Usage,
+  { usage, model }: Pick<CallInfo, 'usage' | 'model'>,
   now: number,
   pageRecordId?: number,
   practice = false,
@@ -98,11 +100,24 @@ export async function recordUsage(
   const page = kind === 'translate' ? CONTINUABLE : `SELECT id FROM usage_records WHERE id = ?2 AND account_id = ?1 AND kind = 'translate'`;
   const row = await db
     .prepare(
-      `INSERT INTO usage_records (account_id, created_at, kind, input_tokens, output_tokens, cache_read_tokens, cost_usd, page_record_id, practice)
-       VALUES (?1, ?3, ?4, ?5, ?6, ?7, ?8, (${page}), ?9)
+      `INSERT INTO usage_records (account_id, created_at, kind, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, model, page_record_id, practice)
+       VALUES (?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, (${page}), ?11)
        RETURNING id, page_record_id`,
     )
-    .bind(accountId, pageRecordId ?? null, now, kind, usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.costUsd, practice ? 1 : 0)
+    // ?1～?3 的位置由 CONTINUABLE 決定；其餘照欄位順序
+    .bind(
+      accountId,
+      pageRecordId ?? null,
+      now,
+      kind,
+      usage.inputTokens,
+      usage.outputTokens,
+      usage.cacheReadTokens,
+      usage.cacheWriteTokens ?? null,
+      usage.costUsd,
+      model,
+      practice ? 1 : 0,
+    )
     .first<{ id: number; page_record_id: number | null }>();
   return { id: row!.id, ...(row!.page_record_id === null ? {} : { pageRecordId: row!.page_record_id }) };
 }

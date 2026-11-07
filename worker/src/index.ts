@@ -5,6 +5,7 @@
  */
 import { SYNTHETIC_GROUND_TRUTH } from '../../src/background/synthetic-ground-truth.ts';
 import { createClaudeTranslator } from '../../src/offscreen/claude-translator.ts';
+import { BilledFailure } from '../../src/shared/claude-request.ts';
 import { createFakeTranslator } from '../../src/shared/fake-translator.ts';
 import { isPracticeSpreadPage, type PracticeSpreadText } from '../../src/shared/practice-spread.ts';
 import practiceSpread from '../../practice-spread/ocr.json' with { type: 'json' };
@@ -31,7 +32,7 @@ import {
   type Quota,
   type VerifyCodeResponse,
 } from '../../src/shared/hosted-api.ts';
-import type { CallInfo, TranslateOutput, Translator } from '../../src/shared/translator.ts';
+import type { CallInfo, SeriesGuessOutput, TranslateOutput, Translator } from '../../src/shared/translator.ts';
 import { accountEmail, authenticate, deleteAccount, revokeSession, sendCode, verifyCode } from './auth.ts';
 import { continuable, deductPage, monthlyLimit, quota, recordUsage, setFreePages, type QuotaContext, type UsageKind } from './quota.ts';
 import { parseNotesInput, parseTitleSignals, parseTranslateInput } from './input.ts';
@@ -88,6 +89,31 @@ const authed =
     return accountId ? handler(ctx, accountId) : signedOut();
   };
 
+/**
+ * Anthropic 呼叫失敗：回 502 與錯誤訊息。Claude 回了答案卻不能用（BilledFailure，錢已經花了）時，另外在 Worker Logs 印一行
+ * anthropic_billed_failure，#17 對帳時算得到這筆錢（#238）。不寫 D1：寫成用量紀錄的話，CONTINUABLE 這類查詢會把它當成翻好的頁。
+ * 這一行只有數字與原因，不放 Account id，也不放任何原文或譯文。429／5xx 重試後仍失敗、或其他 HTTP 錯誤沒有計費，不印。
+ */
+function anthropicFailed(kind: UsageKind, e: unknown): Response {
+  if (e instanceof BilledFailure) {
+    const { usage, model } = e.call;
+    console.warn(
+      JSON.stringify({
+        event: 'anthropic_billed_failure',
+        kind,
+        model,
+        input_tokens: usage.inputTokens,
+        output_tokens: usage.outputTokens,
+        cache_read_tokens: usage.cacheReadTokens,
+        cache_write_tokens: usage.cacheWriteTokens,
+        cost_usd: usage.costUsd,
+        reason: e.reason,
+      }),
+    );
+  }
+  return error(502, e instanceof Error ? e.message : String(e));
+}
+
 /** 額度用完：沒訂閱是免費額度用完，訂閱中是本月額度用完（重置日期由外掛重讀 GET /v1/account）。 */
 const exhausted = (plan: Quota['plan']) =>
   plan === 'free' ? error(402, '免費額度已用完', 'freePagesExhausted') : error(402, '本月額度已用完', 'monthlyLimitReached');
@@ -126,10 +152,9 @@ const llm =
     try {
       output = await run(translator(env), input);
     } catch (e) {
-      // Anthropic 重試後仍失敗，或回答不符合 schema
-      return error(502, e instanceof Error ? e.message : String(e));
+      return anthropicFailed(kind, e);
     }
-    const record = await recordUsage(env.DB, accountId, kind, output.usage, now, page, isPractice);
+    const record = await recordUsage(env.DB, accountId, kind, output, now, page, isPractice);
     // 翻譯記到了被接續的那一頁＝長 Page 的接續，不扣頁；其他翻譯（含超過接續上限的）扣一頁
     const continued = record.pageRecordId !== undefined;
     if (charged && !continued && !(await deductPage(env.DB, accountId, quotaContext(env, now)))) {
@@ -183,16 +208,19 @@ const ROUTES: Record<string, Handler> = {
     ),
   ),
   [`POST ${NOTES_PATH}`]: authed(llm('notes', parseNotesInput, (t, input) => t.proposeNotes(input), (input) => input.pageUsageRecordId)),
-  // 猜作品原名（#186）：不看也不扣額度、不寫用量紀錄（usage_records 只收翻譯與 Notes）；濫用由依 Account 的頻率限制擋
-  [`POST ${SERIES_GUESS_PATH}`]: authed(async ({ request, env }, accountId) => {
+  // 猜作品原名（#186）：不看也不扣額度，成功的呼叫照樣寫一筆用量紀錄（#238，不屬於任何一頁）；濫用由依 Account 的頻率限制擋
+  [`POST ${SERIES_GUESS_PATH}`]: authed(async ({ request, env, now }, accountId) => {
     const input = parseTitleSignals(await jsonBody(request));
     if (input === undefined) return invalid();
     if (!(await env.SERIES_GUESS_BY_ACCOUNT.limit({ key: accountId })).success) return error(429, '猜作品太頻繁', 'rateLimited');
+    let output: SeriesGuessOutput;
     try {
-      return Response.json(await translator(env).guessSeries(input));
+      output = await translator(env).guessSeries(input);
     } catch (e) {
-      return error(502, e instanceof Error ? e.message : String(e));
+      return anthropicFailed('series_guess', e);
     }
+    await recordUsage(env.DB, accountId, 'series_guess', output, now);
+    return Response.json(output);
   }),
   [`POST ${SEND_CODE_PATH}`]: async ({ request, env, now }) => {
     const email = parseEmail(field(await jsonBody(request), 'email'));

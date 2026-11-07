@@ -193,6 +193,7 @@ describe('Claude 翻譯：structured output 回應解析', () => {
       inputTokens: 1000,
       outputTokens: 200,
       cacheReadTokens: 700,
+      cacheWriteTokens: 0,
       // 300 × 0.10 + 700 × 0.01 + 200 × 0.50（$/MTok）
       costUsd: 0.000137,
     });

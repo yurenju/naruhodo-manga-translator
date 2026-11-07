@@ -24,6 +24,8 @@ export default defineProject({
           PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_worker_test',
           TEST_MIGRATIONS: migrations,
         },
+        // migration 的測試用：跟 DB 分開的空資料庫，測試自己決定套到哪一個 migration
+        d1Databases: ['MIGRATION_DB'],
       },
     }),
   ],

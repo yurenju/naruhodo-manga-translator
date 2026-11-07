@@ -2,7 +2,11 @@
 import { vi } from 'vitest';
 import { CLAUDE_MODEL } from '../../../src/shared/claude-request.ts';
 
-export const usage = { input_tokens: 300, output_tokens: 200, cache_creation_input_tokens: 0, cache_read_input_tokens: 700 };
+/** 四種 token 都有：input 總和是 200 + 100 + 700 = 1000，費用依 CLAUDE_MODEL 的價目表是 USAGE_COST_USD。 */
+export const usage = { input_tokens: 200, output_tokens: 200, cache_creation_input_tokens: 100, cache_read_input_tokens: 700 };
+
+/** usage 的費用，用 claude-haiku-5-5 的 list price 手算：200×0.1 + 100×0.125 + 700×0.01 + 200×0.5 = 139.5（$/MTok × tokens）。 */
+export const USAGE_COST_USD = 0.0001395;
 
 /** Anthropic 的成功回應，內容是 answer 的 JSON。 */
 export const reply = (answer: unknown) => () =>

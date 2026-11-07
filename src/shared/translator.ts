@@ -78,9 +78,15 @@ export interface NotesChanges {
 }
 
 export interface Usage {
+  /** 一般 input＋cache write＋cache read 的總和。 */
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
+  /**
+   * 寫進 prompt cache 的 input（價格跟一般 input 不同），已經算在 inputTokens 裡（#238）。claude-request.ts 一定會給；
+   * 部署中的舊版 Worker 不回、本機快取的舊翻譯也沒有，所以是 optional。
+   */
+  cacheWriteTokens?: number;
   costUsd: number;
 }
 

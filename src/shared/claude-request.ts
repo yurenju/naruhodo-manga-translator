@@ -21,6 +21,7 @@ import type {
   TranslatedLine,
   TranslateInput,
   TranslateOutput,
+  Usage,
 } from './translator.ts';
 
 export const CLAUDE_MODEL = 'claude-haiku-5-5';
@@ -352,9 +353,30 @@ function toNotesChanges({ notes_changes: n }: NotesAnswer): NotesChanges {
   };
 }
 
+/** 一次已經計費的呼叫：用量（四種 token 都有）與模型。 */
+export type BilledCall = { usage: Required<Usage>; model: string };
+
+/**
+ * Claude 回了答案、Anthropic 已經計費，但答案不能用：stop_reason 不是 end_turn（reason 是它的值），或不符合 schema（reason 是 'schema'）。
+ * 帶著這次呼叫的 usage，讓 Worker 能把花掉的錢記進 log（#238）。message 不含 Claude 回答的任何文字。
+ */
+export class BilledFailure extends Error {
+  readonly reason: string;
+  readonly call: BilledCall;
+
+  constructor(message: string, reason: string, call: BilledCall) {
+    super(message);
+    this.name = 'BilledFailure';
+    this.reason = reason;
+    this.call = call;
+  }
+}
+
 /** 檢查 stop_reason 與 schema，算出 usage 與費用。延遲由呼叫端量，因為只有它知道請求何時送出。 */
 function parse<A>(json: ApiResponse, isValid: (v: unknown) => v is A): { answer: A } & Omit<CallInfo, 'latencyMs'> {
-  if (json.stop_reason !== 'end_turn') throw new Error(`Claude 沒有完成回答（stop_reason: ${json.stop_reason}）`);
+  if (json.stop_reason !== 'end_turn') {
+    throw new BilledFailure(`Claude 沒有完成回答（stop_reason: ${json.stop_reason}）`, String(json.stop_reason), callInfo(json));
+  }
   const text = json.content.find((b) => b.type === 'text')?.text;
   let answer: unknown;
   try {
@@ -362,15 +384,21 @@ function parse<A>(json: ApiResponse, isValid: (v: unknown) => v is A): { answer:
   } catch {
     answer = undefined;
   }
-  if (!isValid(answer)) throw new Error('Claude 的回應格式不符合 schema');
+  if (!isValid(answer)) throw new BilledFailure('Claude 的回應格式不符合 schema', 'schema', callInfo(json));
+  return { answer, ...callInfo(json) };
+}
+
+/** 回應的 usage 與費用：input 是一般 input＋cache write＋cache read 的總和，cache write、cache read 另外列。 */
+function callInfo(json: ApiResponse): BilledCall {
   const u = json.usage;
   const cacheRead = u.cache_read_input_tokens ?? 0;
+  const cacheWrite = u.cache_creation_input_tokens ?? 0;
   return {
-    answer,
     usage: {
-      inputTokens: u.input_tokens + (u.cache_creation_input_tokens ?? 0) + cacheRead,
+      inputTokens: u.input_tokens + cacheWrite + cacheRead,
       outputTokens: u.output_tokens,
       cacheReadTokens: cacheRead,
+      cacheWriteTokens: cacheWrite,
       costUsd: Math.round(costUsd(json.model, u) * 1e9) / 1e9,
     },
     model: json.model,
