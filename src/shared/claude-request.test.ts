@@ -168,7 +168,7 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
 
     expect(out).toEqual({
       items: [{ id: 'b1', 譯文: '早安', unreadable: false, sfx: false }],
-      usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 700, costUsd: 0.000137 },
+      usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 700, cacheWriteTokens: 0, costUsd: 0.000137 },
       model: CLAUDE_MODEL,
     });
   });

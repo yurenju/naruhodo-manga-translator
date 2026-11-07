@@ -128,13 +128,15 @@ describe('刪除帳號', () => {
     expect(results).toEqual([]);
   });
 
-  it('D1 裡只剩這個 email 的 hash（Free Pages 領取紀錄），查不到 email、session、額度、用量紀錄、訂閱', async () => {
+  it('D1 裡只剩這個 email 的 hash（Free Pages 領取紀錄）與匿名的用量紀錄，查不到 email、session、額度、訂閱', async () => {
     const email = freshEmail();
     const token = await signIn(email);
     const accountId = await checkoutAccountId(token);
     expect((await webhook(subscriptionEvent({ accountId }))).status).toBe(200);
     fakeAnthropic([ok]);
-    expect((await post(TRANSLATE_PATH, input, { token })).status).toBe(200);
+    const translated = await post(TRANSLATE_PATH, input, { token });
+    expect(translated.status).toBe(200);
+    const { usageRecordId } = (await translated.json()) as { usageRecordId: number };
     fakePaddle([canceled]);
 
     expect((await del(ACCOUNT_PATH, token)).status).toBe(204);
@@ -151,6 +153,9 @@ describe('刪除帳號', () => {
     }
     const grants = await env.DB.prepare('SELECT * FROM free_page_grants WHERE email_hash = ?').bind(await sha256(email)).all();
     expect(grants.results).toHaveLength(1);
+    // 用量紀錄只拿掉帳號關聯，數字留著：D1 的總額才對得上 Anthropic 的帳單（#238）
+    const record = await env.DB.prepare('SELECT account_id, kind, input_tokens FROM usage_records WHERE id = ?').bind(usageRecordId).first();
+    expect(record).toEqual({ account_id: null, kind: 'translate', input_tokens: 1000 });
   });
 
   it('寄了驗證碼還沒用（例如在別台電腦寄的）：刪除時這個 email 的驗證碼也一起刪掉，D1 裡查不到 email', async () => {

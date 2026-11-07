@@ -21,7 +21,11 @@ describe('資料使用同意', () => {
 
   it('版本 3 的說明沒寫網頁標題（#186 起會送去猜作品）：兩種模式都要重新同意', () => {
     expect(readConsent({ hosted: 3, ownKey: 3 })).toEqual({ hosted: false, ownKey: false });
-    expect(readConsent({ hosted: 4, ownKey: 4 })).toEqual({ hosted: true, ownKey: true });
+  });
+
+  it('版本 4 的說明沒寫刪除帳號後用量紀錄匿名保留、猜作品也記用量（#238）：要重新同意', () => {
+    expect(readConsent({ hosted: 4, ownKey: 4 })).toEqual({ hosted: false, ownKey: false });
+    expect(readConsent({ hosted: 5, ownKey: 5 })).toEqual({ hosted: true, ownKey: true });
   });
 
   it('沒有同意過', () => {

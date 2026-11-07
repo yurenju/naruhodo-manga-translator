@@ -7,7 +7,8 @@ import { env } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACCOUNT_PATH, DEV_FREE_PAGES_PATH, NOTES_PATH, TRANSLATE_PATH, type AccountResponse } from '../../src/shared/hosted-api.ts';
 import type { NotesInput, TranslateInput } from '../../src/shared/translator.ts';
-import { fakeAnthropic, reply } from './test/anthropic.ts';
+import { CLAUDE_MODEL } from '../../src/shared/claude-request.ts';
+import { fakeAnthropic, reply, USAGE_COST_USD } from './test/anthropic.ts';
 import { freshEmail, get, post, signIn } from './test/http.ts';
 
 const input: TranslateInput = { seriesNotes: [], priorPages: [], items: [{ id: 'b1', kind: 'balloon', 原文: 'おはよう', orientation: 'vertical' }] };
@@ -187,7 +188,7 @@ describe('用量紀錄', () => {
     expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
   });
 
-  it('翻譯與 Notes 各寫一筆：只有時間、種類、tokens 與成本，沒有原文、譯文、Series 名稱或網址', async () => {
+  it('翻譯與 Notes 各寫一筆：只有時間、種類、四種 tokens、依價目表算的成本與模型，沒有原文、譯文、Series 名稱或網址', async () => {
     const email = freshEmail();
     const token = await signIn(email);
     fakeAnthropic([ok, notesOk]);
@@ -209,7 +210,9 @@ describe('用量紀錄', () => {
       input_tokens: 1000,
       output_tokens: 200,
       cache_read_tokens: 700,
-      cost_usd: expect.any(Number),
+      cache_write_tokens: 100,
+      cost_usd: USAGE_COST_USD,
+      model: CLAUDE_MODEL,
       page_record_id: null,
       practice: 0,
     });

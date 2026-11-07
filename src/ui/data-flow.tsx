@@ -12,7 +12,7 @@ export function HostedDataFlow() {
     <ul>
       <li>{LOCAL}</li>
       <li>辨識出的日文文字、同一部作品前幾頁的原文與譯文、作品的角色與用語、作品名稱，以及用來判斷是哪部作品的網頁標題，會傳到 Naruhodo 的服務，再交給 Anthropic 翻譯。Naruhodo 的服務不保存這些文字與作品名。</li>
-      <li>Naruhodo 的服務會保存你的 email、登入紀錄、剩餘頁數、訂閱狀態與每次翻譯的用量（不含內容）；驗證碼信由 Resend 寄出。</li>
+      <li>Naruhodo 的服務會保存你的 email、登入紀錄、剩餘頁數、訂閱狀態，以及每次翻譯與猜作品名稱的用量（只有數字、不含內容，刪除帳號後匿名保留）；驗證碼信由 Resend 寄出。</li>
     </ul>
   );
 }
