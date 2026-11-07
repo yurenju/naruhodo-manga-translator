@@ -265,9 +265,9 @@ describe('內建翻譯的額度（底部那一行）', () => {
     expect(quotaView(signedIn, free(37)).line).toEqual({ text: '免費額度剩 37 頁', warn: false, subscribeLink: true });
   });
 
-  it('剩 5 頁以下改用警告色', () => {
-    expect(quotaView(signedIn, free(6)).line).toMatchObject({ warn: false });
-    expect(quotaView(signedIn, free(5)).line).toMatchObject({ text: '免費額度剩 5 頁', warn: true });
+  it('剩 25 頁以下改用警告色（跟圖示的橘點同一個門檻，#237）', () => {
+    expect(quotaView(signedIn, free(26)).line).toMatchObject({ warn: false });
+    expect(quotaView(signedIn, free(25)).line).toMatchObject({ text: '免費額度剩 25 頁', warn: true });
     expect(quotaView(signedIn, free(1)).line).toMatchObject({ warn: true });
   });
 
@@ -383,13 +383,13 @@ describe('帳號與訂閱頁（#213）', () => {
     });
   });
 
-  it('免費還有剩：沒有說明，剩 N / 50 頁，進度條畫剩下的比例；剩 5 頁以下變警告色', () => {
+  it('免費還有剩：沒有說明，剩 N / 50 頁，進度條畫剩下的比例；剩 25 頁以下變警告色', () => {
     expect(accountPageView({ ...hosted, quota: free(30) })).toMatchObject({
       notice: undefined,
       plan: { left: '剩 30 / 50 頁', fraction: 0.6, warn: false },
       subscribe: true,
     });
-    expect(accountPageView({ ...hosted, quota: free(5) }).plan).toMatchObject({ left: '剩 5 / 50 頁', warn: true });
+    expect(accountPageView({ ...hosted, quota: free(25) }).plan).toMatchObject({ left: '剩 25 / 50 頁', warn: true });
   });
 
   it('訂閱中：方案名「訂閱（年繳）」、本月剩 N / 上限，沒有訂閱段', () => {

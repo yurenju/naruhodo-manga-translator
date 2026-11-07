@@ -1,4 +1,6 @@
 import { FREE_PAGES, MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
+// 剩這麼多頁以下，底部那一行與帳號頁的進度條改用警告色（不另外跳 Callout），跟圖示的橘點同一個門檻（#237）
+import { LOW_QUOTA } from '../shared/quota-indicator.ts';
 import type { PageView } from '../shared/messages.ts';
 import type { SeriesOption } from '../shared/series.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
@@ -185,8 +187,6 @@ export function seriesActions(current: SeriesOption, options: SeriesOption[]): S
   };
 }
 
-/** 剩這麼多頁以下，底部那一行改用警告色（不另外跳 Callout）。 */
-const LOW_QUOTA = 5;
 
 /** 「11 月 15 日」：重置日期，依讀者的時區。 */
 const monthDay = (ms: number) => {

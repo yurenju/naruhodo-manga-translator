@@ -18,8 +18,8 @@ export interface AnchorStatus {
   problem?: { text: string; action: StatusAction; pageHash: string };
 }
 
-/** 圖示 badge：翻譯中 …、有問題 !、已啟動沒事是一個小點。 */
-export type ActionBadge = 'busy' | 'problem' | 'on';
+/** 圖示 badge：翻譯中 …、有問題 !、已啟動沒事是一個綠點，額度快用完（#237）是橘點。 */
+export type ActionBadge = 'busy' | 'problem' | 'low' | 'on';
 
 export interface PageStatusInput {
   /** 這個 tab 畫面上的 Page。 */
@@ -29,6 +29,8 @@ export interface PageStatusInput {
   translating: ReadonlySet<string>;
   /** 現在不能翻譯的原因（沒登入或沒同意 → signIn，自備金鑰沒有 key → ownKey）；能翻是 undefined。 */
   access: Exclude<RequestedStep, 'plan'> | undefined;
+  /** 內建翻譯的額度快用完（shared/quota-indicator.ts）；額度是全域的，每個 tab 都一樣。 */
+  lowQuota: boolean;
 }
 
 type Status = Omit<AnchorStatus, 'anchorId'>;
@@ -89,6 +91,7 @@ export function pageStatus(input: PageStatusInput): { anchors: AnchorStatus[]; b
   }
   return {
     anchors: [...byAnchor].map(([anchorId, status]) => ({ anchorId, ...status })),
-    badge: problems ? 'problem' : busy ? 'busy' : 'on',
+    // 出問題 > 翻譯中 > 快用完 > 平常：翻譯中先顯示藍色，翻完再變回橘色
+    badge: problems ? 'problem' : busy ? 'busy' : input.lowQuota ? 'low' : 'on',
   };
 }
