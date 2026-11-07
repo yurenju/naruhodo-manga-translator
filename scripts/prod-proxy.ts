@@ -3,7 +3,7 @@
  * 只聽 127.0.0.1，只轉發三件事，規則在 prod-access.ts：
  *   POST /sql   {sql}                      → naruhodo 的 D1（database_id 讀 worker/wrangler.jsonc），只接受唯讀語句
  *   POST /logs  {sinceMs, search?, limit?} → naruhodo-api 的 Workers Logs
- *   POST /tail  {}                         → wrangler tail naruhodo-api，NDJSON 串流到結束
+ *   POST /tail  {}                         → wrangler tail naruhodo-api 的輸出（每筆是跨多行的 JSON）串流到結束
  * 閒置 IDLE_TIMEOUT_MS 沒有請求（也沒有 tail 在跑）就結束。
  */
 import { spawn } from 'node:child_process';
@@ -71,7 +71,7 @@ function tail(res: ServerResponse): void {
   });
   activeTails += 1;
   touch();
-  res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
   child.stdout.pipe(res, { end: false });
   child.stderr.on('data', (chunk) => process.stderr.write(chunk));
   // 用 res 的 close 判斷客戶端（prod:tail）斷線：req 的 close 在 body 讀完時就觸發了，不代表斷線

@@ -106,14 +106,28 @@ describe('logs 查詢', () => {
       result: {
         events: {
           events: [
-            { timestamp: 2000, $metadata: { level: 'error', message: 'boom', url: '/v1/translate', statusCode: 500 } },
-            { timestamp: 1000, $metadata: { level: 'log', message: { msg: 'start' } } },
+            // 請求事件的形狀照 production 的實際回應
+            {
+              timestamp: 3000,
+              $metadata: { level: 'info', type: 'cf-worker-event', trigger: 'POST /v1/translate', message: 'POST https://api.example/v1/translate' },
+              $workers: { outcome: 'ok', wallTimeMs: 2851, event: { response: { status: 200 } } },
+            },
+            {
+              timestamp: 2000,
+              $metadata: { level: 'error', type: 'cf-worker-event', trigger: 'POST /v1/notes', error: 'boom' },
+              $workers: { outcome: 'exception', wallTimeMs: 12 },
+            },
+            { timestamp: 1000, $metadata: { level: 'log', type: 'cf-worker', message: { msg: 'start' } } },
           ],
         },
       },
     });
 
-    expect(lines).toEqual(['1970-01-01T00:00:01.000Z log {"msg":"start"}', '1970-01-01T00:00:02.000Z error [500 /v1/translate] boom']);
+    expect(lines).toEqual([
+      '1970-01-01T00:00:01.000Z log {"msg":"start"}',
+      '1970-01-01T00:00:02.000Z error POST /v1/notes - 12ms exception boom',
+      '1970-01-01T00:00:03.000Z info POST /v1/translate 200 2851ms',
+    ]);
   });
 
   it('認不出回應的結構就回傳 undefined', () => {

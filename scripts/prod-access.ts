@@ -140,10 +140,14 @@ export function parseLogsRequest(body: unknown): LogsRequest | string {
   return { sinceMs, search: search || undefined, limit };
 }
 
+/** 實際回應裡用得到的欄位：請求事件（type cf-worker-event）的狀態碼與耗時在 $workers，console.log 的內容在 $metadata.message。 */
 interface LogEvent {
   timestamp?: number;
-  $metadata?: { level?: string; message?: unknown; error?: unknown; url?: string; statusCode?: number };
+  $metadata?: { level?: string; message?: unknown; error?: unknown; trigger?: string; type?: string };
+  $workers?: { outcome?: string; wallTimeMs?: number; event?: { response?: { status?: number } } };
 }
+
+const asText = (part: unknown) => (typeof part === 'string' ? part : JSON.stringify(part));
 
 /** events 陣列：文件寫的是 result.events.events，也接受 result.events 直接是陣列。 */
 function logEventsIn(response: unknown): LogEvent[] | undefined {
@@ -165,10 +169,16 @@ export function formatLogEvents(response: unknown): string[] | undefined {
     .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
     .map((event) => {
       const meta = event.$metadata ?? {};
+      const workers = event.$workers ?? {};
       const time = typeof event.timestamp === 'number' ? new Date(event.timestamp).toISOString() : '?';
-      const text = [meta.message, meta.error].filter((part) => part !== undefined && part !== '').map((part) => (typeof part === 'string' ? part : JSON.stringify(part)));
-      const request = meta.url ? ` [${meta.statusCode ?? ''} ${meta.url}]` : '';
-      return `${time} ${meta.level ?? '-'}${request} ${text.join(' ')}`.trimEnd();
+      const error = meta.error !== undefined && meta.error !== '' ? [asText(meta.error)] : [];
+      if (meta.type === 'cf-worker-event') {
+        // 請求本身：`POST /v1/translate 200 2851ms`，outcome 不是 ok（exception、exceededCpu…）才印
+        const request = [meta.trigger ?? asText(meta.message), workers.event?.response?.status ?? '-', workers.wallTimeMs === undefined ? '' : `${workers.wallTimeMs}ms`];
+        if (workers.outcome && workers.outcome !== 'ok') request.push(workers.outcome);
+        return [time, meta.level ?? '-', ...request, ...error].filter((part) => part !== '').join(' ');
+      }
+      return [time, meta.level ?? '-', ...(meta.message === undefined ? [] : [asText(meta.message)]), ...error].join(' ');
     });
 }
 

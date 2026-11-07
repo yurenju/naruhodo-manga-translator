@@ -8,7 +8,7 @@ This machine has **read-only** access to Cloudflare (ADR 0011). You can read the
 2. **Query**, from Bash:
    - `npm run prod:sql -- "SELECT …"` prints the rows as JSON. Only one `SELECT`, `WITH`, `EXPLAIN` or `PRAGMA` statement per call (a `PRAGMA` may not set a value: no `=`, and arguments only for the schema pragmas such as `table_info(accounts)`); anything that writes is refused by the proxy before it reaches Cloudflare, and by the token if it got that far. Find the tables in `worker/migrations/`. Keep the SQL on one line: on Windows `npm run` cuts an argument at its first newline, so a multi-line query silently loses its tail; for one, call `node scripts/prod-query.ts sql "…"` directly.
    - `npm run prod:logs -- --since 2h --search error --limit 50` prints Workers Logs of `naruhodo-api`, one line per event, oldest first (`--since` takes `30m`, `2h`, `1d`, at most 7 days back; at most 100 events; `--json` prints the raw response). Logs exist only since `observability` was enabled in `worker/wrangler.jsonc`.
-   - `npm run prod:tail` streams live events as NDJSON until Ctrl-C; run it with a timeout or in the background, since it never ends on its own.
+   - `npm run prod:tail` streams live events until Ctrl-C, each one an indented JSON object spread over many lines (wrangler's `--format json`), so parse the stream rather than splitting it on newlines; run it with a timeout or in the background, since it never ends on its own.
 3. If a query says the proxy is not running, it timed out or was never started: ask the user to watch for the 1Password prompt, and start step 1 again.
 
 ## Keeping the 1Password prompts down
@@ -30,4 +30,4 @@ Each `op run` is a new 1Password authorization, and every tool call you make is 
 
 ## Setting it up
 
-`bash scripts/cloudflare-readonly-wizard.sh` walks the user through creating the token (D1 Read, Workers Tail Read, Workers Observability Read), storing it in 1Password, writing `~/.config/naruhodo/cloudflare-readonly.env` (the `op://` reference and the Account ID, kept apart from `op.env` so `worker:dev` and `smoke` never see a Cloudflare token), checking that a D1 write and a Worker upload are both refused, and logging out of `wrangler`. It is the user's to run: it opens the Cloudflare dashboard and 1Password.
+`bash scripts/cloudflare-readonly-wizard.sh` walks the user through creating the token (D1 Read and Workers Metadata Read-Only, which covers both tail and historical logs), storing it in 1Password, writing `~/.config/naruhodo/cloudflare-readonly.env` (the `op://` reference and the Account ID, kept apart from `op.env` so `worker:dev` and `smoke` never see a Cloudflare token), checking that a D1 write and a Worker upload are both refused, and logging out of `wrangler`. It is the user's to run: it opens the Cloudflare dashboard and 1Password.
