@@ -88,6 +88,10 @@ _Avoid_: ignored (that is what the reader does to a suggested change), blacklist
 The Pages the reader saw just before the one being translated, in the same tab, with their text and translations; sent along when a Page is translated so the translator can follow the conversation and keep its wording. Includes the Pages on screen that come earlier in reading order, such as the right Page of a Spread for its left Page, and the earlier part of a Page taller than the screen. Follows what the reader actually saw, so after a jump or a page back they are not the previous Pages of the Episode.
 _Avoid_: context (that word is avoided for Series Notes), history
 
+**Retranslation** (重新翻譯)
+The reader asking for Pages that are already translated to be translated again; each counts as a Translated Page like the first time. Asked from the side panel, it covers every Page on screen and starts over from recognizing the Page, as if the Page had never been seen, and the result replaces the earlier one; asked from a stale Page's hint, it covers only that Page and keeps its recognized text.
+_Avoid_: refresh, redo, rescan
+
 **Practice Spread** (試翻跨頁)
 Our own original Spread that a newly installed reader translates for the first time, on a page of our website. It is translated for real, like any other Spread, but never counts as Translated Pages.
 _Avoid_: demo (that is the simulated showcase on the homepage), sample page
