@@ -1,6 +1,8 @@
 # 手動發版：在 Actions 頁面選 Release → Run workflow。
 # 先跑型別檢查與單元測試，再改 package.json 的版本號、build、commit 回 main 並打 tag，
 # 最後建立 GitHub Release，附上 naruhodo.zip（dist/prod 的內容）。
+# 預設不上傳 Chrome Web Store：勾了 webstore 才會在建好 Release 之後呼叫 webstore.yml；
+# 沒勾的話，之後隨時可以在 Actions 頁面手動跑 Publish to Chrome Web Store，把這個 Release 送審。
 # zip 檔名固定不帶版本號：README 的下載連結指向 releases/latest/download/naruhodo.zip，
 # 使用者每次解壓縮出來的資料夾名稱也一樣（換資料夾 Chrome 會當成另一個外掛，資料就看不到了）。
 name: Release
@@ -21,7 +23,7 @@ on:
         # 上一版還在審核時不要勾：再上傳新版本可能被拒或蓋掉審核中的版本。
         description: 同時上傳到 Chrome Web Store 並送審
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -32,6 +34,8 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: 只允許從 main 發版
         if: github.ref != 'refs/heads/main'
@@ -100,17 +104,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: gh release create "v$VERSION" naruhodo.zip --title "v$VERSION" --generate-notes
 
-      # 放在 GitHub Release 之後：Web Store 出錯不影響 GitHub 上的發版，失敗時手動到 Dashboard 上傳同一個 zip。
-      # 還沒設定 secret（第一次上架前）就跳過，不讓 release 失敗。
-      - name: 上傳到 Chrome Web Store 並送審
-        if: inputs.webstore
-        env:
-          CWS_SERVICE_ACCOUNT_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_KEY }}
-          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
-          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
-        run: |
-          if [ -z "$CWS_SERVICE_ACCOUNT_KEY" ] || [ -z "$CWS_PUBLISHER_ID" ] || [ -z "$CWS_EXTENSION_ID" ]; then
-            echo "::warning::沒有設定 CWS_SERVICE_ACCOUNT_KEY、CWS_PUBLISHER_ID 或 CWS_EXTENSION_ID，跳過 Web Store 上傳"
-            exit 0
-          fi
-          node scripts/webstore-publish.ts naruhodo.zip
+  # 放在 GitHub Release 之後：Web Store 出錯不影響 GitHub 上的發版，失敗時手動重跑 Publish to Chrome Web Store 即可。
+  webstore:
+    needs: release
+    if: inputs.webstore
+    uses: ./.github/workflows/webstore.yml
+    with:
+      tag: v${{ needs.release.outputs.version }}
+    secrets: inherit

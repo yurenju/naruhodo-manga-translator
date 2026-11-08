@@ -295,6 +295,8 @@ B. **OAuth client＋refresh token**
 
 **接到現有的 `.github/workflows/release.yml`**：在 build 出 `naruhodo.zip` 之後加三步：取得 token、`:upload`、`:publish`。建議用 `STAGED_PUBLISH`，審核通過後再到 Dashboard 手動發佈，配合 GitHub Release 的時間；Dashboard 的 deferred publishing 規則是審核通過後 30 天內要發佈，否則會退回草稿。
 
+> 後來的做法：上傳獨立成 `.github/workflows/webstore.yml`，把既有 GitHub Release 的 `naruhodo.zip` 送審，可以手動觸發，release workflow 勾選時也會呼叫（預設不勾）。送審時機已經由人決定，所以維持 `DEFAULT_PUBLISH`。
+
 出處：
 - https://developer.chrome.com/docs/webstore/using-api
 - https://developer.chrome.com/docs/webstore/service-accounts
