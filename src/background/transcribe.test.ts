@@ -882,6 +882,67 @@ describe('翻譯佇列（#34）', () => {
     expect(cache.saved.map((t) => t.seriesId)).toEqual(['series-1', 'series-2']);
   });
 
+  it('重新翻譯（retranslate）：畫面上的頁當作第一次看到，重跑 OCR、不查快取，新的結果蓋掉快取', async () => {
+    const cache = memoryCache();
+    let zh = '舊';
+    const translator: Translator = { ...noNotes, translatePage: (input) => translatorReturning(zh).translatePage(input) };
+    const { transcriber, deps } = setup({ cache, getTranslator: () => translator });
+    await transcriber.update(1, [thumb('a1'), thumb('a2')], capture);
+
+    zh = '新';
+    transcriber.retranslate(1);
+    await transcriber.update(1, [thumb('a1'), thumb('a2')], capture);
+
+    expect(deps.analyze).toHaveBeenCalledTimes(4);
+    const shown = transcriber.get(1).map((p) => p.transcript);
+    expect(shown.map((t) => t.state === 'done' && [t.translation?.source, t.text.balloons[0]!.譯文])).toEqual([
+      ['translated', '新-b1'],
+      ['translated', '新-b1'],
+    ]);
+    expect(cache.saved.map((t) => t.balloons[0]!.譯文)).toEqual(['新-b1', '新-b1']);
+  });
+
+  it('按了重新翻譯、但重新擷取沒有結果（例如截不到圖）：畫面維持原樣，不會卡在辨識中', async () => {
+    const { transcriber } = setup({ getTranslator: () => translatorReturning('譯') });
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    transcriber.retranslate(1);
+
+    const t = transcriber.get(1)[0]!.transcript;
+    expect(t.state === 'done' && t.translated).toBe(true);
+  });
+
+  it('按了重新翻譯、擷取前就翻頁（同一個 anchor 換成別頁）：新的那頁照常用快取，不多翻', async () => {
+    const translator = { ...noNotes, translatePage: vi.fn(async () => translatedOutput()) } satisfies Translator;
+    const { transcriber } = setup({ getTranslator: () => translator });
+    await transcriber.update(1, [thumb('a1', HASHES.a2)], capture);
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    transcriber.retranslate(1);
+    await transcriber.update(1, [thumb('a1', HASHES.a2)], capture);
+
+    expect(translator.translatePage).toHaveBeenCalledTimes(2);
+    const t = transcriber.get(1)[0]!.transcript;
+    expect(t.state === 'done' && t.translation?.source).toBe('cache');
+  });
+
+  it('重新翻譯只管按下時畫面上的頁：之後翻走再翻回來照樣用快取（新的那份）', async () => {
+    let zh = '舊';
+    const translator: Translator = { ...noNotes, translatePage: vi.fn((input: TranslateInput) => translatorReturning(zh).translatePage(input)) };
+    const { transcriber } = setup({ getTranslator: () => translator });
+    await transcriber.update(1, [thumb('a1')], capture);
+    zh = '新';
+    transcriber.retranslate(1);
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    await transcriber.update(1, [thumb('a2')], capture);
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    expect(translator.translatePage).toHaveBeenCalledTimes(3);
+    const t = transcriber.get(1)[0]!.transcript;
+    expect(t.state === 'done' && [t.translation?.source, t.text.balloons[0]!.譯文]).toEqual(['cache', '新-b1']);
+  });
+
   it('同 origin 重新整理（resetPages）：同一頁重新從快取拿', async () => {
     const translator = { ...noNotes, translatePage: vi.fn(async () => translatedOutput()) } satisfies Translator;
     const { transcriber, published } = setup({ getTranslator: () => translator });
@@ -1840,6 +1901,43 @@ describe('直式捲動的長 Page（spec #142）', () => {
       [1, 1],
       [2, undefined],
       [1, 2],
+    ]);
+  });
+
+  it('重新翻譯：別截收過的 Line 丟掉，只重收畫面上這一截、扣一頁（不帶 usageRecordId）並蓋掉快取；之後捲到的截接續新的那次', async () => {
+    const calls: TranslateInput[] = [];
+    let records = 0;
+    const base = translatorReturning('譯', calls);
+    const translator: Translator = {
+      ...base,
+      async translatePage(input) {
+        return { ...(await base.translatePage(input)), usageRecordId: input.pageUsageRecordId ?? ++records };
+      },
+    };
+    const cache = memoryCache();
+    const analyze = vi
+      .fn<(request: AnalyzeRequest) => Promise<PageText>>()
+      .mockResolvedValueOnce(sliceText(balloonAt(0.1, 'うえ')))
+      .mockResolvedValueOnce(sliceText(balloonAt(0.4, 'なか')))
+      .mockResolvedValueOnce(sliceText(balloonAt(0.4, 'なか2')))
+      .mockResolvedValueOnce(sliceText(balloonAt(0.7, 'した')));
+    const { transcriber } = setup({ cache, analyze, getTranslator: () => translator });
+    await transcriber.update(1, [longThumb('a1', 0, [[0, HASHES.a1!]])], capture);
+    await transcriber.update(1, [longThumb('a1', 0.3, [[3, HASHES.a3!]])], capture);
+
+    transcriber.retranslate(1);
+    await transcriber.update(1, [longThumb('a1', 0.3, [[3, HASHES.a3!]])], capture);
+
+    expect(analyze.mock.calls[2]![0].collected).toEqual([]);
+    expect(cache.saved).toHaveLength(1);
+    expect(cache.saved[0]!.balloons.map((b) => b.原文)).toEqual(['なか2']);
+
+    await transcriber.update(1, [longThumb('a1', 0.6, [[5, HASHES.a5!]])], capture);
+    expect(calls.map((c) => [c.items.map((i) => i.原文), c.pageUsageRecordId])).toEqual([
+      [['うえ'], undefined],
+      [['なか'], 1],
+      [['なか2'], undefined],
+      [['した'], 2],
     ]);
   });
 

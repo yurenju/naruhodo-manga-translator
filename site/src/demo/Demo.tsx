@@ -101,6 +101,7 @@ export function Demo({ copy }: { copy: DemoCopy }) {
         onPageModeChange={setPageMode}
         onScan={noop}
         onTranslate={noop}
+        onRetranslate={noop}
         onLineHover={(line) => overlay.current?.highlight(line)}
         onAcceptConsent={noop}
         onUseOwnKey={noop}

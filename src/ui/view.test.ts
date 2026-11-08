@@ -4,7 +4,7 @@ import type { PageView } from '../shared/messages.ts';
 import type { RatioRect } from '../shared/page-text.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { SeriesOption } from '../shared/series.ts';
-import { accountPageView, accountPlanView, canTranslate, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView } from './view.ts';
+import { accountPageView, accountPlanView, canTranslate, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView, translateAction } from './view.ts';
 
 type Transcript = PageView['transcript'];
 type Done = Extract<Transcript, { state: 'done' }>;
@@ -203,6 +203,31 @@ describe('送得出翻譯嗎（底部的「翻譯此頁」）', () => {
     expect(canTranslate({ mode: 'ownKey', hasKey: false }, true)).toBe(false);
     expect(canTranslate({ mode: 'ownKey', hasKey: true }, false)).toBe(false);
     expect(canTranslate({ mode: 'hosted', signedIn: true }, undefined)).toBe(false);
+  });
+});
+
+describe('底部的翻譯按鈕：「翻譯此頁」或「重新翻譯」', () => {
+  const action = (transcripts: Transcript[], can = true) => translateAction(transcripts.map((t, i) => page(String(i), `a${i}`, { transcript: t })), can);
+  const kuromojiOnly: Transcript = { state: 'done', text: TEXT, translated: false };
+
+  it('有頁還沒翻譯：「翻譯此頁」（只翻那些頁），即使別頁翻好了', () => {
+    expect(action([translated(), kuromojiOnly])).toBe('translate');
+  });
+
+  it('畫面上的頁都翻好了（含快取）：「重新翻譯」', () => {
+    expect(action([translated(), translated({ source: 'cache' })])).toBe('retranslate');
+  });
+
+  it('還有頁在辨識或翻譯：都不放，避免連按重複扣頁', () => {
+    expect(action([translated(), { state: 'analyzing' }])).toBeUndefined();
+    expect(action([translated(), { ...translated(), translating: true }])).toBeUndefined();
+    expect(action([kuromojiOnly, { state: 'analyzing' }])).toBe('translate');
+  });
+
+  it('送不出翻譯（沒登入、沒 key、沒同意）或畫面上沒有頁：都不放', () => {
+    expect(action([translated()], false)).toBeUndefined();
+    expect(action([kuromojiOnly], false)).toBeUndefined();
+    expect(action([])).toBeUndefined();
   });
 });
 

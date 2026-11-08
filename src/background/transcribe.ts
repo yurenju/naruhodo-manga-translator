@@ -111,6 +111,8 @@ interface PageRecord {
   settled: Promise<void>;
   /** 長 Page 才有；text 是到目前收到的整個 Page 的 Line（Page 座標）。 */
   long?: LongPage;
+  /** Retranslation（側邊欄的「重新翻譯」）：當作第一次看到，不拿快取的結果（長 Page 只拿身分）。 */
+  ignoreCache?: true;
 }
 
 interface LongPage {
@@ -134,6 +136,8 @@ interface TabState {
   /** 最近一次擷取到的可見 Page（依閱讀順序）。 */
   pages: PageThumb[];
   records: PageRecord[];
+  /** 按了「重新翻譯」時畫面上的 Page（retranslate）：下一次擷取還看得到的那些從頭來過（startOver）。 */
+  retranslating?: PageRecord[];
 }
 
 interface Job extends QueuedJob {
@@ -398,7 +402,12 @@ export function createTranscriber(deps: TranscriberDeps) {
     job.seriesPending = undefined;
     const seriesId = await pending;
     job.record.seriesId = seriesId;
-    return pageTranslation.lookup(seriesId, job.record.pageHash);
+    return lookup(job.record, seriesId);
+  }
+
+  /** 一般 Page 查快取；重新翻譯（ignoreCache）的不查。 */
+  function lookup(record: PageRecord, seriesId: string | undefined): Promise<Transcript | undefined> | undefined {
+    return record.ignoreCache ? undefined : pageTranslation.lookup(seriesId, record.pageHash);
   }
 
   /** 長 Page 的一截辨識完：新收的 Line 併進整個 Page；有新的才翻譯。 */
@@ -490,7 +499,10 @@ export function createTranscriber(deps: TranscriberDeps) {
     else enqueueLocal(newJob({ ...spec, record, request }));
   }
 
-  /** 長 Page 查快取：命中就換成快取裡的身分，已收的 Line 從快取接著收，看過的橫條併起來。 */
+  /**
+   * 長 Page 查快取：命中就換成快取裡的身分，已收的 Line 從快取接著收，看過的橫條併起來。
+   * 重新翻譯（ignoreCache）只換身分、併橫條：已收的 Line 與扣頁紀錄都不要，從這一截重新收、扣一頁。
+   */
   async function lookupLong(tab: TabState, seriesId: string | undefined, record: PageRecord): Promise<Transcript | undefined> {
     const long = record.long!;
     const found = await pageTranslation.lookupLong(seriesId, long.stripes);
@@ -501,9 +513,10 @@ export function createTranscriber(deps: TranscriberDeps) {
     trace('longPage:identified', { tabId: tab.tabId, anchorId: long.anchorId, pageHash: cached.pageHash, by: 'cacheStripes' });
     record.pageHash = cached.pageHash;
     long.stripes = mergeStripes(cached.stripes ?? [], long.stripes);
+    tab.pages = tab.pages.map((p) => (p.anchorId === long.anchorId && p.pageHash === provisional ? { ...p, pageHash: cached.pageHash } : p));
+    if (record.ignoreCache) return undefined;
     if (cached.charge) long.charge = cached.charge;
     if (transcript.state === 'done') record.text = transcript.text;
-    tab.pages = tab.pages.map((p) => (p.anchorId === long.anchorId && p.pageHash === provisional ? { ...p, pageHash: cached.pageHash } : p));
     return transcript;
   }
 
@@ -519,6 +532,7 @@ export function createTranscriber(deps: TranscriberDeps) {
       tab = { tabId, pages: [], records: [] };
       tabs.set(tabId, tab);
     }
+    const restarted = startOver(tab, pages);
     // 長 Page 換成認出的 Page 的身分；認不出、又沒有橫條可以認的先不處理（例如這一截全是留白）
     const longOf = new Map<PageThumb, PageRecord>();
     const current = tab;
@@ -559,6 +573,7 @@ export function createTranscriber(deps: TranscriberDeps) {
         request: analyzeRequestOf(page, capture!),
         transcript: { state: 'analyzing' },
         settled: Promise.resolve(),
+        ...(restarted.has(page.anchorId) ? { ignoreCache: true as const } : {}),
         ...(page.visible ? { long: { anchorId: page.anchorId, stripes: page.stripes ?? [], slice: sliceOf(page.rect, page.visible) } } : {}),
       };
       tab.records.push(record);
@@ -602,7 +617,7 @@ export function createTranscriber(deps: TranscriberDeps) {
       return newJob({ tab, record, batch, index, group: groupOf(record) });
     });
     const lookups = await Promise.all(
-      jobs.map((job) => (job.record.long ? lookupLong(tab, seriesId, job.record) : pageTranslation.lookup(seriesId, job.record.pageHash))),
+      jobs.map((job) => (job.record.long ? lookupLong(tab, seriesId, job.record) : lookup(job.record, seriesId))),
     );
     // 快取都查完才依閱讀順序排：佇列一有工作就開始跑，Spread 的左頁先查完也不能比右頁先送出 LLM（spec 第 3.4 節）
     for (const [i, job] of jobs.entries()) {
@@ -680,6 +695,35 @@ export function createTranscriber(deps: TranscriberDeps) {
     await Promise.all(started.map((r) => r.settled));
   }
 
+  /**
+   * Retranslation（側邊欄的「重新翻譯」）：記下畫面上的 Page，呼叫的人接著重新擷取。那次擷取還看得到的頁
+   * 當作第一次看到（startOver）：重跑 OCR、不查快取，翻好的結果蓋掉快取。這裡不動畫面，擷取沒有結果時維持原樣。
+   */
+  function retranslate(tabId: number): void {
+    const tab = tabs.get(tabId);
+    if (tab) tab.retranslating = tab.records.filter((r) => isVisible(tab, r));
+  }
+
+  /**
+   * 按了「重新翻譯」之後的第一次擷取：還看得到（一般 Page 比 hash，長 Page 比 anchor）、沒有工作在跑的頁忘掉，
+   * 回傳它們這次的 anchor，新排的頁就不查快取。按下後才翻到的頁（同一個 anchor 換了別頁）不算。
+   * 長 Page 別截收過的 Line 跟著丟掉，從這一截重新收、扣一頁，之後捲到的截照常接續。
+   */
+  function startOver(tab: TabState, pages: readonly PageThumb[]): Set<string> {
+    const pending = tab.retranslating ?? [];
+    tab.retranslating = undefined;
+    const anchors = new Set<string>();
+    for (const record of pending) {
+      if (record.job || !tab.records.includes(record)) continue;
+      const { long } = record;
+      const page = long ? pages.find((p) => p.visible && p.anchorId === long.anchorId) : findSamePage(pages, record.pageHash);
+      if (!page) continue;
+      tab.records = tab.records.filter((r) => r !== record);
+      anchors.add(page.anchorId);
+    }
+    return anchors;
+  }
+
   function get(tabId: number): PageView[] {
     return views.get(tabId) ?? [];
   }
@@ -755,6 +799,7 @@ export function createTranscriber(deps: TranscriberDeps) {
     update,
     translate,
     translateUntranslated,
+    retranslate,
     get,
     resetPages,
     reassignSeries,

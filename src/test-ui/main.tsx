@@ -76,6 +76,7 @@ globalThis.__testUi = {
         onPageModeChange={noop}
         onScan={noop}
         onTranslate={noop}
+        onRetranslate={noop}
         onLineHover={noop}
         onAcceptConsent={noop}
         onUseOwnKey={noop}

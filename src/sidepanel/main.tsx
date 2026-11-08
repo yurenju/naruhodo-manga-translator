@@ -657,6 +657,7 @@ function App({ tabId }: { tabId: number | undefined }) {
       onPageModeChange={choosePageMode}
       onScan={() => void send({ type: 'panel:scan', tabId: tabId! })}
       onTranslate={(pageHash) => void send({ type: 'panel:translate', tabId: tabId!, ...(pageHash === undefined ? {} : { pageHash }) })}
+      onRetranslate={() => void send({ type: 'panel:retranslate', tabId: tabId! })}
       onLineHover={(line) => {
         chrome.tabs.sendMessage(tabId!, { type: 'content:highlight', line } satisfies Message).catch(() => {});
       }}

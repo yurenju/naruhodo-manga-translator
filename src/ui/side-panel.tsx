@@ -18,11 +18,13 @@ import { PaymentUnavailable, SubscribeButton, SubscriptionPrice } from './subscr
 import { DEFAULT_LEVEL, DisplaySwitch, Transcript, type Display, type Level } from './transcript.tsx';
 import {
   canTranslate,
+  hasUntranslated,
   quotaView,
   setupNotices,
   parentPage,
   sidePanelScreen,
   sidePanelView,
+  translateAction,
   type OverallStatus,
   type PanelPage,
   type PageEntry,
@@ -322,6 +324,8 @@ export interface SidePanelProps {
   onScan: () => void;
   /** 翻譯這個 tab 的頁；給 pageHash 就只重翻那一頁。 */
   onTranslate: (pageHash?: string) => void;
+  /** 底部的「重新翻譯」：畫面上的頁從辨識開始整個重來（Retranslation）。 */
+  onRetranslate: () => void;
   /** 滑過逐字稿的某行；null＝離開。 */
   onLineHover: (line: LineRef | null) => void;
   onAcceptConsent: () => void;
@@ -437,9 +441,9 @@ export function SidePanel(props: SidePanelProps) {
     </div>
   );
   const done = pages.filter((p) => p.transcript.state === 'done');
-  const untranslated = done.some((p) => p.transcript.state === 'done' && !p.transcript.translated);
+  const untranslated = hasUntranslated(pages);
   // 沒登入、沒 key、還沒同意時按了也送不出去：不放按鈕，由上面的設定提示帶路
-  const showTranslate = untranslated && canTranslate(access, consented);
+  const action = translateAction(pages, canTranslate(access, consented));
   const notices = setupNotices({ access, consented, untranslated, hostedHint: props.hostedHint });
   const consentCard = notices.consentCard && <DataConsentCard onAccept={props.onAcceptConsent} />;
   const useOwnKey = () => {
@@ -518,12 +522,14 @@ export function SidePanel(props: SidePanelProps) {
             <SubscribeButton variant="primary" onSubscribe={props.onSubscribe} />
           ) : (
             quota.footerButton === 'translate' &&
-            // 只在有頁還沒翻譯（沒有 key、翻譯失敗）時出現；翻好的頁要重翻走過時提示的單頁「重新翻譯」
-            showTranslate && (
+            // 有頁還沒翻譯時只翻那些頁；全部翻好了才是整個畫面重來的「重新翻譯」（規則在 translateAction）
+            (action === 'translate' ? (
               <Button variant="primary" onClick={translate}>
                 翻譯此頁
               </Button>
-            )
+            ) : (
+              action === 'retranslate' && <Button onClick={props.onRetranslate}>重新翻譯</Button>
+            ))
           )}
         </div>
       </footer>
