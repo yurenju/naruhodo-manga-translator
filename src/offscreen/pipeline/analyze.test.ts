@@ -16,6 +16,13 @@ function whitePage(): PageImage {
   };
 }
 
+/** 白底頁上畫幾塊黑色（字）；整頁是背景、沒有 Panel。 */
+function inkPage(width: number, height: number, ink: PixelBox[]): PageImage {
+  const gray = new Uint8Array(width * height).fill(255);
+  for (const [x, y, w, h] of ink) for (let r = y; r < y + h; r++) gray.fill(0, r * width + x, r * width + x + w);
+  return { ...whitePage(), width, height, gray: () => ({ gray, width, height }) };
+}
+
 /** OCR 讀到的一段：每個字的信心依序列出；只給字串時每個字都是 0.99。 */
 type FakeOcr = string | { text: string; confidences: number[] };
 
@@ -127,16 +134,40 @@ describe('analyzePage：偵測結果 → Balloon／Loose Text', () => {
 
     await analyzePage(engine, whitePage(), (ja) => ja);
 
+    // 兩個文字框重疊在 x 198～208：白頁上那一帶沒有字，兩段都切在中間
     expect(engine.crops).toEqual([
-      [208, 99, 152, 191], // 左緣切到左邊那段文字框的右緣
-      [93, 142, 105, 318], // 右緣切到右邊那段文字框的左緣
+      [203, 99, 157, 191], // 左緣切到重疊帶的中間
+      [93, 142, 110, 318], // 右緣切到重疊帶的中間
     ]);
+  });
+
+  it('鄰段文字框的邊伸進自己的字：切在兩段字之間的空白，不切掉自己字的上緣', async () => {
+    // 真實網站上斜對角相鄰的兩個 Balloon：上面那段的文字框下緣比它的字低，伸進下面那段第一個字。
+    // 沿框邊切會切掉「午」「6」的頭，OCR 讀成「千」「60」、信心低到被擋（ADR 0009）
+    const above: PixelBox = [519, 763, 78, 148]; // 下緣 911
+    const below: PixelBox = [478, 886, 78, 183];
+    const image = inkPage(814, 1155, [
+      [525, 770, 30, 50], // 上面那段的字
+      [565, 770, 30, 105],
+      [557, 878, 6, 11], // 上面那段最後一字伸到下面那段裁切範圍裡的筆畫
+      [525, 903, 30, 157], // 下面那段的字：第一個字的頂在 903
+      [485, 905, 30, 85],
+    ]);
+    const engine = fakeEngine([det('text_bubble', above), det('text_bubble', below)], { 470: 'した', 511: 'うえ' });
+
+    await analyzePage(engine, image, (ja) => ja);
+
+    const [, top] = engine.crops.find((c) => c[0] < 500)!;
+    expect(top).toBeLessThan(903); // 自己的字整個留著
+    expect(top).toBeGreaterThanOrEqual(889); // 上面那段伸進來的筆畫切掉
   });
 
   it('切了會少掉自己文字框兩成以上的，就不切', async () => {
     const engine = fakeEngine([det('text_bubble', [500, 100, 100, 300]), det('text_free', [430, 100, 100, 150])], { 500: 'ながい', 430: 'ドン' });
+    // 兩段的字疊在一起：重疊帶裡沒有空白可切
+    const image = inkPage(1000, 2000, [[430, 100, 170, 300]]);
 
-    await analyzePage(engine, whitePage(), (ja) => ja);
+    await analyzePage(engine, image, (ja) => ja);
 
     // 第一段 pad = 10：留下最多的切法是左緣切到 530，但會少掉自己 30% 的寬，所以照原本的外擴範圍
     expect(engine.crops[0]).toEqual([490, 90, 120, 320]);
