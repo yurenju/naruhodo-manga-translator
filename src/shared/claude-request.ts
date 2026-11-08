@@ -26,7 +26,7 @@ import type {
 
 export const CLAUDE_MODEL = 'claude-haiku-5-5';
 /** 寫進快取判斷過時用（#33）；改 ① 的 prompt 或 schema 就要改這個。② 的 prompt 不影響已快取的譯文，不用改。 */
-export const PROMPT_VERSION = 'claude-text-v10';
+export const PROMPT_VERSION = 'claude-text-v11';
 /**
  * 譯文跟 PROMPT_VERSION 一樣能用的舊版本：快取的頁不算過時（#38）。v7 → v8 只拿掉讀音、加了兩條譯文規則（#195），
  * 舊頁的譯文照用；讀音在命中快取時一律換成 kuromoji（page-translation.ts）。
@@ -34,8 +34,10 @@ export const PROMPT_VERSION = 'claude-text-v10';
  * 有問題的頁由讀者按「重新翻譯」。
  * v9 → v10 在 user message 加了中文作品名、規定原文出現作品名時用它；舊頁只有提到作品名的那幾句可能照抄原名，照用，
  * 一樣由讀者按「重新翻譯」。
+ * v10 → v11 規定一句話拆在好幾項時每項只翻自己那段、不能留空；舊頁只有被併掉、留空的那幾格沒有譯文，照用，
+ * 一樣由讀者按「重新翻譯」。
  */
-export const COMPATIBLE_PROMPT_VERSIONS: readonly string[] = ['claude-text-v7', 'claude-text-v8', 'claude-text-v9'];
+export const COMPATIBLE_PROMPT_VERSIONS: readonly string[] = ['claude-text-v7', 'claude-text-v8', 'claude-text-v9', 'claude-text-v10'];
 
 const MAX_TOKENS = 16_000;
 
@@ -88,6 +90,8 @@ const TRANSLATE_TEXT = `你是日文漫畫翻譯助手，幫助讀者一邊看�
 - sfx：這段是狀聲詞（Sound Effect）就設為 true：擬音（聲音，例如ドン、ぱち）與擬態（動作或狀態，例如ニコリ、ドキドキ）都算。角色自己發出的感嘆（あ…、あっ、うっ）是台詞，不算，設為 false。狀聲詞的 zh 照樣要翻。
 
 閱讀順序已經由程式決定，請照輸入的順序回答，不要重排。
+
+一句話常被拆在相鄰的好幾項裡（例如前一項是「〜など」、下一項是「あってはならない」）。這時每一項的 zh 只翻自己那一段，讀起來接得上下一項就好；不要把後面一項的意思併進前一項的 zh，也不要因此把任何一項的 zh 留成空字串。只有 unreadable 是 true 時 zh 才能是空字串。
 
 翻譯時請遵守 Series Notes 的譯名。
 
@@ -156,7 +160,7 @@ const TRANSLATE_SCHEMA = obj({
     type: 'array',
     items: obj({
       id: str(),
-      zh: str('繁體中文（台灣）譯文'),
+      zh: str('這一項自己那一段的繁體中文（台灣）譯文；只有 unreadable 時才是空字串'),
       unreadable: { type: 'boolean', description: '原文是無法判斷的 OCR 亂碼' },
       sfx: { type: 'boolean', description: '狀聲詞（擬音、擬態）；角色自己的感嘆不算' },
     }),
