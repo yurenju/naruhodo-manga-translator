@@ -72,9 +72,15 @@ describe('共用的 request 組裝模組（Own API Key 與 Worker 共用）', ()
     expect(body.system[0]?.text).toMatch(/作品名的中文譯名[^\n]*平假名[^\n]*片假名[^\n]*Series Notes[^\n]*為準/);
   });
 
-  it('改了 ① 的 prompt：PROMPT_VERSION 是 v10，v9 的快取照用', () => {
-    expect(PROMPT_VERSION).toBe('claude-text-v10');
-    expect(COMPATIBLE_PROMPT_VERSIONS).toContain('claude-text-v9');
+  it('改了 ① 的 prompt：PROMPT_VERSION 是 v11，v10 的快取照用', () => {
+    expect(PROMPT_VERSION).toBe('claude-text-v11');
+    expect(COMPATIBLE_PROMPT_VERSIONS).toContain('claude-text-v10');
+  });
+
+  it('一句話拆在好幾項時，每項只翻自己那段，不把後一項併進前一項、不留空', () => {
+    const [instructions] = translateRequest(input).system;
+
+    expect(instructions?.text).toMatch(/拆在相鄰的好幾項[^\n]*只翻自己那一段[^\n]*不要把後面一項的意思併進前一項[^\n]*空字串[^\n]*只有 unreadable/);
   });
 
   it('沒有作品名時不送作品名', () => {
