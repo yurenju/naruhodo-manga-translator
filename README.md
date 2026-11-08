@@ -82,6 +82,13 @@
 
 第一次使用時會從 Hugging Face 下載 OCR 模型，需要等一下；下載完會存在外掛裡，之後不用再下載。
 
+## 問題回報與討論
+
+- 翻不出來、譯文位置跑掉、使用上的疑問或功能建議：到 [Discussions](https://github.com/yurenju/naruhodo-manga-translator/discussions) 發文。外掛的設定頁最下面也有連結。
+- 帳號、付款、退款或個人資料的問題不要公開貼出來，請寄 dev@sadcoder.com。
+
+Issue 和 pull request 只開放給 collaborator。Discussions 裡的回報確認之後，會由維護者整理成 issue。
+
 ## 開發
 
 ### 從原始碼建置

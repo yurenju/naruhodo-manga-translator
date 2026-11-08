@@ -25,6 +25,7 @@ import { DEFAULT_PAGE_MODE, savePageMode, watchPageMode, type PageMode } from '.
 import { dismissSubscribedNotice, watchSubscribedNotice } from '../shared/payment-return.ts';
 import { saveTranslationMode, type TranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, RadioCard } from '../ui/components.tsx';
+import { CONTACT_EMAIL, DISCUSSIONS_URL } from '../ui/links.ts';
 import { SidePanel, type SeriesPage } from '../ui/side-panel.tsx';
 import { accountPlanView, seriesActions } from '../ui/view.ts';
 import { ClearCache, DeleteSeries, SeriesNotesSection } from './series-notes.tsx';
@@ -288,6 +289,20 @@ function Settings({
       <h2>資料</h2>
       <p class="hint">在兩台電腦之間搬作品、角色與用語與翻譯快取（不含 API key 與帳號）。</p>
       <Backup />
+      <h2>意見回饋</h2>
+      <p class="hint">翻不出來、譯文位置跑掉，或有想要的功能，歡迎到討論區告訴我們。</p>
+      <div class="actions">
+        <a class="naru-btn naru-btn--secondary" href={DISCUSSIONS_URL} target="_blank" rel="noreferrer">
+          到討論區回報
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M4.5 2.5h5v5" />
+            <path d="M9.5 2.5 3 9" />
+          </svg>
+        </a>
+      </div>
+      <p class="hint">
+        帳號或付款的問題請寄 <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>，不要貼在公開的討論區。
+      </p>
     </section>
   );
 }

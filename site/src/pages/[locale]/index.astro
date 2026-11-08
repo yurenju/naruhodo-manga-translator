@@ -6,7 +6,7 @@ import StepBody from '../../components/StepBody.astro';
 import Base from '../../layouts/Base.astro';
 import '../../styles/demo.css';
 import { copy } from '../../copy.ts';
-import { INSTALL_URL, legalHref } from '../../links.ts';
+import { DISCUSSIONS_URL, INSTALL_URL, legalHref } from '../../links.ts';
 import { type Locale, LOCALES, byLocale } from '../../locale.ts';
 
 export function getStaticPaths() {
@@ -85,7 +85,9 @@ const t = copy[locale];
         <details open={i === 0}>
           <summary>{item.q}</summary>
           <p>{item.a.split('{link}').map((part, j) => (
-            <>{j > 0 && item.link && <a href={legalHref(item.link, locale)}>{t.legal[item.link]}</a>}{part}</>
+            <>{j > 0 && item.link && (item.link === 'discussions'
+              ? <a href={DISCUSSIONS_URL}>{t.faq.discussions}</a>
+              : <a href={legalHref(item.link, locale)}>{t.legal[item.link]}</a>)}{part}</>
           ))}</p>
         </details>
       ))}

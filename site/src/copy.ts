@@ -33,9 +33,10 @@ export interface SiteCopy {
     start: { steps: readonly { title: string; body: string }[]; cta: string };
     ownKey: string;
   };
-  /** `a` 裡的 `{link}` 換成 `link` 那份法律文件的連結 */
-  faq: { title: string; items: readonly { q: string; a: string; link?: LegalDoc }[] };
-  legal: Record<LegalDoc, string> & { englishOnly: string; source: string };
+  /** `a` 裡的 `{link}` 換成 `link` 那份法律文件的連結；`discussions` 換成討論區連結，文字是 `discussions` */
+  faq: { title: string; discussions: string; items: readonly { q: string; a: string; link?: LegalDoc | 'discussions' }[] };
+  /** `discussions` 是頁尾的討論區連結 */
+  legal: Record<LegalDoc, string> & { englishOnly: string; source: string; discussions: string };
   checkout: {
     title: string;
     loading: string;
@@ -127,6 +128,7 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     faq: {
       title: '常見問題',
+      discussions: '討論區',
       items: [
         {
           q: 'Naruhodo 怎麼處理漫畫頁面？',
@@ -141,7 +143,8 @@ export const copy: Record<Locale, SiteCopy> = {
         { q: '可以退款嗎？', a: '詳見{link}。', link: 'refund' },
         {
           q: '可以在哪些網站上用？',
-          a: 'Naruhodo 會找出頁面上大張的漫畫圖片，辨識裡面的文字再翻譯，所以不限定特定網站。每個網站的版面不太一樣，如果遇到翻不出來的頁面，歡迎到 GitHub 回報。',
+          a: 'Naruhodo 會找出頁面上大張的漫畫圖片，辨識裡面的文字再翻譯，所以不限定特定網站。每個網站的版面不太一樣，如果遇到翻不出來的頁面，歡迎到{link}回報。',
+          link: 'discussions',
         },
       ],
     },
@@ -151,6 +154,7 @@ export const copy: Record<Locale, SiteCopy> = {
       privacy: '隱私權政策',
       englishOnly: '法律文件僅提供英文版本，以英文內容為準。',
       source: '原始碼',
+      discussions: '討論區',
     },
     checkout: {
       title: '付款',
@@ -233,6 +237,7 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     faq: {
       title: 'FAQ',
+      discussions: 'community forum',
       items: [
         {
           q: 'How does Naruhodo handle manga pages?',
@@ -247,7 +252,8 @@ export const copy: Record<Locale, SiteCopy> = {
         { q: 'Can I get a refund?', a: 'See the {link}.', link: 'refund' },
         {
           q: 'Where does it work?',
-          a: "Naruhodo looks for the large manga image on the page, recognizes the text in it and translates it, so it isn't tied to particular sites. Every site lays out pages a little differently; if a page doesn't translate, let us know on GitHub.",
+          a: "Naruhodo looks for the large manga image on the page, recognizes the text in it and translates it, so it isn't tied to particular sites. Every site lays out pages a little differently; if a page doesn't translate, let us know in the {link}.",
+          link: 'discussions',
         },
       ],
     },
@@ -257,6 +263,7 @@ export const copy: Record<Locale, SiteCopy> = {
       privacy: 'Privacy Policy',
       englishOnly: '',
       source: 'Source code',
+      discussions: 'Community',
     },
     checkout: {
       title: 'Checkout',
