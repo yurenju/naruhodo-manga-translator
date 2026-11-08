@@ -1,0 +1,59 @@
+# 把一個已經存在的 GitHub Release 上傳到 Chrome Web Store 並送審（審過就上線）。
+# 兩種用法：
+# - 手動：在 Actions 頁面選 Publish to Chrome Web Store → Run workflow，tag 不填就用最新的 Release。
+# - Release workflow 勾了 webstore 時呼叫這裡，傳入剛建立的 tag。
+# 不重新 build：直接下載那個 Release 附的 naruhodo.zip，Web Store 和 GitHub 上同一個版本號就是同一份檔案。
+# Web Store 規定每次上傳的版本號都要比上一次大，同一個 Release 傳第二次會被 API 拒絕。
+name: Publish to Chrome Web Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要上傳的 Release tag，例如 v0.1.21（不填就用最新的 Release）
+        type: string
+        required: false
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  webstore:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: webstore
+      cancel-in-progress: false
+    steps:
+      # 這個 job 讀得到 CWS_SERVICE_ACCOUNT_KEY；只從 main 跑，其他 branch 改過的 workflow 拿不到這把 key
+      - name: 只允許從 main 上傳
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::只能在 main 上執行，目前是 ${{ github.ref }}"
+          exit 1
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # 腳本只用 Node 內建模組，不用 npm ci
+          node-version: 24
+
+      - name: 下載 Release 的 naruhodo.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          # gh release download 不給 tag 就是最新的 Release
+          gh release download $TAG --pattern naruhodo.zip
+          echo "zip 裡的版本：$(unzip -p naruhodo.zip manifest.json | node -p 'JSON.parse(require("fs").readFileSync(0)).version')"
+
+      - name: 上傳到 Chrome Web Store 並送審
+        env:
+          CWS_SERVICE_ACCOUNT_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_KEY }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+        run: node scripts/webstore-publish.ts naruhodo.zip

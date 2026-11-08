@@ -1,6 +1,7 @@
 /**
  * 用法：node scripts/webstore-publish.ts <zip>
- *   把 zip 上傳到 Chrome Web Store 並送審（審過就上線）。release workflow 在建立 GitHub Release 之後呼叫。
+ *   把 zip 上傳到 Chrome Web Store 並送審（審過就上線）。由 .github/workflows/webstore.yml 呼叫。
+ *   上一版還在審核中就不上傳：再送一版可能被拒或蓋掉審核中的版本。
  *
  * 環境變數：
  *   CWS_SERVICE_ACCOUNT_KEY：service account 的 JSON key（GitHub secret）
@@ -19,6 +20,20 @@ const API = 'https://chromewebstore.googleapis.com';
 /** 上傳後還在處理時，輪詢 fetchStatus 的間隔與上限。 */
 const POLL_INTERVAL_MS = 5_000;
 const POLL_LIMIT = 60;
+
+interface RevisionStatus {
+  state?: string;
+  distributionChannels?: { crxVersion?: string }[];
+}
+
+interface ItemStatus {
+  lastAsyncUploadState?: string;
+  publishedItemRevisionStatus?: RevisionStatus;
+  submittedItemRevisionStatus?: RevisionStatus;
+}
+
+const versions = (status: RevisionStatus | undefined) =>
+  status?.distributionChannels?.map((channel) => channel.crxVersion).join(', ') || '（不明）';
 
 interface ServiceAccountKey {
   client_email: string;
@@ -63,6 +78,12 @@ const key = JSON.parse(env('CWS_SERVICE_ACCOUNT_KEY')) as ServiceAccountKey;
 const item = `publishers/${env('CWS_PUBLISHER_ID')}/items/${env('CWS_EXTENSION_ID')}`;
 const token = await accessToken(key);
 
+const before = await call<ItemStatus>(token, `${API}/v2/${item}:fetchStatus`);
+console.log('目前上線的版本', before.publishedItemRevisionStatus ? versions(before.publishedItemRevisionStatus) : '（尚未上線）');
+if (before.submittedItemRevisionStatus?.state === 'PENDING_REVIEW') {
+  throw new Error(`版本 ${versions(before.submittedItemRevisionStatus)} 還在審核中，等審核結束（或到 Dashboard 撤回送審）再上傳`);
+}
+
 const upload = await call<{ uploadState?: string; crxVersion?: string }>(token, `${API}/upload/v2/${item}:upload`, {
   method: 'POST',
   headers: { 'content-type': 'application/zip' },
@@ -74,7 +95,7 @@ console.log('upload', upload);
 let state = upload.uploadState;
 for (let i = 0; (state === 'IN_PROGRESS' || state === 'UPLOAD_IN_PROGRESS') && i < POLL_LIMIT; i++) {
   await sleep(POLL_INTERVAL_MS);
-  state = (await call<{ lastAsyncUploadState?: string }>(token, `${API}/v2/${item}:fetchStatus`)).lastAsyncUploadState;
+  state = (await call<ItemStatus>(token, `${API}/v2/${item}:fetchStatus`)).lastAsyncUploadState;
   console.log('upload state', state);
 }
 if (state !== 'SUCCEEDED') throw new Error(`上傳沒有成功：${state}`);
