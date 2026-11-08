@@ -4,7 +4,7 @@ v1 沒有網站 adapter。Page 的定位、翻頁偵測、Page 的身分都用�
 
 ## 做法
 
-- **定位 Page**：可視區域裡夠大的 `<img>` / `<canvas>`，每個元素是一個 Page 候選（「完整可見」也要在每個會裁切的祖先裡面，見 [ADR 0004](0004-fully-visible-page-inside-every-clipping-ancestor.md)；比可見範圍高的 Page 另有規則，見 ADR 0004 最後一節）。看起來是 Spread 的候選（寬 > 高）在 offscreen document 去暗色邊緣、找中縫，切成兩個 Page；寬 > 高卻切不開的候選這次不產生 Page（[#55](https://github.com/yurenju/naruhodo-manga-translator/issues/55)）。白邊不去：會連頁面本身的留白一起切掉，OCR 的輸入和 hash 都會變。有的網站每頁一個 canvas，有的電子書閱讀器把整個 viewport 合成一張 img。
+- **定位 Page**：可視區域裡夠大的 `<img>` / `<canvas>`，每個元素是一個 Page 候選。「夠大」是寬至少 200 px，高至少 400 px 或可見高度的一半（滿足一個就算）：網站首頁、目錄頁的縮圖一次好幾十張，誤翻會大量花掉 Translated Pages，這條規則一次擋掉它們。跟 Page 一樣大的廣告頁（每話開頭、結尾一兩頁）擋不到；為了它加看內容的規則（Balloon 數、文字方向、出現過幾次）都會誤擋旁白頁或讓規則變複雜，所以接受這一兩頁的誤翻（「完整可見」也要在每個會裁切的祖先裡面，見 [ADR 0004](0004-fully-visible-page-inside-every-clipping-ancestor.md)；比可見範圍高的 Page 另有規則，見 ADR 0004 最後一節）。看起來是 Spread 的候選（寬 > 高）在 offscreen document 去暗色邊緣、找中縫，切成兩個 Page；寬 > 高卻切不開的候選這次不產生 Page（[#55](https://github.com/yurenju/naruhodo-manga-translator/issues/55)）。白邊不去：會連頁面本身的留白一起切掉，OCR 的輸入和 hash 都會變。有的網站每頁一個 canvas，有的電子書閱讀器把整個 viewport 合成一張 img。
 - **偵測翻頁**：DOM mutation、scroll、resize、按鍵、點擊、img load 等訊號經過 debounce（約 300–500 ms）後截圖，再比對每個 Page 的縮圖 hash，hash 變了才算翻頁。不做定時輪詢。
 - **Page 的身分**：快取 key 是 `(Series, Page 影像的 perceptual hash)`，比對時用 Hamming 距離門檻。同一個 Page 在不同網站讀，會命中同一筆快取。比可見範圍高的 Page 從沒被整張截過，改用固定橫條的 hash 當指紋（ADR 0004 最後一節），原則一樣是用影像認 Page。
 - **覆蓋座標**：Balloon 框存成相對 Page 的 0～1 比例座標。每個 Page 記一個 anchor 元素，Spread 另外記 `subRect`（例如左半）。渲染時用 anchor 目前的 rect 換算成畫面座標。

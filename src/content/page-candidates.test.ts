@@ -26,6 +26,31 @@ describe('isPageCandidate', () => {
     expect(isPageCandidate({ x: 10, y: 10, width: 600, height: 90 }, VIEWPORT)).toBe(false);
   });
 
+  it('高度不到可見高度一半的不是：首頁、結尾推薦區的縮圖一次好幾十張，誤翻會大量花掉額度', () => {
+    // 仿網站首頁的正方形宣傳縮圖、結尾的推薦作品縮圖
+    expect(isPageCandidate({ x: 36, y: 100, width: 252, height: 252 }, VIEWPORT)).toBe(false);
+    expect(isPageCandidate({ x: 225, y: 100, width: 207, height: 300 }, VIEWPORT)).toBe(false);
+    expect(isPageCandidate({ x: 10, y: 10, width: 300, height: 359 }, VIEWPORT)).toBe(false);
+    expect(isPageCandidate({ x: 10, y: 10, width: 300, height: 360 }, VIEWPORT)).toBe(true);
+  });
+
+  it('很高的視窗裡一頁接一頁往下排、同時完整露出兩頁：每頁不到一半，但超過 400 px 仍是候選', () => {
+    const tall = { width: 1280, height: 1390 };
+    expect(isPageCandidate({ x: 425, y: 80, width: 430, height: 625 }, tall)).toBe(true);
+    expect(isPageCandidate({ x: 425, y: 721, width: 430, height: 625 }, tall)).toBe(true);
+    expect(isPageCandidate({ x: 36, y: 100, width: 252, height: 252 }, tall)).toBe(false);
+  });
+
+  it('矮視窗（筆電）裡的縮圖仍不是', () => {
+    const laptop = { width: 1366, height: 650 };
+    expect(isPageCandidate({ x: 36, y: 100, width: 252, height: 252 }, laptop)).toBe(false);
+    expect(isPageCandidate({ x: 400, y: 10, width: 440, height: 630 }, laptop)).toBe(true);
+  });
+
+  it('夠高但太窄的不是（直立的廣告欄）', () => {
+    expect(isPageCandidate({ x: 10, y: 10, width: 160, height: 600 }, VIEWPORT)).toBe(false);
+  });
+
   it('被 overflow 裁切的祖先擋住的不是（仿 canvas 網站翻頁：隔壁頁在 viewer 外面）', () => {
     const viewer = { x: 425, y: 57, width: 430, height: 625 };
     expect(isPageCandidate(page(425, 57), VIEWPORT, [viewer])).toBe(true);

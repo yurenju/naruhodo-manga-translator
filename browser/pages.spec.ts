@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { ElementHandle, Page } from '@playwright/test';
 import { readGroundTruth } from '../src/testing/synthetic.ts';
 import { activateOnMockSite, expect, rescan, test } from './fixtures.ts';
 
@@ -49,6 +49,28 @@ test('啟動後 side panel 列出完整可見的 Page，只露出一部分的不
 
   await expectPagesListed(panel, ['p01-basic', 'p02-ruby']);
   await expect(pageIcon(panel, '第 1 頁').locator('rect')).toHaveCount(1);
+});
+
+test('畫面上只有縮圖大小的圖（仿網站首頁）：side panel 說沒有找到漫畫頁；換成正常大小後列出 Page、提示消失', async ({ context, sw, extensionId, mockSite }) => {
+  // 門檻本身在 src/content/page-candidates.test.ts；這裡確認 content script 真的用量到的 rect 擋掉縮圖，
+  // side panel 也跟著候選有沒有變
+  let thumbnails!: ElementHandle;
+  const { page, panel, tabId } = await activateOnMockSite({
+    context,
+    sw,
+    extensionId,
+    mockSite,
+    beforeActivate: async (_panel, page) => {
+      thumbnails = await page.addStyleTag({ content: 'canvas { width: 252px !important; height: 252px !important; }' });
+    },
+  });
+  await expect(panel.getByText('這個畫面沒有找到漫畫頁')).toBeVisible();
+  await expect(pageList(panel).getByRole('listitem')).toHaveCount(0);
+
+  await thumbnails.evaluate((style) => (style as Element).remove());
+  await rescan(panel, tabId);
+  await expectPagesListed(panel, ['p01-basic', 'p02-ruby']);
+  await expect(panel.getByText('這個畫面沒有找到漫畫頁')).toBeHidden();
 });
 
 test('捲動後重新擷取：上下都只露出一部分時只列中間那頁', async ({ context, sw, extensionId, mockSite }) => {

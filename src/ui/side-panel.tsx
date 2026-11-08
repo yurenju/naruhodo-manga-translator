@@ -494,6 +494,8 @@ export function SidePanel(props: SidePanelProps) {
         {subscribedNotice}
         {props.renderSeriesCard?.(setPage)}
         {done.length > 0 && <DisplaySwitch display={display} onLevel={setLevel} onFurigana={setFurigana} />}
+        {/* 不是錯誤：首頁、目錄頁本來就沒有 Page（縮圖太小不算），讓讀者知道外掛是刻意沒翻 */}
+        {pages.length === 0 && <Callout role="status">這個畫面沒有找到漫畫頁</Callout>}
         <ul aria-label="Page">
           {view.pages.map((entry) => (
             // 同一個 anchor 可能有兩個 Page（Spread），key 要帶 Page 身分
