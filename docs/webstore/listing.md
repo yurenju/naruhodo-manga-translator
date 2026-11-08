@@ -16,7 +16,7 @@
 | 截圖 | `docs/webstore/screenshot-*.png`（1280×800、不能有 alpha）：正式版外掛在試翻頁 `https://naruhodo.page/zh-tw/try/?shot=1` 拍，再跑 `node scripts/store-images.ts` |
 | Small promo tile | `docs/webstore/promo-small.png`（440×280） |
 | Homepage URL | https://naruhodo.page/zh-tw/ |
-| Support URL | https://github.com/yurenju/naruhodo-manga-translator/issues |
+| Support URL | https://github.com/yurenju/naruhodo-manga-translator/discussions（issue 只開放給 collaborator，使用者回報走 Discussions） |
 
 說明裡不寫特定漫畫網站的名稱：列網站名稱會被當成關鍵字堆砌（Yellow Argon），也牽涉商標。
 

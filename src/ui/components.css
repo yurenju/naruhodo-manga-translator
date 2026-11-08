@@ -8,6 +8,7 @@
   font: inherit; font-size: var(--naru-text-small); font-weight: 500; line-height: 1.2; color: var(--naru-ink);
   background: transparent; cursor: pointer; white-space: nowrap;
 }
+a.naru-btn { text-decoration: none; }
 .naru-btn:focus-visible { outline: 2px solid var(--naru-accent); outline-offset: 2px; }
 .naru-btn:disabled { opacity: 0.5; cursor: default; }
 .naru-btn--primary { background: var(--naru-accent); border-color: var(--naru-accent); color: var(--naru-on-accent); }

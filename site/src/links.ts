@@ -5,8 +5,8 @@ export const REPO_URL = 'https://github.com/yurenju/naruhodo-manga-translator';
 /** 「加到 Chrome」：Chrome Web Store 的商品頁；ID 跟 GitHub variable `CWS_EXTENSION_ID` 同一個。 */
 export const INSTALL_URL = 'https://chromewebstore.google.com/detail/gadioeddhiophjhefjnfkcfiennghbol';
 
-/** 聯絡 email（TERMS.md 第 14 節）：Paddle 審核網站時要在首頁找得到聯絡方式。 */
-export const CONTACT_EMAIL = 'dev@sadcoder.com';
+/** 討論區與聯絡 email 跟外掛共用一份。email 放在頁尾：Paddle 審核網站時要在首頁找得到聯絡方式。 */
+export { CONTACT_EMAIL, DISCUSSIONS_URL } from '../../src/ui/links.ts';
 
 export const LEGAL_DOCS =['terms', 'refund', 'privacy'] as const;
 export type LegalDoc = (typeof LEGAL_DOCS)[number];

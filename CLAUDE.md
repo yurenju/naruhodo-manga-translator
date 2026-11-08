@@ -30,7 +30,7 @@ This machine is read-only on Cloudflare (ADR 0011): never `wrangler login` or de
 
 ## Public repo: no real titles or sites
 
-Never write a real manga title, character, author, publisher, manga site or e-book reader brand in anything that gets published: docs, GLOSSARY, ADRs, code, commits, branches, issues, PRs. Name sites by layout (Canvas Site, E-book Reader) and keep concrete observations on this machine (`%LOCALAPPDATA%\naruhodo\`, scratchpad). See `docs/agents/public-repo.md`.
+Never write a real manga title, character, author, publisher, manga site or e-book reader brand in anything that gets published: docs, GLOSSARY, ADRs, code, commits, branches, issues, PRs. Name sites by layout (Canvas Site, E-book Reader) and keep concrete observations on this machine (`%LOCALAPPDATA%\naruhodo\`, scratchpad). One exception: an issue made from a user's Discussion may quote what that user wrote, names included. See `docs/agents/public-repo.md`.
 
 ## Coding standards
 

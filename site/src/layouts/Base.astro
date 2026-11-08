@@ -8,7 +8,7 @@ import '../styles/site.css';
 import logo from '../../../src/icons/naruhodo-small.svg';
 import L from '../components/L.astro';
 import { copy } from '../copy.ts';
-import { CONTACT_EMAIL, LEGAL_DOCS, INSTALL_URL, REPO_URL, legalHref } from '../links.ts';
+import { CONTACT_EMAIL, DISCUSSIONS_URL, LEGAL_DOCS, INSTALL_URL, REPO_URL, legalHref } from '../links.ts';
 import { type Locale, LOCALES, byLocale, languageTag } from '../locale.ts';
 
 interface Props {
@@ -67,6 +67,7 @@ const home = locale === 'auto' ? '/' : `/${locale}/`;
             <L locale={locale} text={byLocale((l) => copy[l].legal[doc])} href={byLocale((l) => legalHref(doc, l))} />
           ))}
           <L locale={locale} text={byLocale((l) => copy[l].legal.source)} href={byLocale(() => REPO_URL)} />
+          <L locale={locale} text={byLocale((l) => copy[l].legal.discussions)} href={byLocale(() => DISCUSSIONS_URL)} />
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
         </div>
         <div class="copyright">© Sad Coder, Inc.</div>

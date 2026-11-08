@@ -13,6 +13,14 @@ Everything that leaves this machine:
 - Commit messages and branch names
 - Issue and PR titles, bodies and comments
 
+## Discussions: what users write
+
+[Discussions](https://github.com/yurenju/naruhodo-manga-translator/discussions) is where users report problems and talk to us. What they write there is theirs: a user who names a site or a title is fine, and we don't edit or hide it.
+
+- **An issue made from a Discussion** may quote what that user wrote, names included. Mark it as a quote and link the Discussion.
+- **What we find ourselves** while reproducing it (URLs we opened, screenshots, traces) stays on this machine, as below. The issue gives only the local path.
+- **Our replies** in a Discussion, and everything else in **Where it applies** (code, commits, branches, PRs, docs, ADRs, `GLOSSARY.md`), still name no site or title, even when the issue it fixes quotes one. Describe the site by layout.
+
 Git history and old `prototype/*` and `research/*` branches still hold some real names. They are left as they are: rules apply to what we write from now on.
 
 ## What to write instead
