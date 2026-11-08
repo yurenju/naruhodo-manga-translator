@@ -106,16 +106,63 @@ function ocrBox([x, y, w, h]: PixelBox, width: number, height: number): PixelBox
  */
 const KEEP_OWN_TEXT = 0.8;
 
-function trimToNeighbours(crop: PixelBox, own: PixelBox, textBoxes: readonly PixelBox[]): PixelBox {
+/** 算墨水的灰階門檻：比它暗的像素算字。 */
+const INK = 128;
+
+/**
+ * [from, to) 之間沒有墨水的線（axis 'row'＝橫線、'column'＝直線），span 是線在另一軸的範圍；
+ * 連續幾條都空白就取最長那段的中間。一條空白的都沒有時 undefined。
+ */
+function blankLine({ gray, width, height }: GrayImage, axis: 'row' | 'column', from: number, to: number, [s0, s1]: [number, number]): number | undefined {
+  const limit = axis === 'row' ? height : width;
+  const lines = Array.from({ length: Math.max(0, Math.min(limit, Math.ceil(to)) - Math.max(0, Math.floor(from))) }, (_, k) => Math.max(0, Math.floor(from)) + k);
+  const otherLimit = axis === 'row' ? width : height;
+  const a = Math.max(0, Math.floor(s0));
+  const b = Math.min(otherLimit, Math.ceil(s1));
+  const blank = lines.map((line) => {
+    for (let s = a; s < b; s++) if (gray[axis === 'row' ? line * width + s : s * width + line]! < INK) return false;
+    return true;
+  });
+  let best: { start: number; length: number } | undefined;
+  for (let k = 0; k < blank.length; k++) {
+    if (!blank[k] || (k > 0 && blank[k - 1])) continue;
+    let end = k;
+    while (end + 1 < blank.length && blank[end + 1]) end++;
+    if (!best || end - k + 1 > best.length) best = { start: lines[k]!, length: end - k + 1 };
+  }
+  return best && best.start + best.length / 2;
+}
+
+/**
+ * 從哪裡切：別段文字框的邊（edge）在自己文字框外就切在那條邊；落在自己文字框裡（偵測框常比字大一點，
+ * 那條邊可能正好穿過自己的字），改切在那條邊與自己文字框靠鄰段那一邊（ownEdge）之間的空白，也就是兩段字之間。
+ * 找不到空白（兩段的字真的疊在一起）照樣切在那條邊，由 KEEP_OWN_TEXT 決定切不切。
+ * own 是自己文字框在這一軸的範圍，span 是線在另一軸的範圍（裁切範圍）。
+ */
+function cutLine(page: GrayImage, axis: 'row' | 'column', edge: number, ownEdge: number, own: [number, number], span: [number, number]): number {
+  if (edge <= own[0] || edge >= own[1]) return edge;
+  return blankLine(page, axis, Math.min(edge, ownEdge), Math.max(edge, ownEdge), span) ?? edge;
+}
+
+function trimToNeighbours(crop: PixelBox, own: PixelBox, textBoxes: readonly PixelBox[], page: GrayImage): PixelBox {
   let box = crop;
+  const [ox, oy, ow, oh] = own;
+  const ownColumns: [number, number] = [ox, ox + ow];
+  const ownRows: [number, number] = [oy, oy + oh];
   for (const other of textBoxes) {
     if (other === own || intersection(box, other) === 0) continue;
     const [x, y, w, h] = box;
+    const across: [number, number] = [x, x + w];
+    const down: [number, number] = [y, y + h];
+    const right = cutLine(page, 'column', other[0], ox + ow, ownColumns, down);
+    const left = cutLine(page, 'column', other[0] + other[2], ox, ownColumns, down);
+    const bottom = cutLine(page, 'row', other[1], oy + oh, ownRows, across);
+    const top = cutLine(page, 'row', other[1] + other[3], oy, ownRows, across);
     const cuts: PixelBox[] = [
-      [x, y, other[0] - x, h], // 切右邊
-      [other[0] + other[2], y, x + w - (other[0] + other[2]), h], // 切左邊
-      [x, y, w, other[1] - y], // 切下面
-      [x, other[1] + other[3], w, y + h - (other[1] + other[3])], // 切上面
+      [x, y, right - x, h], // 切右邊
+      [left, y, x + w - left, h], // 切左邊
+      [x, y, w, bottom - y], // 切下面
+      [x, top, w, y + h - top], // 切上面
     ];
     const best = cuts.filter((c) => c[2] > 0 && c[3] > 0).sort((a, b) => area(b) - area(a))[0];
     if (best && intersection(best, own) >= area(own) * KEEP_OWN_TEXT) box = best;
@@ -176,13 +223,14 @@ export async function analyzePage(engine: Engine, image: PageImage, reading: (ja
   const { width, height } = image;
   const ratio = ([x, y, w, h]: PixelBox): RatioRect => ({ x: x / width, y: y / height, w: w / width, h: h / height });
   const detections = nms((await engine.detect(image)).filter((d) => d.score >= SCORE_THRESHOLD));
-  const all = readingOrder(group(detections), image.gray());
+  const gray = image.gray();
+  const all = readingOrder(group(detections), gray);
   const units = all.filter((u) => accept?.(ratio(u.bbox)) ?? true);
   // accept 不收的段字還在圖上，裁切一樣要避開
   const textBoxes = all.map((u) => u.textBbox);
   const recognized = await engine.recognize(
     image,
-    units.map((u) => trimToNeighbours(ocrBox(u.textBbox, width, height), u.textBbox, textBoxes)),
+    units.map((u) => trimToNeighbours(ocrBox(u.textBbox, width, height), u.textBbox, textBoxes, gray)),
   );
   const orientation = (b: PixelBox): Orientation => (b[3] >= b[2] ? 'vertical' : 'horizontal');
 
