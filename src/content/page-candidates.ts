@@ -11,6 +11,17 @@ import type { Rect, Size } from '../shared/messages.ts';
  */
 export const MIN_PAGE_SIDE = 200;
 
+/**
+ * 高度的門檻：至少 MIN_PAGE_HEIGHT px，或至少可見高度的 MIN_PAGE_HEIGHT_RATIO，滿足一個就算夠高。
+ * 網站首頁、結尾推薦區的縮圖（約 120～300 px）一次好幾十張，誤翻會大量花掉額度，兩個門檻都要擋住它們。
+ * 只看比例會漏：一頁接一頁往下排的網站在很高的視窗裡同時完整露出兩頁，每頁都不到一半；只看 px 則在矮視窗裡
+ * 擋到縮到 400 px 以下的頁。跟 Page 一樣大的廣告頁兩個都擋不到，一話一兩頁可以接受，不為它加規則。
+ */
+export const MIN_PAGE_HEIGHT = 400;
+export const MIN_PAGE_HEIGHT_RATIO = 0.5;
+
+const minPageHeight = (viewport: Size) => Math.max(MIN_PAGE_SIDE, Math.min(MIN_PAGE_HEIGHT, viewport.height * MIN_PAGE_HEIGHT_RATIO));
+
 /** 超出 viewport 這麼多 CSS px 內仍算完整可見（四捨五入、邊框、捲動停在半像素）。 */
 export const VIEWPORT_TOLERANCE = 4;
 
@@ -30,7 +41,7 @@ export function isPageCandidate(rect: Rect, viewport: Size, clips: readonly Rect
 
 /** 不是 Page 候選的原因（除錯記錄用）：太小、沒完整落在 viewport 內、被裁切祖先擋住；是候選時 undefined。 */
 export function pageCandidateRejection(rect: Rect, viewport: Size, clips: readonly Rect[] = []): 'small' | 'outsideViewport' | 'clipped' | undefined {
-  if (rect.width < MIN_PAGE_SIDE || rect.height < MIN_PAGE_SIDE) return 'small';
+  if (rect.width < MIN_PAGE_SIDE || rect.height < minPageHeight(viewport)) return 'small';
   if (!contains({ x: 0, y: 0, ...viewport }, rect)) return 'outsideViewport';
   if (!clips.every((clip) => contains(clip, rect))) return 'clipped';
   return undefined;
