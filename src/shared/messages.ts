@@ -51,6 +51,8 @@ export type Message =
    * pageHash：只翻這一頁（過時提示的「重新翻譯」，#38）。
    */
   | { type: 'panel:translate'; tabId: number; pageHash?: string }
+  /** side panel → SW：底部的「重新翻譯」：畫面上的頁從辨識開始整個重來（Retranslation），不拿快取。 */
+  | { type: 'panel:retranslate'; tabId: number }
   /**
    * SW → offscreen：翻譯一個 Page。回應 TranslateResponse。
    * API key 不在訊息裡：offscreen 自己從 IndexedDB 讀（spec 第 5 節：key 永遠不經過 messaging）。

@@ -115,6 +115,23 @@ export function canTranslate(access: TranslationAccess, consented: boolean | und
 }
 
 /**
+ * 底部的翻譯按鈕：translate＝「翻譯此頁」，只翻還沒翻譯的頁（沒有 key、翻譯失敗），翻好的不重翻；
+ * retranslate＝「重新翻譯」，畫面上的頁都翻好了（含快取）時整個畫面重來（Retranslation，從辨識開始）。
+ * 還有頁在辨識或翻譯時不放「重新翻譯」，避免連按重複扣頁；送不出翻譯時都不放，由設定提示帶路。
+ */
+export function translateAction(pages: PageView[], translatable: boolean): 'translate' | 'retranslate' | undefined {
+  if (!translatable || pages.length === 0) return undefined;
+  if (hasUntranslated(pages)) return 'translate';
+  if (pages.every(({ transcript: t }) => t.state === 'done' && !t.translating)) return 'retranslate';
+  return undefined;
+}
+
+/** 有辨識完、還沒翻譯的頁（沒有 key、翻譯失敗、額度用完）。 */
+export function hasUntranslated(pages: PageView[]): boolean {
+  return pages.some(({ transcript: t }) => t.state === 'done' && !t.translated);
+}
+
+/**
  * 逐字稿上方的提示：signedOut＝「尚未登入」（內建翻譯），noKey＝「尚未設定 API key」（自備金鑰），
  * hostedHint＝「現在也可以改用內建翻譯」（從舊版更新、仍用自備金鑰，只出現一次，#93）。
  */

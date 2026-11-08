@@ -103,8 +103,16 @@ test('設定 API key、同意資料使用後，已啟動的分頁直接翻譯：
   // 讀音換成 Translator 的整句讀音（おはよう！きょうははやいね），以ルビ對齊回漢字
   await expect(transcript.getByRole('listitem').filter({ hasText: '早安！今天好早喔' }).locator('rt')).toHaveText(['きょう', 'はや']);
   await expect(panel.getByRole('contentinfo', { name: '狀態列' })).toContainText(/已翻譯 \d+ 頁/);
-  // 都翻好了：底部只有狀態，沒有按鈕（翻好的頁要重翻走過時提示的單頁「重新翻譯」）
-  await expect(panel.getByRole('contentinfo', { name: '狀態列' }).getByRole('button')).toHaveCount(0);
+  // 都翻好了：底部的按鈕是「重新翻譯」。這裡抓 unit 看不到的串接：side panel 送 panel:retranslate → SW 重新擷取 → 再送 Translator
+  // （重跑 OCR、不查快取、長 Page 的規則由 transcribe.test.ts 管）
+  const footer = panel.getByRole('contentinfo', { name: '狀態列' });
+  await expect(footer.getByRole('button')).toHaveText(['重新翻譯']);
+  const before = await sw.evaluate(() => ({ captures: globalThis.__captureLog?.length ?? 0, translates: globalThis.__translateCalls ?? 0 }));
+  await footer.getByRole('button', { name: '重新翻譯' }).click();
+  await expect.poll(() => sw.evaluate(() => globalThis.__captureLog?.length ?? 0)).toBeGreaterThan(before.captures);
+  await expect.poll(() => sw.evaluate(() => globalThis.__translateCalls ?? 0)).toBeGreaterThan(before.translates);
+  await expect(transcript.getByText('早安！今天好早喔')).toBeVisible();
+  await expect(footer.getByRole('button', { name: '重新翻譯' })).toBeVisible();
 
   // unreadable：OCR 原文（灰、刪除線）＋「無法辨識 · 未覆蓋」
   const unreadable = transcript.getByRole('listitem').filter({ hasText: '無法辨識' });

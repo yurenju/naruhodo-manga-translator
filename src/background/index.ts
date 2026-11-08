@@ -956,6 +956,17 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
         sendResponse();
       });
       return true;
+    case 'panel:retranslate':
+      // 忘掉畫面上的頁再重新擷取：那次擷取到的頁重跑 OCR、不查快取
+      activation.isActive(message.tabId).then((active) => {
+        if (active) {
+          trace('panel:retranslate', { tabId: message.tabId });
+          transcriber.retranslate(message.tabId);
+          scan(message.tabId);
+        }
+        sendResponse();
+      });
+      return true;
   }
   return false;
 });

@@ -211,8 +211,8 @@ export async function testStop(fromExtensionPage: Page, tabId: number): Promise<
 }
 
 /**
- * 畫面上的每一頁都單頁重翻（同過時提示的「重新翻譯」送的訊息）。翻好的頁已經沒有常駐的重翻按鈕，
- * 測試要讓已翻好的頁再走一次 Translator（帶新的 Notes、換了翻譯方式）時用。
+ * 畫面上的每一頁都單頁重翻（同過時提示的「重新翻譯」送的訊息）：用辨識好的原文重送，不重跑 OCR。
+ * 測試要讓已翻好的頁再走一次 Translator（帶新的 Notes、換了翻譯方式）時用；底部的「重新翻譯」會從擷取整個重來。
  */
 export async function retranslateVisible(fromExtensionPage: Page, tabId: number): Promise<void> {
   await fromExtensionPage.evaluate(async (tabId) => {
