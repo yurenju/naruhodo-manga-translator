@@ -27,6 +27,7 @@
  */
 import { addLines, collectedBoxes, matchingStripe, pickLines, replaceLines, sliceOf, type Slice, type Stripe } from '../shared/long-page.ts';
 import type { AnalyzeRequest, CropRequest, PageThumb, PageView } from '../shared/messages.ts';
+import type { Capture } from './scan.ts';
 import { findSamePage } from '../shared/page-hash.ts';
 import { pageLines, type PageCharge, type PageText } from '../shared/page-text.ts';
 import type { SeriesNotes, TranslatorVersion } from '../shared/series-notes.ts';
@@ -524,7 +525,7 @@ export function createTranscriber(deps: TranscriberDeps) {
    * 新的擷取：可見的 Page 換成這一批。新 Page 先查快取，沒命中就排進佇列。
    * 回傳的 promise 在這一批可見 Page 的工作都做完（或被丟掉）時 resolve。
    */
-  async function update(tabId: number, pages: PageThumb[], capture: CropRequest | undefined): Promise<void> {
+  async function update(tabId: number, pages: PageThumb[], capture: Capture | undefined): Promise<void> {
     // 沒有截圖＝畫面上沒有完整可見的 Page
     if (!capture) pages = [];
     let tab = tabs.get(tabId);
@@ -532,7 +533,8 @@ export function createTranscriber(deps: TranscriberDeps) {
       tab = { tabId, pages: [], records: [] };
       tabs.set(tabId, tab);
     }
-    const restarted = startOver(tab, pages);
+    // 沒藏覆蓋層的截圖裡有自己的譯文，不能拿來重新辨識：等按下後那次藏了覆蓋層的擷取（index.ts 的 panel:retranslate）
+    const restarted = capture?.overlayShown ? new Set<string>() : startOver(tab, pages);
     // 長 Page 換成認出的 Page 的身分；認不出、又沒有橫條可以認的先不處理（例如這一截全是留白）
     const longOf = new Map<PageThumb, PageRecord>();
     const current = tab;

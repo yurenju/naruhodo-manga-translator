@@ -33,7 +33,20 @@ export interface ScannerDeps {
   captureWindow(windowId: number): Promise<string>;
   crop(request: CropRequest): Promise<PageThumb[]>;
   /** capture＝這次的截圖與版面（沒有 Page 或停止時是 undefined），給後面的本機流水線裁全解析度的 Page。 */
-  publish(tabId: number, pages: PageThumb[], capture?: CropRequest): void;
+  publish(tabId: number, pages: PageThumb[], capture?: Capture): void;
+}
+
+/**
+ * 公布的截圖。overlayShown＝截圖時沒藏覆蓋層（已經記過帶覆蓋層樣子的頁），畫面上的頁是靠那個樣子認出來的；
+ * 截圖裡有自己的譯文，不能拿去重新辨識（重新翻譯要的是 scan(tabId, { hideOverlay: true }) 那種）。
+ */
+export interface Capture extends CropRequest {
+  overlayShown: boolean;
+}
+
+export interface ScanOptions {
+  /** 這次一定藏覆蓋層：截到的頁要重新辨識（重新翻譯），不能截到自己的譯文。 */
+  hideOverlay?: boolean;
 }
 
 export function createScanner(deps: ScannerDeps) {
@@ -42,6 +55,8 @@ export function createScanner(deps: ScannerDeps) {
   const overlaidLooks = new Map<number, Map<string, { pageHash: string; overlaidHash: string }>>();
   /** 每個 tab 排著、還沒開始的那次掃描。 */
   const pendingScans = new Map<number, Promise<void>>();
+  /** 下一次掃描一定藏覆蓋層的 tab（ScanOptions.hideOverlay；併進還沒開始的那次也算）。 */
+  const hideNext = new Set<number>();
   /** clear() 就加一；掃描開始時記下來，做完時不同就丟掉結果。 */
   const generations = new Map<number, number>();
   /** 掃描一次只跑一個（跨 tab），限速才算得準。 */
@@ -118,7 +133,7 @@ export function createScanner(deps: ScannerDeps) {
 
   async function scanOnce(tabId: number, generation: number): Promise<void> {
     const isCurrentGeneration = () => (generations.get(tabId) ?? 0) === generation;
-    let forceHide = false;
+    let forceHide = hideNext.delete(tabId);
     let notPainted = false;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       // 等完才量 rect，rect 才不會在等待期間過時。
@@ -163,7 +178,7 @@ export function createScanner(deps: ScannerDeps) {
         continue;
       }
       if (!isCurrentGeneration()) return;
-      publish(tabId, result, request);
+      publish(tabId, result, { ...request, overlayShown: keep });
       // 覆蓋層顯示中卻還沒記過樣子（例如重新整理後從快取顯示）：補記，下次就不必藏
       if (!keep && withOverlay(before.candidates).length > 0 && !canKeepOverlay(tabId, before.candidates)) void recordOverlaid(tabId);
       return;
@@ -208,7 +223,7 @@ export function createScanner(deps: ScannerDeps) {
     trace('overlaid:record', { tabId, looks: cropped.map((p) => ({ anchorId: p.anchorId, overlaidHash: p.pageHash })) });
   }
 
-  function publish(tabId: number, result: PageThumb[], capture?: CropRequest): void {
+  function publish(tabId: number, result: PageThumb[], capture?: Capture): void {
     pages.set(tabId, result);
     deps.publish(tabId, result, capture);
   }
@@ -217,7 +232,8 @@ export function createScanner(deps: ScannerDeps) {
    * 同一個 tab 已經有排著、還沒開始的掃描就併進去：快速連按翻頁時每個訊號各排一次，停下後會一張接一張
    * 截上好幾秒（真實 Chrome 一次約 0.25 秒，#60 之前要 1～2 秒）。還沒開始的那次會量到最新的版面，所以合併不會漏掉翻頁。
    */
-  function scan(tabId: number): Promise<void> {
+  function scan(tabId: number, { hideOverlay = false }: ScanOptions = {}): Promise<void> {
+    if (hideOverlay) hideNext.add(tabId);
     const pending = pendingScans.get(tabId);
     if (pending) return pending;
     const generation = generations.get(tabId) ?? 0;
@@ -240,6 +256,7 @@ export function createScanner(deps: ScannerDeps) {
     pages.delete(tabId);
     overlaidLooks.delete(tabId);
     pendingScans.delete(tabId);
+    hideNext.delete(tabId);
     deps.publish(tabId, []);
   }
 
