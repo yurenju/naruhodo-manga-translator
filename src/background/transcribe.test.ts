@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { sameLongPage } from '../shared/long-page.ts';
-import type { AnalyzeRequest, CropRequest, PageThumb, PageView } from '../shared/messages.ts';
+import type { AnalyzeRequest, PageThumb, PageView } from '../shared/messages.ts';
+import type { Capture } from './scan.ts';
 import type { PageText, PageTranslation } from '../shared/page-text.ts';
 import { editEntry, type NotesSuggestion, type SeriesNotes } from '../shared/series-notes.ts';
 import type { NotesChanges, NotesEntry, NotesInput, TranslateInput, TranslateOutput, Translator } from '../shared/translator.ts';
@@ -45,7 +46,7 @@ const thumb = (anchorId: string, pageHash = HASHES[anchorId] ?? '0'.repeat(64)):
   thumbnail: `data:${anchorId}`,
   pageHash,
 });
-const capture: CropRequest = { screenshot: 'data:shot', viewport: { width: 100, height: 100 }, candidates: [] };
+const capture: Capture = { screenshot: 'data:shot', viewport: { width: 100, height: 100 }, candidates: [], overlayShown: false };
 
 /** 記憶體裡的快取；查詢只比對完全相同的 hash（門檻比對由 page-hash.test.ts 負責）。 */
 function memoryCache(): PageCache & { saved: PageTranslation[] } {
@@ -900,6 +901,19 @@ describe('翻譯佇列（#34）', () => {
       ['translated', '新-b1'],
     ]);
     expect(cache.saved.map((t) => t.balloons[0]!.譯文)).toEqual(['新-b1', '新-b1']);
+  });
+
+  it('按了重新翻譯後的擷取沒藏覆蓋層（早就開始的那次掃描）：不拿它重新辨識，等下一次藏了覆蓋層的擷取', async () => {
+    const { transcriber, deps } = setup({ getTranslator: () => translatorReturning('譯') });
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    transcriber.retranslate(1);
+    await transcriber.update(1, [thumb('a1')], { ...capture, screenshot: 'data:with-overlay', overlayShown: true });
+    expect(deps.analyze).toHaveBeenCalledTimes(1);
+
+    await transcriber.update(1, [thumb('a1')], capture);
+    expect(deps.analyze).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(deps.analyze).mock.calls.map(([request]) => request.screenshot)).toEqual(['data:shot', 'data:shot']);
   });
 
   it('按了重新翻譯、但重新擷取沒有結果（例如截不到圖）：畫面維持原樣，不會卡在辨識中', async () => {

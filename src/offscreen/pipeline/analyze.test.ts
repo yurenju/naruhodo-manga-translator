@@ -162,6 +162,36 @@ describe('analyzePage：偵測結果 → Balloon／Loose Text', () => {
     expect(top).toBeGreaterThanOrEqual(889); // 上面那段伸進來的筆畫切掉
   });
 
+  it('兩段字之間的空隙被 Balloon 框線穿過：只看自己文字框那幾欄找空白，不切掉自己字的上緣', async () => {
+    // 真實網站上上下相鄰、互相重疊的兩個 Balloon（trace 的實際框）：上面那段的文字框下緣 1058 伸進下面那段，
+    // 下面那段的字頂在 1045。兩段字之間的每一列都有框線（下面 Balloon 自己的左上弧、上面 Balloon 的框線）經過，
+    // 只是都在下面那段文字框的欄位外；看整個裁切寬就找不到空白、退回切在 1058，切掉第一個字的頭、讀成別的字，信心 0.07 被擋
+    const above: PixelBox = [689, 849, 164, 209];
+    const below: PixelBox = [535, 1027, 183, 207];
+    const arc: PixelBox[] = Array.from({ length: 27 }, (_, k): PixelBox => [549 - k, 1018 + k, 4, 1]); // x 549 → 523
+    const image = inkPage(901, 1316, [
+      ...arc,
+      [560, 1240, 170, 3], // 下面 Balloon 的底弧：橫穿每一欄，右邊沒有整欄空白可切
+      [724, 1024, 4, 19], // 上面 Balloon 的框線：先在欄位外往下
+      ...Array.from({ length: 13 }, (_, k): PixelBox => [714 - 2 * k, 1045 + k, 3, 1]), // 再掃過欄位右緣，右邊也沒有空白可切
+      [728, 860, 20, 190], // 上面那段的字（最左一欄，底在 1050）
+      [655, 1045, 26, 180], // 下面那段的字：每欄的頂都在 1045
+      [687, 1045, 7, 30], // 第一欄名字旁的注音：右邊也沒有空白可切
+      [597, 1045, 20, 180],
+      [565, 1047, 18, 120],
+    ]);
+    const engine = fakeEngine([det('text_bubble', above), det('text_bubble', below)], { 674: 'うえ', 518: 'した' });
+
+    await analyzePage(engine, image, (ja) => ja);
+
+    const [x, y, w, h] = engine.crops.find((c) => c[0] < 600)!;
+    // 自己的字整個留著（左 565、右 694 含注音、頂 1045）
+    expect([x <= 565, x + w >= 694, y < 1045]).toEqual([true, true, true]);
+    // 上面那段的字（x 728～748、底 1050）切掉
+    expect(x + w <= 728 || y >= 1050).toBe(true);
+    expect(h).toBeGreaterThan(0);
+  });
+
   it('切了會少掉自己文字框兩成以上的，就不切', async () => {
     const engine = fakeEngine([det('text_bubble', [500, 100, 100, 300]), det('text_free', [430, 100, 100, 150])], { 500: 'ながい', 430: 'ドン' });
     // 兩段的字疊在一起：重疊帶裡沒有空白可切

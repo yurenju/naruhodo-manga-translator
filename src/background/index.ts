@@ -54,7 +54,7 @@ import { ensureOffscreenDocument } from './offscreen.ts';
 import { createOverlaySync } from './overlay-sync.ts';
 import { createPageStatusSync } from './page-status-sync.ts';
 import { createPaymentReturn } from './payment-return.ts';
-import { createScanner } from './scan.ts';
+import { createScanner, type ScanOptions } from './scan.ts';
 import { createSeriesCatalog } from './series-catalog.ts';
 import { indexedDbBackupRepo, indexedDbNotesStore, indexedDbSeriesRepo } from './series-store.ts';
 import { indexedDbTabStore } from './tab-store.ts';
@@ -445,9 +445,9 @@ if (__E2E__) {
 }
 
 /** 頁面可能剛好換頁、content script 不在，或截圖失敗；這次掃描就放棄，等下一次觸發。 */
-function scan(tabId: number): void {
+function scan(tabId: number, options?: ScanOptions): void {
   trace('scan', { tabId });
-  scanner.scan(tabId).catch((e: unknown) => console.warn('scan failed', e));
+  scanner.scan(tabId, options).catch((e: unknown) => console.warn('scan failed', e));
 }
 
 const backupRepo = indexedDbBackupRepo();
@@ -957,12 +957,12 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
       });
       return true;
     case 'panel:retranslate':
-      // 忘掉畫面上的頁再重新擷取：那次擷取到的頁重跑 OCR、不查快取
+      // 忘掉畫面上的頁再重新擷取：那次擷取到的頁重跑 OCR、不查快取，所以一定要藏覆蓋層（不然 OCR 讀到自己的譯文）
       activation.isActive(message.tabId).then((active) => {
         if (active) {
           trace('panel:retranslate', { tabId: message.tabId });
           transcriber.retranslate(message.tabId);
-          scan(message.tabId);
+          scan(message.tabId, { hideOverlay: true });
         }
         sendResponse();
       });

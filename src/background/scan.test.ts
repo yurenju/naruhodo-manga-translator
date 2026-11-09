@@ -10,6 +10,8 @@ const WINDOW_ID = 7;
 function fakeDeps(candidates: PageCandidate[] = [P1]) {
   const captures: number[] = [];
   const published: [number, PageThumb[]][] = [];
+  /** 每次公布帶的截圖（與 published 同序）。 */
+  const publishedCaptures: Parameters<ScannerDeps['publish']>[2][] = [];
   /** 覆蓋層與截圖的先後順序。 */
   const events: string[] = [];
   const env = {
@@ -53,7 +55,10 @@ function fakeDeps(candidates: PageCandidate[] = [P1]) {
         const pageHash = (withOverlay ? env.overlaidHash[c.anchorId] : env.cleanHash[c.anchorId]) ?? c.anchorId;
         return { anchorId: c.anchorId, rect: c.rect, thumbnail: `thumb(${screenshot},${c.anchorId})`, pageHash };
       }),
-    publish: (tabId, pages) => void published.push([tabId, pages]),
+    publish: (tabId, pages, capture) => {
+      published.push([tabId, pages]);
+      publishedCaptures.push(capture);
+    },
     // hide＝連覆蓋層一起藏；prepare＝只藏網站的遮擋物
     prepareCapture: async (tabId, hideOverlay) => {
       env.hidden = hideOverlay;
@@ -66,7 +71,7 @@ function fakeDeps(candidates: PageCandidate[] = [P1]) {
       return { stable: env.stable.shift() ?? true };
     },
   };
-  return { deps, captures, published, events, env };
+  return { deps, captures, published, publishedCaptures, events, env };
 }
 
 beforeEach(() => {
@@ -101,7 +106,7 @@ describe('scan', () => {
 
     await settle(scanner.scan(1));
 
-    expect(captures).toEqual([{ screenshot: 'data:image/png;base64,SCREENSHOT1', viewport: VIEWPORT, candidates: [P1] }]);
+    expect(captures).toEqual([{ screenshot: 'data:image/png;base64,SCREENSHOT1', viewport: VIEWPORT, candidates: [P1], overlayShown: false }]);
   });
 
   it('沒有 Page 候選就不截圖，公布空清單', async () => {
@@ -404,6 +409,42 @@ describe('scan', () => {
       await settle(scanner.scan(1));
 
       expect(chrome.events.slice(-3)).toEqual(['hide 1', 'capture', 'restore 1']);
+    });
+
+    it('要重新辨識的掃描（重新翻譯）記過樣子也藏覆蓋層：OCR 才不會讀到自己的譯文', async () => {
+      const chrome = page(true);
+      const scanner = createScanner(chrome.deps);
+      await settle(scanner.scan(1));
+      chrome.events.length = 0;
+
+      await settle(scanner.scan(1, { hideOverlay: true }));
+
+      expect(chrome.events).toEqual(['hide 1', 'capture', 'restore 1']);
+      expect(chrome.publishedCaptures.at(-1)?.overlayShown).toBe(false);
+      expect(publishedHashes(chrome)).toEqual([CLEAN]);
+    });
+
+    it('要藏覆蓋層的掃描併進還沒開始的掃描時，那次也藏', async () => {
+      const chrome = page(true);
+      const scanner = createScanner(chrome.deps);
+      await settle(scanner.scan(1));
+      chrome.events.length = 0;
+
+      const first = scanner.scan(1);
+      const second = scanner.scan(1, { hideOverlay: true });
+      await settle(Promise.all([first, second]));
+
+      expect(chrome.events).toEqual(['hide 1', 'capture', 'restore 1']);
+    });
+
+    it('不藏覆蓋層截到的那次公布時註明 overlayShown，後面就知道這張截圖不能拿去辨識', async () => {
+      const chrome = page(true);
+      const scanner = createScanner(chrome.deps);
+      await settle(scanner.scan(1));
+
+      await settle(scanner.scan(1));
+
+      expect(chrome.publishedCaptures.at(-1)?.overlayShown).toBe(true);
     });
 
     it('clear 之後忘掉帶覆蓋層的樣子', async () => {

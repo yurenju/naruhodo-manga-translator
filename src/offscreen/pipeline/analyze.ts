@@ -137,7 +137,7 @@ function blankLine({ gray, width, height }: GrayImage, axis: 'row' | 'column', f
  * 從哪裡切：別段文字框的邊（edge）在自己文字框外就切在那條邊；落在自己文字框裡（偵測框常比字大一點，
  * 那條邊可能正好穿過自己的字），改切在那條邊與自己文字框靠鄰段那一邊（ownEdge）之間的空白，也就是兩段字之間。
  * 找不到空白（兩段的字真的疊在一起）照樣切在那條邊，由 KEEP_OWN_TEXT 決定切不切。
- * own 是自己文字框在這一軸的範圍，span 是線在另一軸的範圍（裁切範圍）。
+ * own 是自己文字框在這一軸的範圍，span 是線在另一軸要看的範圍（自己文字框在另一軸的範圍）。
  */
 function cutLine(page: GrayImage, axis: 'row' | 'column', edge: number, ownEdge: number, own: [number, number], span: [number, number]): number {
   if (edge <= own[0] || edge >= own[1]) return edge;
@@ -152,12 +152,11 @@ function trimToNeighbours(crop: PixelBox, own: PixelBox, textBoxes: readonly Pix
   for (const other of textBoxes) {
     if (other === own || intersection(box, other) === 0) continue;
     const [x, y, w, h] = box;
-    const across: [number, number] = [x, x + w];
-    const down: [number, number] = [y, y + h];
-    const right = cutLine(page, 'column', other[0], ox + ow, ownColumns, down);
-    const left = cutLine(page, 'column', other[0] + other[2], ox, ownColumns, down);
-    const bottom = cutLine(page, 'row', other[1], oy + oh, ownRows, across);
-    const top = cutLine(page, 'row', other[1] + other[3], oy, ownRows, across);
+    // 找空白只看自己文字框那一段：裁切範圍外擴的邊上常有 Balloon 框線斜斜穿過每一條線，切過去也不傷自己的字
+    const right = cutLine(page, 'column', other[0], ox + ow, ownColumns, ownRows);
+    const left = cutLine(page, 'column', other[0] + other[2], ox, ownColumns, ownRows);
+    const bottom = cutLine(page, 'row', other[1], oy + oh, ownRows, ownColumns);
+    const top = cutLine(page, 'row', other[1] + other[3], oy, ownRows, ownColumns);
     const cuts: PixelBox[] = [
       [x, y, right - x, h], // 切右邊
       [left, y, x + w - left, h], // 切左邊
