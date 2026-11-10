@@ -102,7 +102,7 @@ function ocrBox([x, y, w, h]: PixelBox, width: number, height: number): PixelBox
 
 /**
  * 裁切範圍碰到別段的文字框，就從碰到的那一邊切掉，讓 OCR 不讀進隔壁的字（重疊的 Balloon 會讓字黏在句首或句尾）。
- * 每次挑切完面積最大的一邊；切完自己的文字框剩不到這個比例就不切，免得兩段大幅重疊時把自己的字切掉。
+ * 每次挑切掉自己的字最少的一邊，再來是留下鄰段的字最少的，最後是面積最大的；切完自己的文字框剩不到這個比例就不切，免得兩段大幅重疊時把自己的字切掉。
  */
 const KEEP_OWN_TEXT = 0.8;
 
@@ -144,6 +144,26 @@ function cutLine(page: GrayImage, axis: 'row' | 'column', edge: number, ownEdge:
   return blankLine(page, axis, Math.min(edge, ownEdge), Math.max(edge, ownEdge), span) ?? edge;
 }
 
+/** a 與 b 都蓋到的那塊（a、b 是框）；沒交集時寬或高是 0。 */
+function overlap(a: PixelBox, b: PixelBox): PixelBox {
+  const x = Math.max(a[0], b[0]);
+  const y = Math.max(a[1], b[1]);
+  return [x, y, Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - x), Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - y)];
+}
+
+/** region 裡的墨水像素數；落在 except 裡的不算。 */
+function inkIn({ gray, width, height }: GrayImage, [rx, ry, rw, rh]: PixelBox, except?: PixelBox): number {
+  const [ex, ey, ew, eh] = except ?? [0, 0, 0, 0];
+  let count = 0;
+  for (let y = Math.max(0, Math.floor(ry)); y < Math.min(height, Math.ceil(ry + rh)); y++) {
+    for (let x = Math.max(0, Math.floor(rx)); x < Math.min(width, Math.ceil(rx + rw)); x++) {
+      if (x >= ex && x < ex + ew && y >= ey && y < ey + eh) continue;
+      if (gray[y * width + x]! < INK) count++;
+    }
+  }
+  return count;
+}
+
 function trimToNeighbours(crop: PixelBox, own: PixelBox, textBoxes: readonly PixelBox[], page: GrayImage): PixelBox {
   let box = crop;
   const [ox, oy, ow, oh] = own;
@@ -163,7 +183,13 @@ function trimToNeighbours(crop: PixelBox, own: PixelBox, textBoxes: readonly Pix
       [x, y, w, bottom - y], // 切下面
       [x, top, w, y + h - top], // 切上面
     ];
-    const best = cuts.filter((c) => c[2] > 0 && c[3] > 0).sort((a, b) => area(b) - area(a))[0];
+    // 先挑切掉自己的字最少的，再挑留下鄰段的字最少的，最後才比面積：找到的空白可能只是自己字旁的留白，
+    // 沿那裡切留得住自己的字，鄰段的字卻還在（鄰段文字框裡、自己文字框外的墨水）
+    const ownInk = inkIn(page, overlap(box, own));
+    const best = cuts
+      .filter((c) => c[2] > 0 && c[3] > 0)
+      .map((c) => ({ c, lost: ownInk - inkIn(page, overlap(c, own)), stray: inkIn(page, overlap(c, other), own) }))
+      .sort((a, b) => a.lost - b.lost || a.stray - b.stray || area(b.c) - area(a.c))[0]?.c;
     if (best && intersection(best, own) >= area(own) * KEEP_OWN_TEXT) box = best;
   }
   return box;

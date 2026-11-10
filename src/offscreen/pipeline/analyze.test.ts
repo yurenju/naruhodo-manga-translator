@@ -192,6 +192,28 @@ describe('analyzePage：偵測結果 → Balloon／Loose Text', () => {
     expect(h).toBeGreaterThan(0);
   });
 
+  it('好幾種切法都留得住自己的字：挑切完不留鄰段的字的，不只看面積', async () => {
+    // 真實網站上右上方的 Balloon 疊在左下那段上（trace 的實際框與墨水範圍）。右邊那段的文字框下緣 286 穿過左邊那段的文字框，
+    // 切上面會找到自己字上方的留白（y 160～175），面積比切右邊大一點，可是右邊那段最左一行（x 172～191）還留在裁切範圍裡：
+    // OCR 在句首多讀出「あのは」，信心 0.14 被擋（ADR 0009）
+    const right: PixelBox = [164, 73, 127, 213];
+    const left: PixelBox = [59, 160, 111, 206];
+    const image = inkPage(814, 1155, [
+      [172, 84, 20, 142], // 右邊那段最左一行
+      [205, 84, 20, 190],
+      [69, 176, 24, 179], // 左邊那段的字：三行，頂在 176
+      [102, 176, 23, 179],
+      [135, 176, 24, 179],
+    ]);
+    const engine = fakeEngine([det('text_bubble', right), det('text_bubble', left)], { 152: 'みぎ', 48: 'ひだり' });
+
+    await analyzePage(engine, image, (ja) => ja);
+
+    const [x, y, w] = engine.crops.find((c) => c[0] < 100)!;
+    expect([x <= 69, x + w >= 159, y < 176]).toEqual([true, true, true]); // 自己的字整個留著
+    expect(x + w).toBeLessThanOrEqual(172); // 右邊那段的字切掉
+  });
+
   it('切了會少掉自己文字框兩成以上的，就不切', async () => {
     const engine = fakeEngine([det('text_bubble', [500, 100, 100, 300]), det('text_free', [430, 100, 100, 150])], { 500: 'ながい', 430: 'ドン' });
     // 兩段的字疊在一起：重疊帶裡沒有空白可切
