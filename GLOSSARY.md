@@ -127,13 +127,21 @@ The unit every limit counts: one Page whose translation came back from Hosted Tr
 _Avoid_: credit, 點數, token, request
 
 **Free Pages** (免費額度)
-The 50 Translated Pages every new Account gets once, roughly two Episodes. Never reset. Not used while a Subscription is active; whatever is left is usable again after it ends.
+The 100 Translated Pages every new Account gets once, roughly four Episodes. Never reset. Not used while a Subscription is active; whatever is left is usable again after it ends.
 _Avoid_: trial, free tier, 免費頁數 (in the UI)
 
 **Subscription** (訂閱)
-A paid yearly plan on an Account that grants a Monthly Page Limit.
-_Avoid_: membership, license
+The one paid plan on an Account that grants a Monthly Page Limit, paid either quarterly or yearly. Both Billing Periods give the same Monthly Page Limit; only the price differs.
+_Avoid_: membership, license, tier (there is only one plan)
+
+**Billing Period** (扣款週期)
+How often a Subscription is charged: every quarter or every year. Never monthly: the payment provider's standard rate only covers charges of US$10 or more, and its fixed fee on every charge would take a large share of a small monthly one. Switching between them takes effect at the next charge, never partway through a period.
+_Avoid_: billing cycle (ambiguous with the monthly reset of the Monthly Page Limit), term
+
+**Refund Window** (退款期)
+The 14 days after every charge of a Subscription that took money, renewals included (a charge brought to US$0 by a discount has none), during which the reader can get that charge back in full however many Translated Pages they used. The reader asks for it in the extension; the Subscription keeps working while the refund is pending and ends once the payment provider approves it, after which whatever Free Pages were left become usable again.
+_Avoid_: trial, money-back guarantee (in the UI), cooling-off period
 
 **Monthly Page Limit** (每月頁數上限)
-How many Translated Pages a Subscription allows in each month of its year. What is left of it in the current month is shown in the UI as 本月額度.
+How many Translated Pages a Subscription allows in each month of its Billing Period, whichever Billing Period it has. What is left of it in the current month is shown in the UI as 本月額度.
 _Avoid_: quota (when meaning this specific limit), allowance
