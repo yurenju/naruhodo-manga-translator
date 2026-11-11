@@ -98,7 +98,9 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
 .steps h3 { margin: 0 0 var(--naru-space-1); font-size: var(--naru-text-ja); }
 .steps p { margin: 0; font-size: var(--naru-text-label); color: var(--naru-ink-2); }
 
-.plans { display: grid; grid-template-columns: 1fr 1fr; gap: var(--naru-space-5); }
+.pricing-lead { margin: 0 0 var(--naru-space-5); text-align: center; color: var(--naru-ink-2); }
+/* 免費、年繳、季繳三張並排；年繳（featured）加粗框 */
+.plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--naru-space-5); align-items: stretch; }
 .plan { display: flex; flex-direction: column; padding: var(--naru-space-5); }
 .plan.featured { border: 2px solid var(--naru-accent); box-shadow: var(--naru-shadow-2); }
 .plan-head { display: flex; align-items: center; justify-content: space-between; gap: var(--naru-space-3); }
@@ -109,13 +111,12 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
   background: var(--naru-ink); color: var(--naru-on-accent);
 }
 .plan-tag--soft { background: var(--naru-accent-weak); color: var(--naru-ink); }
-.plan .price { margin: var(--naru-space-4) 0 0; font-size: var(--naru-text-price); font-weight: 800; line-height: 1.15; }
-/* 免費卡的「註冊就送 50 頁」 */
-.grant { margin: var(--naru-space-3) 0 0; padding: var(--naru-space-2) var(--naru-space-3); border: 1px solid var(--naru-line-strong); border-radius: var(--naru-radius-md); }
-.grant strong { font-weight: 800; }
-.grant span { display: block; font-size: var(--naru-text-small); color: var(--naru-ink-2); }
-.plan .naru-price-pair { margin-top: var(--naru-space-4); }
-.plan ul { flex: 1; margin: var(--naru-space-4) 0 0; padding-left: var(--naru-space-5); font-size: var(--naru-text-label); color: var(--naru-ink-2); }
+/* 一行大字價格，後面接小字（「・平均每月 US$4・省 20%」） */
+.plan .price { margin: var(--naru-space-3) 0 0; font-size: var(--naru-text-label); line-height: 1.5; color: var(--naru-ink-2); }
+.plan .price strong { font-size: var(--naru-text-price); font-weight: 800; line-height: 1.2; color: var(--naru-ink); }
+.plan ul { flex: 1; margin: var(--naru-space-4) 0 0; padding: var(--naru-space-4) 0 0 var(--naru-space-5); border-top: 1px solid var(--naru-line); font-size: var(--naru-text-label); color: var(--naru-ink-2); }
+.plan ul strong { color: var(--naru-ink); }
+.plans-note { margin: var(--naru-space-3) 0 0; font-size: var(--naru-text-small); color: var(--naru-ink-3); }
 
 /* 價格卡下面的三步驟＋唯一的按鈕 */
 .start { display: flex; align-items: center; gap: var(--naru-space-6); margin-top: var(--naru-space-5); padding: var(--naru-space-5) var(--naru-space-6); }
@@ -126,7 +127,9 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
   flex: none; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;
   border-radius: var(--naru-radius-pill); background: var(--naru-accent-weak); font-weight: 800; color: var(--naru-ink);
 }
-.start .btn { flex: none; justify-content: center; white-space: nowrap; }
+.start-cta { flex: none; display: flex; flex-direction: column; align-items: stretch; gap: var(--naru-space-2); }
+.start-cta .btn { justify-content: center; white-space: nowrap; }
+.start-cta p { margin: 0; max-width: 240px; font-size: var(--naru-text-small); line-height: 1.5; color: var(--naru-ink-2); }
 .own-key { margin-top: var(--naru-space-4); text-align: center; font-size: var(--naru-text-small); color: var(--naru-ink-3); }
 
 .faq details { margin-bottom: var(--naru-space-3); padding: var(--naru-space-3) var(--naru-space-4); background: var(--naru-surface); border: 1px solid var(--naru-line); border-radius: var(--naru-radius-sm); }
@@ -158,12 +161,14 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
 .notice.error { color: var(--naru-danger); background: var(--naru-danger-bg); }
 .notice.ok { color: var(--naru-ok); background: var(--naru-ok-bg); }
 .summary { margin-top: var(--naru-space-5); padding-top: var(--naru-space-4); font-size: var(--naru-text-label); text-align: left; border-top: 1px solid var(--naru-line); }
-.summary div { display: flex; justify-content: space-between; padding: var(--naru-space-1) 0; }
+.summary div { display: flex; justify-content: space-between; gap: var(--naru-space-3); padding: var(--naru-space-1) 0; }
 .checkout .agree { margin: var(--naru-space-4) 0 0; font-size: var(--naru-text-small); color: var(--naru-ink-3); }
 
 /* 三步驟＋按鈕排一行太擠：按鈕換到下面 */
 @media (max-width: 960px) {
   .start { flex-direction: column; align-items: stretch; gap: var(--naru-space-4); padding: var(--naru-space-5); }
+  .start-cta p { max-width: none; }
+  .plans { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {

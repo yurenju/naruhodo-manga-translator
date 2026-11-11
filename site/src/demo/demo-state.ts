@@ -7,12 +7,13 @@
 import { CLAUDE_MODEL } from '../../../src/shared/claude-request.ts';
 import type { PageView } from '../../../src/shared/messages.ts';
 import type { PageText } from '../../../src/shared/page-text.ts';
+import { FREE_PAGES } from '../../../src/shared/hosted-api.ts';
+
+/** 展示從新帳號的 Free Pages 開始；翻完展示的這頁少一頁。 */
+export { FREE_PAGES };
 
 /** closed＝沒啟動、side panel 關著；stopped＝按了 side panel 的「停止」，side panel 還開著。 */
 export type DemoPhase = 'closed' | 'stopped' | 'recognizing' | 'translating' | 'done';
-
-/** 新帳號的免費額度（spec #86 的 Free Pages）；翻完展示的這頁少一頁。 */
-export const FREE_PAGES = 50;
 
 /** 展示這頁的 Page 身分：side panel 與覆蓋層的 hover 同步靠它對上同一頁。 */
 export const DEMO_PAGE_HASH = 'demo';

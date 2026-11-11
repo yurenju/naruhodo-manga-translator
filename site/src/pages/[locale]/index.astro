@@ -1,7 +1,6 @@
 ---
 /** 首頁就是價格頁（#89 A 版）：大標題 → 展示 → 怎麼用 → 方案 → 常見問題。 */
 import Copy from '../../components/Copy.astro';
-import PricePair from '../../components/PricePair.astro';
 import StepBody from '../../components/StepBody.astro';
 import Base from '../../layouts/Base.astro';
 import '../../styles/demo.css';
@@ -52,27 +51,36 @@ const t = copy[locale];
   <section class="section" id="pricing">
     <div class="wrap">
       <h2>{t.pricing.title}</h2>
+      <p class="pricing-lead">{t.pricing.lead}</p>
       <div class="plans">
         <div class="card plan">
           <div class="plan-head"><h3>{t.pricing.free.title}</h3><span class="plan-tag plan-tag--soft">{t.pricing.free.tag}</span></div>
-          <p class="price">{t.pricing.free.price}</p>
-          <p class="grant">{t.pricing.free.grant.lead} <strong>{t.pricing.free.grant.pages}</strong><span>{t.pricing.free.grant.note}</span></p>
-          <ul>{t.pricing.free.items.map((item) => <li><Copy text={item} /></li>)}</ul>
+          <p class="price"><strong>{t.pricing.free.price}</strong></p>
+          <ul>
+            <li>{t.pricing.free.grant.lead} <strong>{t.pricing.free.grant.pages}</strong>{t.pricing.free.grant.note}</li>
+            {t.pricing.free.items.map((item) => <li><Copy text={item} /></li>)}
+          </ul>
         </div>
-        <div class="card plan featured">
-          <div class="plan-head"><h3>{t.pricing.sub.title}</h3><span class="plan-tag">{t.pricing.sub.tag}</span></div>
-          <PricePair pay={t.pricing.sub.pay} average={t.pricing.sub.average} />
-          <ul>{t.pricing.sub.items.map((item) => <li><Copy text={item} /></li>)}</ul>
-        </div>
+        {t.pricing.plans.map((plan) => (
+          <div class:list={['card plan', { featured: plan.featured }]}>
+            <div class="plan-head"><h3>{plan.title}</h3>{plan.tag && <span class="plan-tag">{plan.tag}</span>}</div>
+            <p class="price"><strong>{plan.name}</strong>・{plan.detail}</p>
+            <ul>{plan.items.map((item) => <li><Copy text={item} /></li>)}</ul>
+          </div>
+        ))}
       </div>
-      <!-- 卡片裡不放按鈕：訂閱要先有帳號、只能在外掛裡付款（#94），所以唯一的入口是安裝 -->
+      <p class="plans-note">{t.pricing.note}</p>
+      <!-- 卡片裡不放按鈕：訂閱要先有帳號、只能在外掛裡付款（#94），所以唯一的入口是安裝；網站打不開外掛，已安裝的人看旁邊那一行 -->
       <div class="card start">
         <ol class="start-steps">
           {t.pricing.start.steps.map((step, i) => (
             <li><span class="start-num" aria-hidden="true">{i + 1}</span><span><b>{step.title}</b>{step.body}</span></li>
           ))}
         </ol>
-        <a class="btn btn-primary" href={INSTALL_URL}>{t.pricing.start.cta}</a>
+        <div class="start-cta">
+          <a class="btn btn-primary" href={INSTALL_URL}>{t.pricing.start.cta}</a>
+          <p>{t.pricing.start.installed}</p>
+        </div>
       </div>
       <p class="own-key">{t.pricing.ownKey}</p>
     </div>
