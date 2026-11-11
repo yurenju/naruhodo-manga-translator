@@ -76,7 +76,7 @@ describe('失敗但已計費的呼叫', () => {
         for (const text of [ANSWER_TEXT, 'おはよう', '星屑バンド', 'パン屋', '範例作品', email]) expect(line).not.toContain(text);
         vi.restoreAllMocks();
         expect(await usageRecordCount(email)).toBe(0);
-        expect(((await (await get(ACCOUNT_PATH, token)).json()) as AccountResponse).quota.remaining).toBe(50);
+        expect(((await (await get(ACCOUNT_PATH, token)).json()) as AccountResponse).quota.remaining).toBe(100);
       });
     }
   }

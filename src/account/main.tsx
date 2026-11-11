@@ -10,7 +10,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { deleteAccount, signOut } from '../shared/account-exit.ts';
 import { accountRequest } from '../shared/account-page.ts';
 import { grantDataConsent } from '../shared/data-consent.ts';
-import { MONTHLY_PAGES } from '../shared/hosted-api.ts';
+import { MONTHLY_PAGES, pageCount } from '../shared/hosted-api.ts';
 import {
   accountExit,
   broadcastSessionChanged,
@@ -196,7 +196,7 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
       {view.subscribe && (
         <section class="ac-sec" aria-label="訂閱">
           <h2>訂閱</h2>
-          <p>每月可翻 {MONTHLY_PAGES} 頁，從訂閱那天起每月同一天重置。隨時取消，用到這一年結束。</p>
+          <p>每月可翻 {pageCount(MONTHLY_PAGES)} 頁，從訂閱那天起每月同一天重置。隨時取消，用到這一年結束。</p>
           <SubscriptionPrice />
           <div>
             <SubscribeButton variant="primary" onSubscribe={() => runPayment(() => subscribe(session, 'account'))} />

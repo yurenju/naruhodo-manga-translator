@@ -1,4 +1,4 @@
-import { FREE_PAGES, LOW_QUOTA, MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES, lowQuota, pageCount, type Quota } from '../shared/hosted-api.ts';
 import type { PageView } from '../shared/messages.ts';
 import type { SeriesOption } from '../shared/series.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
@@ -239,7 +239,7 @@ export function quotaView(access: TranslationAccess, quota: Quota | undefined): 
       };
     }
     return {
-      line: { text: `本月剩 ${quota.remaining} 頁・${reset}重置`, warn: quota.remaining <= LOW_QUOTA, subscribeLink: false },
+      line: { text: `本月剩 ${pageCount(quota.remaining)} 頁・${reset}重置`, warn: lowQuota(quota), subscribeLink: false },
       exhausted: undefined,
       footerButton: 'translate',
     };
@@ -248,11 +248,11 @@ export function quotaView(access: TranslationAccess, quota: Quota | undefined): 
   if (quota.remaining === 0)
     return {
       line: { text: '免費額度已用完', warn: true, subscribeLink: false },
-      exhausted: { title: '免費額度已用完', body: `已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 ${MONTHLY_PAGES} 頁。`, subscribe: true },
+      exhausted: { title: '免費額度已用完', body: `已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 ${pageCount(MONTHLY_PAGES)} 頁。`, subscribe: true },
       footerButton: 'subscribe',
     };
   return {
-    line: { text: `免費額度剩 ${quota.remaining} 頁`, warn: quota.remaining <= LOW_QUOTA, subscribeLink: true },
+    line: { text: `免費額度剩 ${quota.remaining} 頁`, warn: lowQuota(quota), subscribeLink: true },
     exhausted: undefined,
     footerButton: 'translate',
   };
@@ -268,7 +268,7 @@ export interface AccountPlanView {
 /** 設定頁的方案（#94 畫面定案）：免費、訂閱中、排定取消、扣款失敗重試中。 */
 export function accountPlanView(quota: Quota): AccountPlanView {
   if (quota.plan === 'free') return { badge: { text: '免費', tone: 'neutral' }, lines: [`免費額度剩 ${quota.remaining} / ${FREE_PAGES} 頁`], subscribed: false };
-  const month = `本月剩 ${quota.remaining} / ${quota.limit} 頁，${monthDay(quota.resetsAt)}重置`;
+  const month = `本月剩 ${pageCount(quota.remaining)} / ${pageCount(quota.limit)} 頁，${monthDay(quota.resetsAt)}重置`;
   if (quota.status === 'pastDue')
     return {
       badge: { text: '扣款失敗，重試中', tone: 'warn' },
@@ -323,9 +323,9 @@ export function accountPageView({ mode, signedIn, quota, justPaid, justSignedIn,
   // 自備金鑰不會用到帳號的頁數：用完了也不必說明
   const usesAccount = mode === 'hosted';
   const meter = (total: number, usedUpText: string) => ({
-    left: usedUp ? usedUpText : `剩 ${quota.remaining} / ${total} 頁`,
+    left: usedUp ? usedUpText : `剩 ${pageCount(quota.remaining)} / ${pageCount(total)} 頁`,
     fraction: quota.remaining / total,
-    warn: quota.remaining <= LOW_QUOTA,
+    warn: lowQuota(quota),
   });
   const signedInNotice: AccountPageView['notice'] =
     justSignedIn && hasOrigin && !usedUp ? { tone: 'info', title: '✓ 已登入', body: '回到漫畫後會接著翻譯。', backToManga: true } : undefined;
@@ -338,7 +338,7 @@ export function accountPageView({ mode, signedIn, quota, justPaid, justSignedIn,
       ownKeyNote: !usesAccount,
     };
   const notice: AccountPageView['notice'] = justPaid
-    ? { tone: 'info', title: '✓ 訂閱完成', body: `每月可翻 ${quota.limit} 頁。`, backToManga: hasOrigin }
+    ? { tone: 'info', title: '✓ 訂閱完成', body: `每月可翻 ${pageCount(quota.limit)} 頁。`, backToManga: hasOrigin }
     : usesAccount && usedUp
       ? { tone: 'warn', title: `本月額度已用完，${monthDay(quota.resetsAt)}重置`, body: `${UNTRANSLATED_PAGES_KEEP_ORIGINAL}，重置後就會繼續翻。`, backToManga: hasOrigin }
       : signedInNotice;

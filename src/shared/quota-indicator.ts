@@ -2,7 +2,7 @@
  * 不開側邊欄也看得到剩餘頁數（#237）：圖示的 hover 提示、「快用完」的橘色圓點、右鍵選單「帳號與訂閱」的文字。
  * 平常安靜，快用完才出聲：hover 提示一直都有，圓點與選單只在快用完時才變。
  */
-import { LOW_QUOTA, type Quota } from './hosted-api.ts';
+import { lowQuota as isLowQuota, pageCount, type Quota } from './hosted-api.ts';
 
 export const ACTION_NAME = 'Naruhodo 漫畫翻譯';
 const ACCOUNT_MENU = '帳號與訂閱';
@@ -28,11 +28,11 @@ export function quotaIndicator(quota: Quota | undefined): QuotaIndicator {
   const usedUp = quota.remaining === 0;
   const line =
     quota.plan === 'subscribed'
-      ? `${usedUp ? '本月額度用完了' : `本月剩 ${quota.remaining} 頁`}・${shortDate(quota.resetsAt)} 重置`
+      ? `${usedUp ? '本月額度用完了' : `本月剩 ${pageCount(quota.remaining)} 頁`}・${shortDate(quota.resetsAt)} 重置`
       : usedUp
         ? '免費額度用完了'
         : `免費額度剩 ${quota.remaining} 頁`;
-  const lowQuota = quota.remaining <= LOW_QUOTA;
+  const lowQuota = isLowQuota(quota);
   return {
     title: `${ACTION_NAME}\n${line}`,
     menuTitle: !lowQuota ? ACCOUNT_MENU : usedUp ? `${ACCOUNT_MENU}・額度用完了` : `${ACCOUNT_MENU}・剩 ${quota.remaining} 頁`,

@@ -137,7 +137,7 @@ describe('Paddle webhook', () => {
     const response = await webhook(event, { signature: await paddleSignature(JSON.stringify(event), { secret: 'pdl_ntfset_wrong' }) });
 
     expect(response.status).toBe(401);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
   it('沒有簽章、或 body 被改過回 401', async () => {
@@ -147,7 +147,7 @@ describe('Paddle webhook', () => {
 
     expect((await webhook(event, { signature: '' })).status).toBe(401);
     expect((await webhook(event, { signature: signedForOther })).status).toBe(401);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
   it('簽章的時間差超過 5 分鐘回 401（擋重送舊的請求）', async () => {
@@ -159,7 +159,7 @@ describe('Paddle webhook', () => {
     const response = await webhook(event, { signature: await paddleSignature(JSON.stringify(event), { ts }) });
 
     expect(response.status).toBe(401);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 });
 
@@ -190,7 +190,7 @@ describe('Paddle webhook：重複與亂序', () => {
     const other = { event_id: 'evt_txn_1', event_type: 'transaction.completed', occurred_at: new Date().toISOString(), data: {} };
     expect((await webhook(other)).status).toBe(200);
     expect((await webhook(subscriptionEvent({ accountId: 'no-such-account' }))).status).toBe(200);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 });
 
@@ -240,7 +240,7 @@ describe('訂閱狀態與權限', () => {
 
     // 這一年結束時 Paddle 送 subscription.canceled（session 閒置 180 天會失效，所以時間不真的往後跳一年）
     await send({ accountId, eventType: 'subscription.canceled', status: 'canceled', occurredAt: '2026-10-30T11:30:00Z' });
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
   it('past_due（扣款失敗重試中）仍然有權限、可以翻譯', async () => {
@@ -258,7 +258,7 @@ describe('訂閱狀態與權限', () => {
 
     await send({ accountId, eventType: 'subscription.paused', status: 'paused' });
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 });
 

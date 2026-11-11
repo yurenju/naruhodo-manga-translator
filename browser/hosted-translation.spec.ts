@@ -47,7 +47,7 @@ test.describe('全新安裝', () => {
     await onboarding.getByRole('button', { name: '開始設定' }).click();
     const email = freshEmail(testInfo.workerIndex);
     await signInWithEmail(onboarding, email);
-    await onboarding.getByRole('button', { name: '先用免費的 50 頁' }).click();
+    await onboarding.getByRole('button', { name: '先用免費的 100 頁' }).click();
     // 第 4 步不讓讀者選：從「閱讀」開始；Side Panel on Activation 不寫（沒存過值就是開的，#269）
     await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
     await expect
@@ -93,8 +93,8 @@ test.describe('全新安裝', () => {
     const onboarding = await onboardingPage(context);
     await onboarding.getByRole('button', { name: '開始設定' }).click();
     await signInWithEmail(onboarding, email, { subscribed: true });
-    await expect(onboarding.getByText('每月可翻 800 頁')).toBeVisible();
-    await expect(onboarding.getByRole('button', { name: '先用免費的 50 頁' })).toHaveCount(0);
+    await expect(onboarding.getByText('每月可翻 3,000 頁')).toBeVisible();
+    await expect(onboarding.getByRole('button', { name: '先用免費的 100 頁' })).toHaveCount(0);
     await onboarding.getByRole('button', { name: '下一步' }).click();
     await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
 
@@ -102,7 +102,7 @@ test.describe('全新安裝', () => {
     const reopened = await context.newPage();
     await reopened.goto(`chrome-extension://${extensionId}/onboarding.html?step=signIn`);
     await expect(reopened.getByRole('heading', { name: '已訂閱' })).toBeVisible();
-    await expect(reopened.getByRole('button', { name: '先用免費的 50 頁' })).toHaveCount(0);
+    await expect(reopened.getByRole('button', { name: '先用免費的 100 頁' })).toHaveCount(0);
   });
 });
 
@@ -175,7 +175,7 @@ const VISIBLE_PAGES = 2;
 
 /**
  * 等登入後畫面上的頁都翻完、扣完頁：每頁都「已翻譯」，而且額度已經重讀成扣完的數字。
- * 之後才能訂閱，不然還在翻的頁會在訂閱生效後才扣，扣到每月額度（800 變 798）。
+ * 之後才能訂閱，不然還在翻的頁會在訂閱生效後才扣，扣到每月額度（3,000 變 2,998）。
  */
 async function waitForVisiblePagesCharged(panel: Page): Promise<void> {
   await expect(panel.getByRole('status', { name: '翻譯狀態' }).filter({ hasText: /^已翻譯・/ })).toHaveCount(VISIBLE_PAGES);
@@ -211,7 +211,7 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   await closed;
 
   await expect(panel.getByRole('group', { name: '已訂閱' })).toBeVisible();
-  await expect(remaining).toHaveText(/^本月剩 800 頁・\d+ 月 \d+ 日重置$/);
+  await expect(remaining).toHaveText(/^本月剩 3,000 頁・\d+ 月 \d+ 日重置$/);
   await panel.getByRole('group', { name: '已訂閱' }).getByRole('button', { name: '知道了' }).click();
   await expect(panel.getByRole('group', { name: '已訂閱' })).toHaveCount(0);
   await openSettings(panel);
@@ -277,7 +277,7 @@ async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId
   const closed = checkout.waitForEvent('close');
   await sendSubscriptionCreated(accountIdFromCheckout(checkout.url()), customerId);
   await closed;
-  await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/^本月剩 800 頁/);
+  await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/^本月剩 3,000 頁/);
 }
 
 // unit 測不到的：Worker 的 502 經過 hosted-account-client 回到帳號頁，畫面真的出現錯誤、沒有打開新分頁（#156）。

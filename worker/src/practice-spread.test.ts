@@ -53,7 +53,7 @@ describe('Practice Spread 不扣頁', () => {
     expect(response.status).toBe(200);
     const { items } = (await response.json()) as { items: { id: string; 譯文: string }[] };
     expect(items[0]).toMatchObject({ id: 'b1', 譯文: '譯文' });
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
     expect(await usageRecords(email)).toEqual([{ kind: 'translate', practice: 1 }]);
   });
 
@@ -73,7 +73,7 @@ describe('Practice Spread 不扣頁', () => {
 
     expect((await translate(token, ['今日の給食はカレーだ！', 'なんだと！？'])).status).toBe(200);
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
     expect(await usageRecords(email)).toEqual([{ kind: 'translate', practice: 0 }]);
   });
 
@@ -82,7 +82,7 @@ describe('Practice Spread 不扣頁', () => {
 
     expect((await translate(token, practicePage.slice(0, 1))).status).toBe(200);
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
   });
 });
 
@@ -98,6 +98,6 @@ describe('試翻紀錄不能拿來接續（spec #142 的長 Page 接續）', () 
     fakeAnthropic([replyFor(input)]);
     expect((await post(TRANSLATE_PATH, input, { token })).status).toBe(200);
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
   });
 });
