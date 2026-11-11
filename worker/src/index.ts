@@ -53,10 +53,10 @@ import {
   type UsageKind,
 } from './quota.ts';
 import { parseNotesInput, parseTitleSignals, parseTranslateInput } from './input.ts';
-import { applyChargeEvent, claimRefund, recordRefundAdjustment, refundInfo, releaseRefund } from './charges.ts';
+import { applyChargeEvent, claimRefund, recordRefundAdjustment, recordRefundOutcome, refundInfo, refundOutcome, releaseRefund } from './charges.ts';
 import { lastSentCode, mailer } from './mailer.ts';
 import { paddle, PaddleError, verifyWebhook } from './paddle.ts';
-import { activeSubscription, applyPaddleEvent, cancellationOnDelete, paddleIds, recordPaddleEvent, refundedSubscription } from './subscription.ts';
+import { activeSubscription, applyPaddleEvent, cancellationOnDelete, paddleIds } from './subscription.ts';
 
 type Env = Cloudflare.Env;
 
@@ -319,7 +319,7 @@ const ROUTES: Record<string, Handler> = {
     return viaPaddle(async () => Response.json({ url: await paddle(env).portalUrl(ids.customerId, ids.subscriptionId) } satisfies PortalResponse));
   }),
   // 申請退款（#260）：先在 D1 把最近一次扣款記為處理中（同時的請求只有一個拿得到），再向 Paddle 建立全額退款；
-  // 不取消訂閱，核准的 webhook 才取消（refundedSubscription）。Paddle 失敗就放掉處理中，讀者可以再按一次
+  // 不取消訂閱，核准的 webhook 才取消（refundOutcome）。Paddle 失敗就放掉處理中，讀者可以再按一次
   [`POST ${REFUND_PATH}`]: authed(async ({ env, now }, accountId) => {
     const claim = await claimRefund(env.DB, accountId, now);
     if (!claim.ok) return error(409, '這筆扣款不能申請退款', claim.reason);
@@ -344,12 +344,12 @@ const ROUTES: Record<string, Handler> = {
     } catch {
       return invalid();
     }
-    // 全額退款：立即取消訂閱；Paddle 失敗就回 502、不記下事件，讓 Paddle 重送
-    const refund = await refundedSubscription(env.DB, event);
+    // 全額退款的結果：核准就立即取消訂閱；Paddle 失敗就回 502、什麼都不記，讓 Paddle 重送
+    const refund = await refundOutcome(env.DB, event);
     if (refund) {
       return viaPaddle(async () => {
-        await paddle(env).cancelSubscription(refund.subscriptionId, 'immediately');
-        await recordPaddleEvent(env.DB, refund.eventId, now);
+        if (refund.cancel) await paddle(env).cancelSubscription(refund.subscriptionId, 'immediately');
+        await recordRefundOutcome(env.DB, refund, now);
         return new Response(null, { status: 200 });
       });
     }

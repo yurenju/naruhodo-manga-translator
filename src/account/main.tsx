@@ -244,8 +244,8 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
               </Button>
             </div>
           )}
-          {view.plan.refund?.kind === 'pending' && (
-            <Callout tone="warn" class="naru-callout--stack" role="status" aria-label={view.plan.refund.title}>
+          {(view.plan.refund?.kind === 'pending' || view.plan.refund?.kind === 'rejected') && (
+            <Callout tone={view.plan.refund.kind === 'pending' ? 'warn' : 'danger'} class="naru-callout--stack" role="status" aria-label={view.plan.refund.title}>
               <p>
                 <strong>{view.plan.refund.title}</strong>
               </p>

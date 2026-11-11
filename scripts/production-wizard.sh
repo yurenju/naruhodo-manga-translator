@@ -223,7 +223,7 @@ PADDLE_DASHBOARD='https://vendors.paddle.com'
 # Worker 需要的 API key 權限；第 10 步照這份清單請使用者勾選，再用 GET / 核對。
 PADDLE_PERMISSIONS=(transaction.write product.write price.write customer.write subscription.write
   notification_setting.write notification.read customer_portal_session.write adjustment.write)
-WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.updated"]'
+WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.created","adjustment.updated"]'
 
 CF_SECRETS=() # 這次設定到 Cloudflare 的 Worker secrets
 
@@ -588,7 +588,7 @@ pause
 
 # ── 14 ───────────────────────────────────────────────────────────────────
 stage "webhook destination 與 secret（自動）"
-say "建立 notification destination $API_ORIGIN/webhooks/paddle，訂閱訂閱相關事件與 adjustment.updated"
+say "建立 notification destination $API_ORIGIN/webhooks/paddle，訂閱訂閱相關事件與 adjustment.created、adjustment.updated"
 say "（全額退款時 Worker 立即取消訂閱，#97）。Paddle 回傳的簽章 secret 經剪貼簿交給你存成 PADDLE_WEBHOOK_SECRET，不顯示。"
 if [[ -n "$PADDLE_NOTIFICATION_SETTING_ID" ]]; then
   note "已經建立過：$PADDLE_NOTIFICATION_SETTING_ID，略過。"

@@ -677,6 +677,71 @@ describe('帳號頁的退款區塊（#260，設計稿 B 版）', () => {
   it('退款處理中、已過退款期：照樣顯示處理中', () => {
     expect(plan(subscribed(), refund({ status: 'pending', inWindow: false, eligible: false }))?.refund).toMatchObject({ kind: 'pending' });
   });
+
+  it('退款被拒：同一個位置換成被拒的說明（沒有「申請退款」），訂閱照常', () => {
+    expect(plan(subscribed(), refund({ status: 'rejected', eligible: false }))).toMatchObject({
+      name: '訂閱',
+      manage: true,
+      refund: {
+        kind: 'rejected',
+        title: '退款申請沒有通過',
+        body: 'Paddle 沒有核准 11 月 3 日這筆 US$48 的退款，訂閱照常繼續。請寫信到 dev@sadcoder.com，我們會協助處理。',
+      },
+    });
+  });
+
+  it('退款被拒、已過退款期：不再顯示退款區塊', () => {
+    expect(plan(subscribed(), refund({ status: 'rejected', inWindow: false, eligible: false }))?.refund).toBeUndefined();
+  });
+});
+
+describe('帳號頁的「✓ 已退款」（#261，設計稿 B 版）', () => {
+  const hosted = { mode: 'hosted', signedIn: true, justPaid: undefined, payment: undefined, justSignedIn: false, hasOrigin: false } as const;
+  const billedAt = new Date(2026, 10, 3, 11, 0).getTime();
+  const now = new Date(2026, 10, 10, 11, 0).getTime();
+  const refunded = (fields: Partial<RefundInfo> = {}): RefundInfo => ({
+    billedAt,
+    amountUsd: 48,
+    windowEndsAt: new Date(2026, 10, 17, 11, 0).getTime(),
+    inWindow: true,
+    status: 'refunded',
+    eligible: false,
+    ...fields,
+  });
+  const page = (quota: Quota, refund: RefundInfo, fields: Partial<Parameters<typeof accountPageView>[0]> = {}) => accountPageView({ ...hosted, now, quota, refund, ...fields });
+
+  it('訂閱結束：頂部是已退款的說明，卡片回到免費方案（剩下的 Free Pages），下面接著訂閱區塊', () => {
+    const view = page({ plan: 'free', remaining: 62 }, refunded());
+
+    expect(view.notice).toEqual({
+      tone: 'info',
+      title: '✓ 已退款 US$48',
+      body: '訂閱已經結束，訂閱前剩下的免費額度可以繼續用。退款會回到原本的付款方式，入帳時間依發卡銀行而定。',
+      backToManga: false,
+    });
+    expect(view.plan).toMatchObject({ name: '免費', left: '剩 62 / 100 頁', manage: false, refund: undefined });
+    expect(view.subscribe).toBeDefined();
+  });
+
+  it('部分折扣：寫實付金額', () => {
+    expect(page({ plan: 'free', remaining: 62 }, refunded({ amountUsd: 1 })).notice).toMatchObject({ title: '✓ 已退款 US$1' });
+  });
+
+  it('過了那次扣款的退款期：不再顯示已退款', () => {
+    expect(page({ plan: 'free', remaining: 62 }, refunded({ inWindow: false })).notice).toBeUndefined();
+  });
+
+  it('訂閱前的免費額度也用完了：說明免費額度用完', () => {
+    expect(page({ plan: 'free', remaining: 0 }, refunded()).notice).toMatchObject({ tone: 'warn', title: '免費額度已用完' });
+  });
+
+  it('又在付款中：只說付款的事', () => {
+    expect(page({ plan: 'free', remaining: 62 }, refunded(), { payment: { billingPeriod: 'yearly', checkoutClosed: false } }).notice).toBeUndefined();
+  });
+
+  it('核准了、訂閱還沒結束（Paddle 的取消通知還沒到）：不顯示退款區塊', () => {
+    expect(page(subscribed(), refunded()).plan?.refund).toBeUndefined();
+  });
 });
 
 describe('申請退款的確認對話框（#260）', () => {
