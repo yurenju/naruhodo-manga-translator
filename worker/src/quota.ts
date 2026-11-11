@@ -60,7 +60,8 @@ export async function quota(db: D1Database, accountId: string, { now, limit }: Q
     cancelScheduled: subscription.cancelScheduled,
     periodEndsAt: subscription.periodEndsAt,
     billingPeriod: subscription.billingPeriod,
-    renewalPriceUsd: PRICE_USD[subscription.billingPeriod],
+    // 從 Paddle 事件的 price 來；這個欄位之前寫入的訂閱才退回定價常數
+    renewalPriceUsd: subscription.renewalPriceUsd ?? PRICE_USD[subscription.billingPeriod],
     freePages: row?.free_pages ?? 0,
   };
 }

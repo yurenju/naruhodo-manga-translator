@@ -286,13 +286,31 @@ describe('扣款週期與下次續訂金額（#259）', () => {
     expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 48 });
   });
 
-  it('舊訂閱者（不認得的 price，例如原本年繳 US$20 的那個）當年繳，下次續訂是新的年繳價 US$48', async () => {
+  it('事件沒帶 unit_price（例如舊訂閱者不認得的 price）：當年繳，下次續訂退回定價常數 US$48', async () => {
     at('2026-10-30T12:00:00Z');
     const { token, accountId } = await subscriber();
 
     await send({ accountId, priceId: 'pri_legacy_yearly_20' });
 
     expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 48 });
+  });
+
+  it('下次續訂金額取自事件裡 price 的 unit_price：Paddle 上換了價格，不用改程式碼就跟著變', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_worker_test_quarterly', unitPriceCents: '1800' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'quarterly', renewalPriceUsd: 18 });
+  });
+
+  it('舊訂閱者還沒換成新的年繳 price（事件帶 US$20 的 unit_price）：下次續訂照 Paddle 會扣的 US$20', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_legacy_yearly_20', unitPriceCents: '2000' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 20 });
   });
 
   it('從季繳換成年繳（之後的事件帶年繳的 price）：扣款週期跟著換', async () => {

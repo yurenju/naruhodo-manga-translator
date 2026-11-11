@@ -14,6 +14,8 @@ export interface Subscription {
   periodEndsAt: number;
   cancelScheduled: boolean;
   billingPeriod: BillingPeriod;
+  /** 下次續訂的金額（美元，含稅）：事件裡 price 的 unit_price；這個欄位之前寫入的訂閱沒有，是 undefined。 */
+  renewalPriceUsd: number | undefined;
   paddleSubscriptionId: string;
   paddleCustomerId: string;
 }
@@ -24,6 +26,7 @@ interface Row {
   period_ends_at: number | null;
   cancel_scheduled: number;
   billing_period: BillingPeriod | null;
+  renewal_price_cents: number | null;
   paddle_subscription_id: string;
   paddle_customer_id: string;
 }
@@ -44,6 +47,7 @@ export async function activeSubscription(db: D1Database, accountId: string): Pro
     periodEndsAt: row.period_ends_at ?? addMonths(row.started_at, 12),
     cancelScheduled: row.cancel_scheduled === 1,
     billingPeriod: row.billing_period ?? 'yearly',
+    renewalPriceUsd: row.renewal_price_cents === null ? undefined : row.renewal_price_cents / 100,
     paddleSubscriptionId: row.paddle_subscription_id,
     paddleCustomerId: row.paddle_customer_id,
   };
@@ -114,6 +118,13 @@ function billingPeriodOf(data: Record<string, unknown>, quarterlyPriceId: string
   return quarterlyPriceId !== undefined && prices.includes(quarterlyPriceId) ? 'quarterly' : 'yearly';
 }
 
+/** 下次續訂的金額（美分）：每個 item 的 price 的 unit_price × quantity 加起來；有任何一個讀不到就是 null（退回定價常數）。 */
+function renewalPriceCents(data: Record<string, unknown>): number | null {
+  const items = Array.isArray(data.items) ? data.items.map(object) : [];
+  const amounts = items.map((item) => Number(text(object(object(item.price).unit_price).amount)) * (typeof item.quantity === 'number' ? item.quantity : 1));
+  return items.length > 0 && amounts.every(Number.isInteger) ? amounts.reduce((sum, amount) => sum + amount, 0) : null;
+}
+
 /**
  * 套用一個已經驗過簽章的 Paddle 事件。只看 subscription.*，其他事件（transaction.completed 等）不做事。
  * - Account 來自 custom_data.account_id（Worker 建立 transaction 時放的，Paddle 帶到 subscription 上）；沒有的話用 subscription id 找已經存在的那一列
@@ -144,12 +155,12 @@ export async function applyPaddleEvent(db: D1Database, event: unknown, now: numb
   await db.batch([
     db
       .prepare(
-        `INSERT INTO subscriptions (account_id, paddle_subscription_id, paddle_customer_id, status, started_at, period_ends_at, cancel_scheduled, billing_period, event_occurred_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO subscriptions (account_id, paddle_subscription_id, paddle_customer_id, status, started_at, period_ends_at, cancel_scheduled, billing_period, renewal_price_cents, event_occurred_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (account_id) DO UPDATE SET
            paddle_subscription_id = excluded.paddle_subscription_id, paddle_customer_id = excluded.paddle_customer_id, status = excluded.status,
            started_at = excluded.started_at, period_ends_at = excluded.period_ends_at, cancel_scheduled = excluded.cancel_scheduled,
-           billing_period = excluded.billing_period, event_occurred_at = excluded.event_occurred_at
+           billing_period = excluded.billing_period, renewal_price_cents = excluded.renewal_price_cents, event_occurred_at = excluded.event_occurred_at
          WHERE (excluded.paddle_subscription_id = subscriptions.paddle_subscription_id AND excluded.event_occurred_at > subscriptions.event_occurred_at)
             OR (excluded.paddle_subscription_id <> subscriptions.paddle_subscription_id
                 AND subscriptions.status NOT IN (${ENTITLED_SQL}) AND excluded.status IN (${ENTITLED_SQL}))`,
@@ -163,6 +174,7 @@ export async function applyPaddleEvent(db: D1Database, event: unknown, now: numb
         time(object(data.current_billing_period).ends_at) ?? null,
         text(object(data.scheduled_change).action) === 'cancel' ? 1 : 0,
         billingPeriodOf(data, quarterlyPriceId),
+        renewalPriceCents(data),
         occurredAt,
       ),
     db.prepare('INSERT INTO paddle_events (event_id, received_at) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(eventId, now),
