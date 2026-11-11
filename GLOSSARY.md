@@ -65,7 +65,7 @@ A global setting, remembered across tabs and browser restarts, that decides what
 _Avoid_: learning mode (that is the whole feature), overlay toggle
 
 **Display Level** (顯示層級)
-Which parts of every Line the side panel transcript shows, switched once for all Pages. Under the 閱讀 Page Mode it is one of three levels: 只看譯文, 原文＋譯文, 加振り仮名 (the default). Under 學習 it is only a furigana on/off switch; the translation always stays hidden until revealed step by step.
+Which parts of every Line the side panel transcript shows, switched once for all Pages. Under the 閱讀 Page Mode it is one of three levels: 只看譯文, 原文＋譯文, 加上讀音 (the default). Under 學習 it is only a furigana on/off switch; the translation always stays hidden until revealed step by step.
 _Avoid_: mode, learning mode (that is the whole feature)
 
 **Side Panel on Activation** (啟動時開側邊欄)
