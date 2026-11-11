@@ -1,11 +1,11 @@
 /**
  * #109：產品網站首頁的互動展示。對 `npm run site:build` 產生的 site/dist 開一個靜態 server，用一般的瀏覽器（不載入外掛）操作。
- * unit 抓不到的：Astro／Vite 打包外掛元件的整條路（.css 變字串、字型檔、合成頁圖片）、SidePanel 在 shadow root 裡真的
- * render、覆蓋層在真正的版面上 hover 出 tooltip 並跟 side panel 同步高亮，以及展示時沒有對外的網路請求。
+ * unit 抓不到的：Astro／Vite 打包外掛元件的整條路（.css 變字串、字型檔、Practice Spread 的圖）、SidePanel 在 shadow root 裡真的
+ * render、覆蓋層在真正的版面上（圖是整張跨頁、只露出右頁，譯文要對到右半張） hover 出 tooltip 並跟 side panel 同步高亮，以及展示時沒有對外的網路請求。
  * 展示的進度（辨識中 → 翻譯中 → 完成、剩餘頁數、圖示當開關）是 site/src/demo/demo-state.test.ts。
  */
 import { test as base, expect } from '@playwright/test';
-import { demoPage } from '../site/src/demo/demo-page.ts';
+import { demoPages } from '../site/src/demo/demo-page.ts';
 import { startSiteServer } from './site-server.ts';
 
 const test = base.extend<{ siteOrigin: string }>({
@@ -27,7 +27,7 @@ test('首頁展示：點圖示 → 翻譯完成 → 切到學習 → 滑過對�
   const panel = demo.locator('.naru-side-panel');
   await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/免費額度剩 99 頁/);
 
-  const balloons = demoPage.text.balloons;
+  const balloons = demoPages.flatMap((p) => p.text.balloons);
   const translations = demo.locator('[data-naruhodo-overlay] [data-balloon-id]');
   await expect(translations.filter({ visible: true })).toHaveCount(balloons.length);
 

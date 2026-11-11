@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PageText } from '../../../src/shared/page-text.ts';
-import { DEMO_PAGE_HASH, FREE_PAGES, clickIcon, demoView, nextPhase, type DemoPhase } from './demo-state.ts';
+import { FREE_PAGES, clickIcon, demoView, nextPhase, type DemoPhase, type DemoViewPage } from './demo-state.ts';
 
 const text: PageText = {
   balloons: [
@@ -20,30 +20,36 @@ const text: PageText = {
   looseText: [],
 };
 
+/** 跨頁：兩個 Page。 */
+const spread: DemoViewPage[] = [
+  { pageHash: 'right', text },
+  { pageHash: 'left', text },
+];
+
 describe('展示的進度', () => {
   it('點圖示前 side panel 沒打開，額度是滿的', () => {
-    expect(demoView('closed', text)).toEqual({ panelOpen: false, running: false, pages: [], remaining: FREE_PAGES, overlay: false });
+    expect(demoView('closed', spread)).toEqual({ panelOpen: false, running: false, pages: [], remaining: FREE_PAGES, overlay: false });
   });
 
   it('點圖示後先辨識：逐字稿顯示辨識中，頁面上還沒有譯文', () => {
-    const view = demoView('recognizing', text);
+    const view = demoView('recognizing', spread);
     expect(view.panelOpen).toBe(true);
-    expect(view.pages.map((p) => p.transcript)).toEqual([{ state: 'analyzing' }]);
+    expect(view.pages.map((p) => p.transcript)).toEqual([{ state: 'analyzing' }, { state: 'analyzing' }]);
     expect(view.overlay).toBe(false);
   });
 
   it('翻譯中：已經有原文、還沒有譯文', () => {
-    const [page] = demoView('translating', text).pages;
+    const [page] = demoView('translating', spread).pages;
     expect(page!.transcript).toMatchObject({ state: 'done', translated: false, translating: true });
     if (page!.transcript.state !== 'done') throw new Error('unreachable');
     expect(page!.transcript.text.balloons[0]).toMatchObject({ 原文: 'おはよう', 譯文: '' });
   });
 
-  it('翻完：頁面蓋上譯文，剩餘頁數少一頁（100 → 99）', () => {
-    const view = demoView('done', text);
+  it('翻完：頁面蓋上譯文，跨頁算兩頁（100 → 98）', () => {
+    const view = demoView('done', spread);
     expect(view.overlay).toBe(true);
-    expect(view.remaining).toBe(99);
-    expect(view.pages[0]!.pageHash).toBe(DEMO_PAGE_HASH);
+    expect(view.remaining).toBe(98);
+    expect(view.pages.map((p) => p.pageHash)).toEqual(['right', 'left']);
     expect(view.pages[0]!.transcript).toMatchObject({ state: 'done', translated: true, text });
   });
 
@@ -61,9 +67,9 @@ describe('圖示是開關（跟外掛的 toggle 一樣）', () => {
   it('點一下開 side panel，再點一下關掉，再點又重新開始翻譯', () => {
     const opened = clickIcon('closed');
     expect(opened).toBe('recognizing');
-    expect(demoView(opened, text)).toMatchObject({ panelOpen: true, running: true });
+    expect(demoView(opened, spread)).toMatchObject({ panelOpen: true, running: true });
     const closed = clickIcon(opened);
-    expect(demoView(closed, text)).toMatchObject({ panelOpen: false, running: false, overlay: false });
+    expect(demoView(closed, spread)).toMatchObject({ panelOpen: false, running: false, overlay: false });
     expect(clickIcon(closed)).toBe('recognizing');
   });
 
@@ -72,7 +78,7 @@ describe('圖示是開關（跟外掛的 toggle 一樣）', () => {
   });
 
   it('按 side panel 的「停止」：side panel 留著、提示點圖示，頁面上的譯文拿掉；再點圖示重新開始', () => {
-    expect(demoView('stopped', text)).toEqual({ panelOpen: true, running: false, pages: [], remaining: FREE_PAGES, overlay: false });
+    expect(demoView('stopped', spread)).toEqual({ panelOpen: true, running: false, pages: [], remaining: FREE_PAGES, overlay: false });
     expect(clickIcon('stopped')).toBe('recognizing');
   });
 });
