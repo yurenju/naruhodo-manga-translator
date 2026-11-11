@@ -118,8 +118,8 @@ export const copy: Record<Locale, SiteCopy> = {
     brand: 'Naruhodo 日文漫畫翻譯',
     nav: { pricing: '價格', faq: '常見問題', install: '安裝外掛', languageLabel: '語言' },
     hero: {
-      title: '看日文漫畫，旁邊就有中文',
-      lead: 'Naruhodo 是一個 Chrome 外掛。點一下圖示，它會找出畫面上的漫畫頁、讀出對話框裡的日文，再把繁體中文翻譯放回原本的位置，還附上振り仮名，邊看邊學日文。',
+      title: '新番日漫，不再苦等翻譯！',
+      lead: 'Naruhodo 是一個 Chrome 外掛。點一下圖示，對話框裡的日文就會變成繁體中文，還附上讀音，邊看邊學日文。',
       install: '加到 Chrome',
       pricing: '看價格',
     },
