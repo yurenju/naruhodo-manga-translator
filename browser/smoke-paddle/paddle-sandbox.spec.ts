@@ -223,7 +223,8 @@ test('Paddle sandbox 季繳：帳號頁選季繳 → 測試卡付款 → 帳號�
   await expect(plan.getByRole('group', { name: '退款' })).toContainText('扣款後 14 天內可以申請全額退款');
 
   await refundButton.click();
-  const dialog = account.getByRole('dialog', { name: /^退款 US\$[\d.]+，並結束訂閱？$/ });
+  // price 是 tax_mode internal（標價含稅，ADR 0012）：退的就是標價，不會多出稅
+  const dialog = account.getByRole('dialog', { name: /^退款 US\$15(\.00)?，並結束訂閱？$/ });
   console.log('退款對話框：', await dialog.getByRole('heading').innerText());
   await dialog.getByRole('button', { name: '確定退款' }).click();
   await expect(plan.getByRole('status', { name: '退款處理中' })).toBeVisible({ timeout: 30_000 });

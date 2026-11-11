@@ -3,7 +3,7 @@
  * 下面一顆主按鈕，文字跟著選項變。價格文字來自 ui/pricing.ts 的共用文案。
  */
 import { FREE_PAGES, type BillingPeriod } from '../shared/hosted-api.ts';
-import { billingPeriodOffer, subscriptionHeadline } from '../ui/pricing.ts';
+import { billingPeriodOffer, FREE_PAGES_EPISODES, subscriptionHeadline } from '../ui/pricing.ts';
 
 /** 讀者在清單上選的那一項。 */
 export type PlanChoice = 'free' | BillingPeriod;
@@ -23,7 +23,7 @@ const offerOption = (billingPeriod: BillingPeriod): PlanChoiceOption => {
 };
 
 export const PLAN_CHOICES: readonly PlanChoiceOption[] = [
-  { choice: 'free', title: `先用免費額度 ${FREE_PAGES} 頁`, detail: '', recommended: false, note: '大約四話，不會過期，不用輸入付款資料。' },
+  { choice: 'free', title: `先用免費額度 ${FREE_PAGES} 頁`, detail: '', recommended: false, note: `${FREE_PAGES_EPISODES}，不會過期，不用輸入付款資料。` },
   offerOption('yearly'),
   offerOption('quarterly'),
 ];

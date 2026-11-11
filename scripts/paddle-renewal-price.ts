@@ -25,7 +25,7 @@
  *        export PADDLE_PRICE_ID=pri_… PADDLE_PRICE_ID_YEARLY=pri_…
  *        node scripts/paddle-renewal-price.ts --production
  *   4. 確認 dry run：列出的筆數就是舊訂閱者的人數；每筆「下次扣款」跟 Paddle 後台一樣；
- *      「下次金額」是新價格（48.00 USD，tax_mode 是 location 時某些地區會再加稅）。沒有任何 skipped。
+ *      「下次金額」是新價格 48.00 USD（price 是 tax_mode internal，含稅，不會再加）。沒有任何 skipped。
  *      要在最早一筆的下次扣款日之前跑完，否則那筆會照舊價格續約。
  *   5. 沒問題再加 --apply（想先試一筆就加 --only <sub_…>）。跑完到 Paddle 後台看每筆訂閱：下次付款是新金額、日期沒變、沒有多出新的交易。
  *      再跑一次 dry run 應該列不出任何訂閱。最後 revoke 那把 key。

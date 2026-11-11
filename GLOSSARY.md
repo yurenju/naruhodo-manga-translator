@@ -144,6 +144,7 @@ _Avoid_: billing cycle (ambiguous with the monthly reset of the Monthly Page Lim
 
 **Refund Window** (退款期)
 The 14 days after every charge of a Subscription that took money, renewals included (a charge brought to US$0 by a discount has none), during which the reader can get that charge back in full however many Translated Pages they used. The reader asks for it in the extension; the Subscription keeps working while the refund is pending and ends once the payment provider approves it, after which whatever Free Pages were left become usable again.
+A refund request is *pending* until the payment provider decides, then *refunded* or *rejected*. The Worker's database stores the provider's word for refunded, `approved`, and translates it at the API.
 _Avoid_: trial, money-back guarantee (in the UI), cooling-off period
 
 **Monthly Page Limit** (每月頁數上限)

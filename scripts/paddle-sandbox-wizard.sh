@@ -373,12 +373,13 @@ elif confirm "要建立產品嗎？"; then
   write_env PADDLE_PRODUCT_ID "$PADDLE_PRODUCT_ID"
 fi
 # create_price <env 名稱> <名稱> <美分> <interval> <frequency>：已經建立過就略過
+# tax_mode internal：標價含稅（ADR 0012），稅由 Paddle 從標價裡扣，買家付的就是標價
 create_price() {
   if [[ -n "$(_existing "$1" || true)" ]]; then
     printf -v "$1" '%s' "$(_existing "$1")"
     note "$2 price 已經建立過：$(_existing "$1")，略過。"
   elif [[ -n "${PADDLE_PRODUCT_ID:-}" ]] && confirm "要建立 $2 price 嗎？"; then
-    paddle_api POST /prices "{\"product_id\":\"$PADDLE_PRODUCT_ID\",\"description\":\"$2\",\"name\":\"$2\",\"unit_price\":{\"amount\":\"$3\",\"currency_code\":\"USD\"},\"billing_cycle\":{\"interval\":\"$4\",\"frequency\":$5}}"
+    paddle_api POST /prices "{\"product_id\":\"$PADDLE_PRODUCT_ID\",\"description\":\"$2\",\"name\":\"$2\",\"unit_price\":{\"amount\":\"$3\",\"currency_code\":\"USD\"},\"tax_mode\":\"internal\",\"billing_cycle\":{\"interval\":\"$4\",\"frequency\":$5}}"
     api_ok || api_fail "create $2 price"
     printf -v "$1" '%s' "$(json_get 'data.id')"
     write_env "$1" "${!1}"

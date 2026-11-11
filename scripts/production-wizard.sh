@@ -568,11 +568,12 @@ else
   warn "沒有產品就不能建立 price；之後重跑。"; exit 1
 fi
 # create_price <變數名稱> <名稱> <美分> <interval> <frequency>：已經建立過就略過，再存成 Worker 的 secret
+# tax_mode internal：標價含稅（ADR 0012），稅由 Paddle 從標價裡扣，買家付的就是標價
 create_price() {
   if [[ -n "${!1}" ]]; then
     note "$2 price 已經建立過：${!1}，略過。"
   elif confirm "要建立 $2 price 嗎？"; then
-    paddle_api POST /prices "{\"product_id\":\"$PADDLE_PRODUCT_ID\",\"description\":\"$2\",\"name\":\"$2\",\"unit_price\":{\"amount\":\"$3\",\"currency_code\":\"USD\"},\"billing_cycle\":{\"interval\":\"$4\",\"frequency\":$5}}"
+    paddle_api POST /prices "{\"product_id\":\"$PADDLE_PRODUCT_ID\",\"description\":\"$2\",\"name\":\"$2\",\"unit_price\":{\"amount\":\"$3\",\"currency_code\":\"USD\"},\"tax_mode\":\"internal\",\"billing_cycle\":{\"interval\":\"$4\",\"frequency\":$5}}"
     api_ok || paddle_fail "create $2 price"
     printf -v "$1" '%s' "$(json_get 'data.id')"
     write_env "$1" "${!1}"

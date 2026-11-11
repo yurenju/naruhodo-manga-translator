@@ -46,6 +46,8 @@ export interface SubscriptionFields {
   subscriptionId?: string;
   /** 訂閱的 item 的 Paddle price（預設是測試的年繳 price，vitest.config.ts）。 */
   priceId?: string;
+  /** 那個 price 的 unit_price（美分，Paddle 給的是字串）；沒給就不帶 unit_price。 */
+  unitPriceCents?: string;
 }
 
 /** Paddle 的 subscription.* 事件（只放 Worker 會讀的欄位）。custom_data 的 account_id 是 transaction 帶過來的。 */
@@ -60,7 +62,9 @@ export function subscriptionEvent({
   eventType = 'subscription.updated',
   subscriptionId = `sub_test_${accountId}`,
   priceId = 'pri_worker_test_yearly',
+  unitPriceCents,
 }: SubscriptionFields) {
+  const unitPrice = unitPriceCents === undefined ? {} : { unit_price: { amount: unitPriceCents, currency_code: 'USD' } };
   return {
     event_id: eventId,
     event_type: eventType,
@@ -74,7 +78,7 @@ export function subscriptionEvent({
       first_billed_at: startedAt,
       current_billing_period: { starts_at: startedAt, ends_at: endsAt },
       scheduled_change: cancelScheduled ? { action: 'cancel', effective_at: endsAt, resume_at: null } : null,
-      items: [{ status: 'active', quantity: 1, price: { id: priceId } }],
+      items: [{ status: 'active', quantity: 1, price: { id: priceId, ...unitPrice } }],
       custom_data: { account_id: accountId },
     },
   };

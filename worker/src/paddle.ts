@@ -3,7 +3,7 @@
  * env.test（browser test）的 __FAKE_PADDLE__ 換成假的實作，不碰真的 Paddle；Worker 測試用 env.dev，Paddle API 用 vi.spyOn(fetch) 假的。
  */
 import type { BillingPeriod } from '../../src/shared/hosted-api.ts';
-import type { CancelTiming } from './subscription.ts';
+import type { CancelTiming, PriceIds } from './subscription.ts';
 
 type Env = Cloudflare.Env;
 
@@ -26,8 +26,7 @@ export function paddle(env: Env): Paddle {
 }
 
 /** 每個 Billing Period 的 Paddle price（secret，換價格不用改程式）。 */
-const priceId = (env: Env, billingPeriod: BillingPeriod): string | undefined =>
-  billingPeriod === 'quarterly' ? env.PADDLE_PRICE_ID_QUARTERLY : env.PADDLE_PRICE_ID_YEARLY;
+export const priceIds = (env: Env): PriceIds => ({ quarterly: env.PADDLE_PRICE_ID_QUARTERLY, yearly: env.PADDLE_PRICE_ID_YEARLY });
 
 function paddleApi(env: Env): Paddle {
   async function call<T>(path: string, body: unknown): Promise<T> {
@@ -48,7 +47,7 @@ function paddleApi(env: Env): Paddle {
 
   return {
     async createTransaction(accountId, billingPeriod) {
-      const price = priceId(env, billingPeriod);
+      const price = priceIds(env)[billingPeriod];
       if (!price) throw new PaddleError(`沒有設定 ${billingPeriod} 的 Paddle price`);
       const { id } = await call<{ id?: string }>('/transactions', {
         items: [{ price_id: price, quantity: 1 }],

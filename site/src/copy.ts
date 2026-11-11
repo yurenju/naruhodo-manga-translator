@@ -1,7 +1,7 @@
 import type { Locale } from './locale.ts';
 import type { LegalDoc } from './links.ts';
 import { type BillingPeriod, FREE_PAGES, MONTHLY_PAGES, pageCount, PERIOD_MONTHS, PRICE_USD, REFUND_WINDOW_DAYS } from '../../src/shared/hosted-api.ts';
-import { monthlyPriceUsd, SUBSCRIPTION_OFFERS, subscriptionHeadline, usd, yearlySavingPercent } from '../../src/ui/pricing.ts';
+import { FREE_PAGES_EPISODES, monthlyPriceUsd, SUBSCRIPTION_OFFERS, subscriptionHeadline, usd, yearlySavingPercent } from '../../src/ui/pricing.ts';
 
 /**
  * 網站文案（#89 A 版定稿，價格區塊是 spec #254 的新方案）。`[TBD]` 會畫成明顯的 TBD 標記（Copy.astro），
@@ -94,23 +94,24 @@ const ZH_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map((offer) => ({
 
 const enUsd = (amount: number) => usd(amount).replace('US$', '$');
 const EN_HEADLINE = `${pageCount(MONTHLY_PAGES)} pages a month · full refund within ${REFUND_WINDOW_DAYS} days`;
-const EN_PLANS: readonly PlanCard[] = [
-  {
-    title: 'Subscription',
-    tag: 'Recommended',
-    featured: true,
-    name: `Yearly ${enUsd(PRICE_USD.yearly)}`,
-    detail: `About ${enUsd(monthlyPriceUsd('yearly'))} a month · save ${yearlySavingPercent()}%`,
-    items: [EN_HEADLINE, 'Billed once a year, renews automatically', 'Cancel anytime'],
-  },
-  {
-    title: 'Subscription',
-    featured: false,
-    name: `Quarterly ${enUsd(PRICE_USD.quarterly)}`,
-    detail: `Billed every ${PERIOD_MONTHS.quarterly} months`,
-    items: [EN_HEADLINE, 'Pay less up front to try it, renews automatically', 'Cancel anytime'],
-  },
-];
+// 英文版跟繁中一樣由 SUBSCRIPTION_OFFERS 決定順序與推薦，只換掉文字
+const EN_NAME: Record<BillingPeriod, string> = { quarterly: 'Quarterly', yearly: 'Yearly' };
+const EN_DETAIL: Record<BillingPeriod, string> = {
+  quarterly: `Billed every ${PERIOD_MONTHS.quarterly} months`,
+  yearly: `About ${enUsd(monthlyPriceUsd('yearly'))} a month · save ${yearlySavingPercent()}%`,
+};
+const EN_ITEMS: Record<BillingPeriod, readonly string[]> = {
+  yearly: [EN_HEADLINE, 'Billed once a year, renews automatically', 'Cancel anytime'],
+  quarterly: [EN_HEADLINE, 'Pay less up front to try it, renews automatically', 'Cancel anytime'],
+};
+const EN_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map(({ billingPeriod, recommended }) => ({
+  title: 'Subscription',
+  ...(recommended && { tag: 'Recommended' }),
+  featured: recommended,
+  name: `${EN_NAME[billingPeriod]} ${enUsd(PRICE_USD[billingPeriod])}`,
+  detail: EN_DETAIL[billingPeriod],
+  items: EN_ITEMS[billingPeriod],
+}));
 
 export const copy: Record<Locale, SiteCopy> = {
   'zh-tw': {
@@ -155,7 +156,7 @@ export const copy: Record<Locale, SiteCopy> = {
         title: '免費額度',
         tag: '不需信用卡',
         price: 'US$0',
-        grant: { lead: '註冊就送', pages: `${pageCount(FREE_PAGES)} 頁`, note: '，大約四話' },
+        grant: { lead: '註冊就送', pages: `${pageCount(FREE_PAGES)} 頁`, note: `，${FREE_PAGES_EPISODES}` },
         items: ['不會過期', '用 email 註冊就能翻譯'],
       },
       plans: ZH_PLANS,
