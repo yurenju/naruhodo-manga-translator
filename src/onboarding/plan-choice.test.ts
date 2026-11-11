@@ -5,8 +5,8 @@ describe('onboarding 第 3 步的方案選擇（設計稿 C 版：單選清單�
   it('由上到下：免費（預設）、年繳（推薦）、季繳', () => {
     expect(PLAN_CHOICES).toEqual([
       { choice: 'free', title: '先用免費額度 100 頁', detail: '', recommended: false, note: '大約四話，不會過期，不用輸入付款資料。' },
-      { choice: 'yearly', title: '年繳 US$48', detail: '・平均每月 US$4・省 20%', recommended: true, note: '每月 3,000 頁・14 天內可全額退款' },
-      { choice: 'quarterly', title: '季繳 US$15', detail: '・每 3 個月扣款', recommended: false, note: '每月 3,000 頁・14 天內可全額退款' },
+      { choice: 'yearly', title: '年繳・每年扣款 US$48', detail: '・平均每月 US$4・省 20%', recommended: true, note: '每月 3,000 頁・14 天內可全額退款' },
+      { choice: 'quarterly', title: '季繳・每 3 個月扣款 US$15', detail: '・平均每月 US$5', recommended: false, note: '每月 3,000 頁・14 天內可全額退款' },
     ]);
   });
 

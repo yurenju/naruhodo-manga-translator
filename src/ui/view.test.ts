@@ -311,8 +311,8 @@ describe('內建翻譯的免費額度用完', () => {
         title: '免費額度已用完',
         body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 3,000 頁。',
         offers: [
-          { billingPeriod: 'yearly', name: '年繳', price: 'US$48', detail: '平均每月 US$4・省 20%', recommended: true, subscribe: '訂閱年繳' },
-          { billingPeriod: 'quarterly', name: '季繳', price: 'US$15', detail: '每 3 個月扣款', recommended: false, subscribe: '訂閱季繳' },
+          { billingPeriod: 'yearly', name: '年繳', charge: '每年扣款 US$48', average: 'US$4', saving: '省 20%', detail: '平均每月 US$4・省 20%', price: 'US$48', brief: '平均每月 US$4・省 20%', recommended: true, subscribe: '訂閱年繳' },
+          { billingPeriod: 'quarterly', name: '季繳', charge: '每 3 個月扣款 US$15', average: 'US$5', saving: undefined, detail: '平均每月 US$5', price: 'US$15', brief: '每 3 個月扣款', recommended: false, subscribe: '訂閱季繳' },
         ],
       },
       footerButton: 'plans',
@@ -418,8 +418,8 @@ describe('帳號與訂閱頁（#213）', () => {
   const subscribeSection = {
     headline: '每月 3,000 頁・14 天內可全額退款',
     offers: [
-      { billingPeriod: 'yearly', name: '年繳', price: 'US$48', detail: '平均每月 US$4・省 20%', recommended: true, subscribe: '訂閱年繳' },
-      { billingPeriod: 'quarterly', name: '季繳', price: 'US$15', detail: '每 3 個月扣款', recommended: false, subscribe: '訂閱季繳' },
+      { billingPeriod: 'yearly', name: '年繳', charge: '每年扣款 US$48', average: 'US$4', saving: '省 20%', detail: '平均每月 US$4・省 20%', price: 'US$48', brief: '平均每月 US$4・省 20%', recommended: true, subscribe: '訂閱年繳' },
+      { billingPeriod: 'quarterly', name: '季繳', charge: '每 3 個月扣款 US$15', average: 'US$5', saving: undefined, detail: '平均每月 US$5', price: 'US$15', brief: '每 3 個月扣款', recommended: false, subscribe: '訂閱季繳' },
     ],
     note: '從訂閱那天起每月同一天重置，隨時可以取消。付款頁會在新分頁打開（由 Paddle 處理付款）。',
   };

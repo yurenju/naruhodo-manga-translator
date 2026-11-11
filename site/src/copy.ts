@@ -93,17 +93,14 @@ const ZH_ITEMS: Record<BillingPeriod, readonly string[]> = {
   yearly: [subscriptionHeadline(), '不受免費名額影響，隨時都能翻', '一年扣款一次，自動續訂', '隨時可以取消'],
   quarterly: [subscriptionHeadline(), '不受免費名額影響，隨時都能翻', '先付少一點試試，自動續訂', '隨時可以取消'],
 };
-const ZH_CHARGE: Record<BillingPeriod, string> = {
-  yearly: `每年扣款 ${usd(PRICE_USD.yearly)}`,
-  quarterly: `每 ${PERIOD_MONTHS.quarterly} 個月扣款 ${usd(PRICE_USD.quarterly)}`,
-};
 const ZH_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map((offer) => ({
   title: offer.name,
-  ...(offer.recommended && { tag: '推薦', saving: `省 ${yearlySavingPercent()}%` }),
+  ...(offer.recommended && { tag: '推薦' }),
+  ...(offer.saving && { saving: offer.saving }),
   featured: offer.recommended,
-  charge: ZH_CHARGE[offer.billingPeriod],
+  charge: offer.charge,
   averageLabel: '平均',
-  average: usd(monthlyPriceUsd(offer.billingPeriod)),
+  average: offer.average,
   per: '/ 月',
   items: ZH_ITEMS[offer.billingPeriod],
 }));
