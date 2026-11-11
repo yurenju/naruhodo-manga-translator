@@ -89,9 +89,17 @@ export interface AdjustmentFields {
   type?: string;
   eventType?: string;
   eventId?: string;
+  /** adjustment id（Worker 建立退款時記下的 id，核准、被拒的事件對得到它）。 */
+  adjustmentId?: string;
+  /** 退款的是哪一筆扣款。 */
+  transactionId?: string;
 }
 
-/** Paddle 的 adjustment.* 事件（只放 Worker 會讀的欄位）。預設是後台按「全額退款」、Paddle 核准之後送來的樣子。 */
+/**
+ * Paddle 的 adjustment.* 事件（只放 Worker 會讀的欄位）。預設是後台按「全額退款」、Paddle 核准之後送來的樣子。
+ * 用 API 建立的全額退款（退款 API）最上層 type 是 full、item 也是 full：建立時送 adjustment.created（pending_approval），
+ * 核准後送 adjustment.updated（approved），sandbox 約 8 分鐘（#261 sandbox 實測，2026-11-11）。
+ */
 export function adjustmentEvent({
   subscriptionId,
   status = 'approved',
@@ -100,6 +108,8 @@ export function adjustmentEvent({
   type = 'partial',
   eventType = 'adjustment.updated',
   eventId = `evt_test_${++events}_${crypto.randomUUID().slice(0, 8)}`,
+  adjustmentId = `adj_test_${events}`,
+  transactionId = `txn_test_${events}`,
 }: AdjustmentFields) {
   return {
     event_id: eventId,
@@ -107,11 +117,11 @@ export function adjustmentEvent({
     occurred_at: new Date().toISOString(),
     notification_id: `ntf_test_${events}`,
     data: {
-      id: `adj_test_${events}`,
+      id: adjustmentId,
       action,
       type,
       status,
-      transaction_id: `txn_test_${events}`,
+      transaction_id: transactionId,
       subscription_id: subscriptionId,
       items: itemTypes.map((itemType, i) => ({ type: itemType, item_id: `txnitm_test_${i}`, amount: '2000' })),
     },

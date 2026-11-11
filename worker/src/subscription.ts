@@ -169,33 +169,6 @@ export async function applyPaddleEvent(db: D1Database, event: unknown, now: numb
   ]);
 }
 
-/**
- * 全額退款核准後要立即取消的訂閱（REFUND.md：退款的訂閱會被取消）。Paddle 核准退款並不會取消訂閱（sandbox 實測：訂閱照樣
- * active、到期還會續約），所以 Worker 自己取消；取消後 Paddle 送來的 subscription.canceled 由 applyPaddleEvent 套用。
- * - 只看 adjustment.updated 裡已核准的 refund
- * - 全額才取消：最上層 type 是 full，或每個 item 都是 full（Paddle 後台的全額退款最上層是 partial，sandbox 實測）
- * - 只取消 D1 裡還沒 canceled 的訂閱：同一個 Paddle 帳號底下其他產品的退款不動
- * undefined＝不用取消，包括已經處理過的事件。處理完要 recordPaddleEvent。
- */
-export async function refundedSubscription(db: D1Database, event: unknown): Promise<{ eventId: string; subscriptionId: string } | undefined> {
-  const e = object(event);
-  const eventId = text(e.event_id);
-  const data = object(e.data);
-  const subscriptionId = text(data.subscription_id);
-  if (!eventId || !subscriptionId || text(e.event_type) !== 'adjustment.updated') return undefined;
-  if (text(data.action) !== 'refund' || text(data.status) !== 'approved') return undefined;
-  const items = Array.isArray(data.items) ? data.items.map((item) => text(object(item).type)) : [];
-  if (text(data.type) !== 'full' && (items.length === 0 || items.some((type) => type !== 'full'))) return undefined;
-  if (await db.prepare('SELECT 1 FROM paddle_events WHERE event_id = ?').bind(eventId).first()) return undefined;
-  const row = await db.prepare('SELECT status FROM subscriptions WHERE paddle_subscription_id = ?').bind(subscriptionId).first<{ status: string }>();
-  return row && row.status !== 'canceled' ? { eventId, subscriptionId } : undefined;
-}
-
-/** 記下處理過的 Paddle 事件，重送時就不再處理。 */
-export async function recordPaddleEvent(db: D1Database, eventId: string, now: number): Promise<void> {
-  await db.prepare('INSERT INTO paddle_events (event_id, received_at) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(eventId, now).run();
-}
-
 /** 事件屬於哪個 Account：custom_data 的 id 要是存在的 Account（刪除帳號後的事件就不套用）。 */
 async function owner(db: D1Database, fromCustomData: string | undefined, subscriptionId: string): Promise<string | undefined> {
   if (fromCustomData) {

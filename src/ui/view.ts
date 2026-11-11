@@ -3,6 +3,7 @@ import type { PageView } from '../shared/messages.ts';
 import type { SeriesOption } from '../shared/series.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { BadgeTone } from './components.tsx';
+import { CONTACT_EMAIL } from './links.ts';
 import { billingPeriodOffer, SUBSCRIPTION_OFFERS, subscriptionHeadline, usd, type BillingPeriodOffer } from './pricing.ts';
 
 /** Page 在 Spread 裡的哪一邊；undefined＝不是 Spread。 */
@@ -347,20 +348,31 @@ export interface AccountPageInput {
 
 /**
  * 方案卡片底部的退款區塊（#260，設計稿 B 版）：offer＝在 Refund Window 內可以申請（右邊是「申請退款」），
- * pending＝已經申請、等 Paddle 核准（同一個位置）。
+ * pending＝已經申請、等 Paddle 核准，rejected＝Paddle 沒有核准（#261；都在同一個位置，沒有按鈕）。
  */
-export type RefundBlock = { kind: 'offer'; title: string; detail: string } | { kind: 'pending'; title: string; body: string };
+export type RefundBlock =
+  | { kind: 'offer'; title: string; detail: string }
+  | { kind: 'pending'; title: string; body: string }
+  | { kind: 'rejected'; title: string; body: string };
 
 const DAY_MS = 24 * 60 * 60_000;
 
 /**
  * 訂閱者的退款區塊：能不能申請一律看 Worker 的 eligible（Refund Window、US$0、扣款失敗重試中、申請過都由 Worker 判斷），
- * 這裡只算「還剩幾天」：不到一天也算 1 天。處理中不看退款期，到 Paddle 有結果前都顯示。
+ * 這裡只算「還剩幾天」：不到一天也算 1 天。處理中不看退款期，到 Paddle 有結果前都顯示；被拒只在那次扣款的退款期內顯示。
  */
 function refundBlock(refund: RefundInfo | undefined, now: number): RefundBlock | undefined {
   if (!refund) return undefined;
   const charge = `${monthDay(refund.billedAt)}扣款的 ${usd(refund.amountUsd)}`;
   if (refund.status === 'pending') return { kind: 'pending', title: '退款處理中', body: `已向 Paddle 申請退回 ${charge}。核准前照常可以翻譯；核准後訂閱就會結束。` };
+  if (refund.status === 'rejected') {
+    if (!refund.inWindow) return undefined;
+    return {
+      kind: 'rejected',
+      title: '退款申請沒有通過',
+      body: `Paddle 沒有核准 ${monthDay(refund.billedAt)}這筆 ${usd(refund.amountUsd)} 的退款，訂閱照常繼續。請寫信到 ${CONTACT_EMAIL}，我們會協助處理。`,
+    };
+  }
   if (!refund.eligible) return undefined;
   const days = Math.max(1, Math.ceil((refund.windowEndsAt - now) / DAY_MS));
   return {
@@ -432,6 +444,8 @@ export interface AccountPageView {
   signedOut: string | undefined;
 }
 
+const REFUNDED = '訂閱已經結束，訂閱前剩下的免費額度可以繼續用。退款會回到原本的付款方式，入帳時間依發卡銀行而定。';
+
 const UNTRANSLATED_PAGES_KEEP_ORIGINAL = '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音';
 
 /** 帳號頁沒登入時「登入」上面的說明：正在用自備金鑰的話說不需要登入。 */
@@ -481,12 +495,15 @@ export function accountPageView({ mode, signedIn, quota, payment, justPaid, just
   const signedInNotice: AccountPageView['notice'] =
     justSignedIn && hasOrigin && !usedUp ? { tone: 'info', title: '✓ 已登入', body: '回到漫畫後會接著翻譯。', backToManga: true } : undefined;
   if (quota.plan === 'free') {
-    // 付款中只說付款的事：免費額度用完的說明等付款有了結果再說
+    // 付款中只說付款的事：免費額度用完的說明等付款有了結果再說。
+    // 退款核准、訂閱結束（#261）：在那次扣款的退款期內說明已退款，之後就是一般的免費方案
     const notice: AccountPageView['notice'] = payment
       ? undefined
       : usesAccount && usedUp
         ? { tone: 'warn', title: '免費額度已用完', body: `${UNTRANSLATED_PAGES_KEEP_ORIGINAL}。`, backToManga: false }
-        : signedInNotice;
+        : refund?.status === 'refunded' && refund.inWindow
+          ? { tone: 'info', title: `✓ 已退款 ${usd(refund.amountUsd)}`, body: REFUNDED, backToManga: false }
+          : signedInNotice;
     return {
       ...empty,
       notice,
