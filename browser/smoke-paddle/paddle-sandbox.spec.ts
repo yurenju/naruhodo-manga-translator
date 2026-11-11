@@ -160,7 +160,7 @@ test('Paddle sandbox：side panel 訂閱 → checkout overlay 用測試卡付款
         },
         { timeout: 90_000, intervals: [3000] },
       )
-      .toMatch(/^本月剩 800 頁・\d+ 月 \d+ 日重置$/);
+      .toMatch(/^本月剩 3,000 頁・\d+ 月 \d+ 日重置$/);
     console.log('side panel：', await remaining.innerText());
 
     // 刪除帳號（#95）：在帳號與訂閱頁（#213）；Worker 先對 Paddle 取消訂閱，再刪資料；帳號頁回到未登入

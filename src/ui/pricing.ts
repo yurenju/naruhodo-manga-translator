@@ -2,7 +2,7 @@
  * Subscription 的價格文案（spec #254 的共用文字）：帳號頁、onboarding、side panel 都照這幾句，一字不差。
  * 數字全從 hosted-api.ts 的常數算出來，改價只改常數。
  */
-import { MONTHLY_PAGES, PERIOD_MONTHS, PRICE_USD, REFUND_WINDOW_DAYS, type BillingPeriod } from '../shared/hosted-api.ts';
+import { MONTHLY_PAGES, pageCount, PERIOD_MONTHS, PRICE_USD, REFUND_WINDOW_DAYS, type BillingPeriod } from '../shared/hosted-api.ts';
 
 /** 一種 Billing Period 的價格：畫面上是「<strong>{name} {price}</strong>・{detail}」。 */
 export interface BillingPeriodOffer {
@@ -40,8 +40,5 @@ export function billingPeriodOffer(billingPeriod: BillingPeriod): BillingPeriodO
 /** 並排的順序：年繳（推薦）在前。 */
 export const SUBSCRIPTION_OFFERS: readonly BillingPeriodOffer[] = [billingPeriodOffer('yearly'), billingPeriodOffer('quarterly')];
 
-/** 頁數加千分位（3,000）。 */
-export const pages = (n: number) => n.toLocaleString('en-US');
-
 /** 兩種 Billing Period 共通的一行。 */
-export const subscriptionHeadline = () => `每月 ${pages(MONTHLY_PAGES)} 頁・${REFUND_WINDOW_DAYS} 天內可全額退款`;
+export const subscriptionHeadline = () => `每月 ${pageCount(MONTHLY_PAGES)} 頁・${REFUND_WINDOW_DAYS} 天內可全額退款`;

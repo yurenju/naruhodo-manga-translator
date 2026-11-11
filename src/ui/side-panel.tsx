@@ -5,7 +5,7 @@
  */
 import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useState } from 'preact/hooks';
-import { MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES, pageCount, type Quota } from '../shared/hosted-api.ts';
 import type { LineRef, ModelStatus, PageView } from '../shared/messages.ts';
 import { megabytes } from '../shared/model-download.ts';
 import type { PageMode } from '../shared/page-mode.ts';
@@ -180,7 +180,7 @@ function SetupNoticeCallout({
   if (notice === 'hostedHint')
     return (
       <Callout class="naru-callout--stack" role="group" aria-label="內建翻譯提示">
-        <p>現在也可以改用內建翻譯：用 email 登入就能翻，不用自備 API key。新帳號有 50 頁免費額度。</p>
+        <p>現在也可以改用內建翻譯：用 email 登入就能翻，不用自備 API key。新帳號有 {FREE_PAGES} 頁免費額度。</p>
         <div class="naru-row">
           {/* 按任何一個都算關掉，不再出現 */}
           <Button
@@ -453,7 +453,7 @@ export function SidePanel(props: SidePanelProps) {
   // 付款確認後讀者被帶回來時，side panel 不一定已經啟動，兩種畫面都顯示
   const subscribedNotice = props.subscribedNotice && (
     <Callout tone="info" class="naru-callout--stack" role="group" aria-label="已訂閱">
-      <p>✓ 已訂閱一年，每月可翻 {MONTHLY_PAGES} 頁。</p>
+      <p>✓ 已訂閱一年，每月可翻 {pageCount(MONTHLY_PAGES)} 頁。</p>
       <div class="naru-row">
         <Button variant="ghost" onClick={() => props.onDismissSubscribedNotice?.()}>
           知道了

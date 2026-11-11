@@ -38,7 +38,7 @@
     { "name": "SERIES_GUESS_BY_ACCOUNT", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } }
   ],
   "vars": {
-    "MONTHLY_PAGE_LIMIT": "800",
+    "MONTHLY_PAGE_LIMIT": "3000",
     "DAILY_FREE_PAGES_CAP": "2000",
     "SITE_ORIGIN": "https://naruhodo.page",
     "PADDLE_API_BASE_URL": "https://api.paddle.com",
@@ -51,7 +51,7 @@
       "vars": {
         "FAKE_MAIL": "true",
         "DEV_ENDPOINTS": "true",
-        "MONTHLY_PAGE_LIMIT": "800",
+        "MONTHLY_PAGE_LIMIT": "3000",
         "DAILY_FREE_PAGES_CAP": "2000",
         "SITE_ORIGIN": "http://localhost:4321",
         "PADDLE_API_BASE_URL": "https://sandbox-api.paddle.com"
@@ -71,7 +71,7 @@
       "vars": {
         "FAKE_MAIL": "true",
         "DEV_ENDPOINTS": "true",
-        "MONTHLY_PAGE_LIMIT": "800",
+        "MONTHLY_PAGE_LIMIT": "3000",
         "DAILY_FREE_PAGES_CAP": "2000",
         "SITE_ORIGIN": "http://localhost:4321",
         "PADDLE_WEBHOOK_SECRET": "pdl_ntfset_browser_test"

@@ -90,8 +90,8 @@ export interface VerifyCodeResponse {
   token: string;
 }
 
-/** 新 Account 一次性的免費頁數（Worker 發額度、設定頁顯示「剩 N / 50 頁」）。 */
-export const FREE_PAGES = 50;
+/** 新 Account 一次性的免費頁數（Worker 發額度、帳號頁顯示「剩 N / 100 頁」）。 */
+export const FREE_PAGES = 100;
 
 /**
  * 每個 Billing Period 的標價（美元、含稅，ADR 0012）與扣款間隔，給外掛與網站的文案用。真正扣多少是 Paddle 上的 price
@@ -102,12 +102,14 @@ export const PRICE_USD: Readonly<Record<BillingPeriod, number>> = { quarterly: 1
 export const PERIOD_MONTHS: Readonly<Record<BillingPeriod, number>> = { quarterly: 3, yearly: 12 };
 /** Refund Window：每次扣款後幾天內可以全額退款。 */
 export const REFUND_WINDOW_DAYS = 14;
-export const MONTHLY_PAGES = 800;
+export const MONTHLY_PAGES = 3000;
 /**
- * 剩這麼多頁以下算快用完（大約一話）：圖示的綠點換成橘點、右鍵選單帶上剩餘頁數（#237），
- * side panel 底部那一行與帳號頁的進度條改用警告色。免費額度與本月額度同一個門檻。
+ * 剩這麼多頁以下算快用完：圖示的綠點換成橘點、右鍵選單帶上剩餘頁數（#237），
+ * side panel 底部那一行與帳號頁的進度條改用警告色。Free Pages 是 25 頁（大約一話），
+ * Monthly Page Limit 是 300 頁（上限的 10%，留幾天準備）。
  */
-export const LOW_QUOTA = 25;
+export const LOW_FREE_PAGES = 25;
+export const LOW_MONTHLY_PAGES = 300;
 
 /**
  * 剩餘額度（spec #86「額度規則」）。外掛只顯示這裡的數字，不自己算。
@@ -131,6 +133,12 @@ export type Quota =
       /** 這一年的結束：下次續訂日，排定取消時是訂閱結束日。 */
       periodEndsAt: number;
     };
+
+/** 快用完：Free Pages 剩 LOW_FREE_PAGES 頁以下、本月額度剩 LOW_MONTHLY_PAGES 頁以下（用完也算）。 */
+export const lowQuota = (quota: Quota): boolean => quota.remaining <= (quota.plan === 'free' ? LOW_FREE_PAGES : LOW_MONTHLY_PAGES);
+
+/** 文案裡的頁數加上千分位：「3,000 頁」。 */
+export const pageCount = (pages: number): string => pages.toLocaleString('en-US');
 
 export interface AccountResponse {
   email: string;

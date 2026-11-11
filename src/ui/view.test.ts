@@ -290,7 +290,7 @@ describe('內建翻譯的額度（底部那一行）', () => {
     expect(quotaView(signedIn, free(37)).line).toEqual({ text: '免費額度剩 37 頁', warn: false, subscribeLink: true });
   });
 
-  it('剩 25 頁以下改用警告色（跟圖示的橘點同一個門檻，#237）', () => {
+  it('Free Pages 剩 25 頁以下改用警告色（跟圖示的橘點同一個門檻，#237）', () => {
     expect(quotaView(signedIn, free(26)).line).toMatchObject({ warn: false });
     expect(quotaView(signedIn, free(25)).line).toMatchObject({ text: '免費額度剩 25 頁', warn: true });
     expect(quotaView(signedIn, free(1)).line).toMatchObject({ warn: true });
@@ -309,7 +309,7 @@ describe('內建翻譯的免費額度用完', () => {
       line: { text: '免費額度已用完', warn: true, subscribeLink: false },
       exhausted: {
         title: '免費額度已用完',
-        body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 800 頁。',
+        body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 3,000 頁。',
         subscribe: true,
       },
       footerButton: 'subscribe',
@@ -332,7 +332,7 @@ const oct15NextYear = new Date(2027, 9, 15, 11, 0).getTime();
 const subscribed = (fields: Partial<Extract<Quota, { plan: 'subscribed' }>> = {}): Quota => ({
   plan: 'subscribed',
   remaining: 612,
-  limit: 800,
+  limit: 3000,
   resetsAt: nov15,
   status: 'active',
   cancelScheduled: false,
@@ -347,6 +347,11 @@ describe('訂閱者的本月額度（#94 畫面定案）', () => {
       exhausted: undefined,
       footerButton: 'translate',
     });
+  });
+
+  it('本月額度剩 300 頁以下改用警告色（跟圖示的橘點同一個門檻）', () => {
+    expect(quotaView(signedIn, subscribed({ remaining: 301 })).line).toMatchObject({ warn: false });
+    expect(quotaView(signedIn, subscribed({ remaining: 300 })).line).toMatchObject({ text: '本月剩 300 頁・11 月 15 日重置', warn: true });
   });
 
   it('扣款失敗、排定取消：side panel 照常，不顯示任何提示', () => {
@@ -368,14 +373,14 @@ describe('訂閱者的本月額度（#94 畫面定案）', () => {
 });
 
 describe('設定頁的方案（#94 畫面定案）', () => {
-  it('免費：「免費」Badge、免費額度剩 N / 50 頁、可以訂閱', () => {
-    expect(accountPlanView(free(37))).toEqual({ badge: { text: '免費', tone: 'neutral' }, lines: ['免費額度剩 37 / 50 頁'], subscribed: false });
+  it('免費：「免費」Badge、免費額度剩 N / 100 頁、可以訂閱', () => {
+    expect(accountPlanView(free(37))).toEqual({ badge: { text: '免費', tone: 'neutral' }, lines: ['免費額度剩 37 / 100 頁'], subscribed: false });
   });
 
   it('訂閱中：ok「訂閱中」、本月剩餘與重置日、下次續訂日', () => {
     expect(accountPlanView(subscribed())).toEqual({
       badge: { text: '訂閱中', tone: 'ok' },
-      lines: ['本月剩 612 / 800 頁，11 月 15 日重置', '下次續訂：2027 年 10 月 15 日'],
+      lines: ['本月剩 612 / 3,000 頁，11 月 15 日重置', '下次續訂：2027 年 10 月 15 日'],
       subscribed: true,
     });
   });
@@ -383,14 +388,14 @@ describe('設定頁的方案（#94 畫面定案）', () => {
   it('排定取消：warn「訂閱中・不會續訂」、訂閱結束日', () => {
     expect(accountPlanView(subscribed({ cancelScheduled: true }))).toMatchObject({
       badge: { text: '訂閱中・不會續訂', tone: 'warn' },
-      lines: ['本月剩 612 / 800 頁，11 月 15 日重置', '訂閱在 2027 年 10 月 15 日結束'],
+      lines: ['本月剩 612 / 3,000 頁，11 月 15 日重置', '訂閱在 2027 年 10 月 15 日結束'],
     });
   });
 
   it('past_due：warn「扣款失敗，重試中」、請到管理訂閱更新付款方式', () => {
     expect(accountPlanView(subscribed({ status: 'pastDue' }))).toMatchObject({
       badge: { text: '扣款失敗，重試中', tone: 'warn' },
-      lines: ['本月剩 612 / 800 頁，11 月 15 日重置', 'Paddle 會再嘗試扣款，這段期間照常可以使用；請到「管理訂閱」更新付款方式'],
+      lines: ['本月剩 612 / 3,000 頁，11 月 15 日重置', 'Paddle 會再嘗試扣款，這段期間照常可以使用；請到「管理訂閱」更新付款方式'],
     });
   });
 });
@@ -399,7 +404,7 @@ describe('帳號與訂閱頁（#213）', () => {
   const hosted = { mode: 'hosted', signedIn: true, justPaid: undefined, payment: undefined, justSignedIn: false, hasOrigin: true } as const;
   /** 帳號頁的「訂閱」區塊（設計稿 A 版：年繳在左、季繳在右）。 */
   const subscribeSection = {
-    headline: '每月 800 頁・14 天內可全額退款',
+    headline: '每月 3,000 頁・14 天內可全額退款',
     offers: [
       { billingPeriod: 'yearly', name: '年繳', price: 'US$48', detail: '平均每月 US$4・省 20%', recommended: true, subscribe: '訂閱年繳' },
       { billingPeriod: 'quarterly', name: '季繳', price: 'US$15', detail: '每 3 個月扣款', recommended: false, subscribe: '訂閱季繳' },
@@ -410,7 +415,7 @@ describe('帳號與訂閱頁（#213）', () => {
   it('免費額度用完：warn 說明不提訂閱、進度條是空的、有訂閱段', () => {
     expect(accountPageView({ ...hosted, quota: free(0) })).toEqual({
       notice: { tone: 'warn', title: '免費額度已用完', body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。', backToManga: false },
-      plan: { name: '免費', note: '新帳號一次 50 頁，不會過期', quotaLabel: '免費額度', left: '已用完', fraction: 0, warn: true },
+      plan: { name: '免費', note: '新帳號一次 100 頁，不會過期', quotaLabel: '免費額度', left: '已用完', fraction: 0, warn: true },
       payment: undefined,
       subscribe: subscribeSection,
       ownKeyNote: false,
@@ -418,24 +423,29 @@ describe('帳號與訂閱頁（#213）', () => {
     });
   });
 
-  it('免費還有剩：沒有說明，剩 N / 50 頁，進度條畫剩下的比例；剩 25 頁以下變警告色', () => {
+  it('免費還有剩：沒有說明，剩 N / 100 頁，進度條畫剩下的比例；剩 25 頁以下變警告色', () => {
     expect(accountPageView({ ...hosted, quota: free(30) })).toMatchObject({
       notice: undefined,
-      plan: { left: '剩 30 / 50 頁', fraction: 0.6, warn: false },
+      plan: { left: '剩 30 / 100 頁', fraction: 0.3, warn: false },
       subscribe: subscribeSection,
     });
-    expect(accountPageView({ ...hosted, quota: free(25) }).plan).toMatchObject({ left: '剩 25 / 50 頁', warn: true });
+    expect(accountPageView({ ...hosted, quota: free(25) }).plan).toMatchObject({ left: '剩 25 / 100 頁', warn: true });
   });
 
   it('訂閱中：方案名「訂閱（年繳）」、本月剩 N / 上限，沒有訂閱段', () => {
     expect(accountPageView({ ...hosted, quota: subscribed() })).toEqual({
       notice: undefined,
-      plan: { name: '訂閱（年繳）', note: undefined, quotaLabel: '本月額度', left: '剩 612 / 800 頁', fraction: 0.765, warn: false },
+      plan: { name: '訂閱（年繳）', note: undefined, quotaLabel: '本月額度', left: '剩 612 / 3,000 頁', fraction: 0.204, warn: false },
       payment: undefined,
       subscribe: undefined,
       ownKeyNote: false,
       signedOut: undefined,
     });
+  });
+
+  it('訂閱者本月剩 300 頁以下：進度條變警告色', () => {
+    expect(accountPageView({ ...hosted, quota: subscribed({ remaining: 301 }) }).plan).toMatchObject({ left: '剩 301 / 3,000 頁', warn: false });
+    expect(accountPageView({ ...hosted, quota: subscribed({ remaining: 300 }) }).plan).toMatchObject({ left: '剩 300 / 3,000 頁', warn: true });
   });
 
   it('訂閱者本月用完：warn 說明帶重置日；從漫畫來的才有「回到漫畫」', () => {
@@ -451,23 +461,23 @@ describe('帳號與訂閱頁（#213）', () => {
   });
 
   it('在這頁付完年繳：info「✓ 訂閱完成」帶扣款週期；從漫畫來的才有「回到漫畫」與接著翻的說明', () => {
-    expect(accountPageView({ ...hosted, justPaid: 'yearly', quota: subscribed({ remaining: 800 }) }).notice).toEqual({
+    expect(accountPageView({ ...hosted, justPaid: 'yearly', quota: subscribed({ remaining: 3000 }) }).notice).toEqual({
       tone: 'info',
       title: '✓ 訂閱完成',
-      body: '年繳，每月可翻 800 頁。回到漫畫後會自動接著翻還沒翻的頁。',
+      body: '年繳，每月可翻 3,000 頁。回到漫畫後會自動接著翻還沒翻的頁。',
       backToManga: true,
     });
-    expect(accountPageView({ ...hosted, justPaid: 'yearly', hasOrigin: false, quota: subscribed({ remaining: 800 }) }).notice).toEqual({
+    expect(accountPageView({ ...hosted, justPaid: 'yearly', hasOrigin: false, quota: subscribed({ remaining: 3000 }) }).notice).toEqual({
       tone: 'info',
       title: '✓ 訂閱完成',
-      body: '年繳，每月可翻 800 頁。',
+      body: '年繳，每月可翻 3,000 頁。',
       backToManga: false,
     });
   });
 
   it('在這頁付完季繳：「季繳，每月可翻 N 頁」', () => {
-    expect(accountPageView({ ...hosted, justPaid: 'quarterly', quota: subscribed({ remaining: 800 }) }).notice?.body).toBe(
-      '季繳，每月可翻 800 頁。回到漫畫後會自動接著翻還沒翻的頁。',
+    expect(accountPageView({ ...hosted, justPaid: 'quarterly', quota: subscribed({ remaining: 3000 }) }).notice?.body).toBe(
+      '季繳，每月可翻 3,000 頁。回到漫畫後會自動接著翻還沒翻的頁。',
     );
   });
 
@@ -514,10 +524,10 @@ describe('帳號與訂閱頁（#213）', () => {
       payment: undefined,
       subscribe: undefined,
       ownKeyNote: false,
-      signedOut: '尚未登入。登入後就能用內建翻譯，新帳號有 50 頁免費額度。',
+      signedOut: '尚未登入。登入後就能用內建翻譯，新帳號有 100 頁免費額度。',
     });
     expect(accountPageView({ ...hosted, mode: 'ownKey', signedIn: false, quota: undefined }).signedOut).toBe(
-      '目前用自備金鑰翻譯，不需要登入。想改用內建翻譯的話可以登入，新帳號有 50 頁免費額度。',
+      '目前用自備金鑰翻譯，不需要登入。想改用內建翻譯的話可以登入，新帳號有 100 頁免費額度。',
     );
   });
 

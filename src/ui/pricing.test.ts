@@ -29,6 +29,6 @@ describe('Subscription 的價格文案（spec #254 的共用文字，一字不�
   });
 
   it('兩種共通的一行：每月頁數與退款期', () => {
-    expect(subscriptionHeadline()).toBe('每月 800 頁・14 天內可全額退款');
+    expect(subscriptionHeadline()).toBe('每月 3,000 頁・14 天內可全額退款');
   });
 });

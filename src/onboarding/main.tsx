@@ -11,7 +11,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { indexedDbApiKeyStore } from '../shared/api-key-store.ts';
 import { grantDataConsent, hasDataConsent } from '../shared/data-consent.ts';
-import { FREE_PAGES, MONTHLY_PAGES } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES, pageCount } from '../shared/hosted-api.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { HOSTED_API_URL, loadHostedSession, saveHostedSession, type HostedSession } from '../shared/hosted-session.ts';
 import type { Message, ModelStatus, ModelStatusResponse } from '../shared/messages.ts';
@@ -24,7 +24,7 @@ import { Badge, Button, Callout } from '../ui/components.tsx';
 import { OwnKeyDataFlow, PolicyLinks } from '../ui/data-flow.tsx';
 import { PRACTICE_URL } from '../ui/links.ts';
 import { SignIn } from '../ui/sign-in.tsx';
-import { billingPeriodOffer, pages } from '../ui/pricing.ts';
+import { billingPeriodOffer } from '../ui/pricing.ts';
 import { OfferText, SubscribeButton, SubscriptionPrice } from '../ui/subscribe-button.tsx';
 
 const hostedAccount = createHostedAccountClient({ apiUrl: HOSTED_API_URL, fetch: (url, init) => fetch(url, init) });
@@ -64,10 +64,10 @@ function Intro({ downloadBytes, onNext }: { downloadBytes: number | undefined; o
       <div class="ob-price">
         <ul>
           <li>
-            用 email 註冊之後，有 <strong>{FREE_PAGES} 頁的免費額度</strong>（大約兩話），不用輸入付款資料。
+            用 email 註冊之後，有 <strong>{FREE_PAGES} 頁的免費額度</strong>（大約四話，不會過期），不用輸入付款資料。
           </li>
           <li>
-            試用滿意的話，可以訂閱：<OfferText offer={billingPeriodOffer('yearly')} />，或 <OfferText offer={billingPeriodOffer('quarterly')} />，每月可翻 {pages(MONTHLY_PAGES)} 頁。
+            試用滿意的話，可以訂閱：<OfferText offer={billingPeriodOffer('yearly')} />，或 <OfferText offer={billingPeriodOffer('quarterly')} />，每月可翻 {pageCount(MONTHLY_PAGES)} 頁。
           </li>
           <li>回頭看已經翻過的頁面不會扣頁數；翻譯失敗也不扣。</li>
         </ul>
@@ -242,7 +242,7 @@ function Plan({
           <p>
             {state.limit === undefined
               ? '✓ 已訂閱。'
-              : `✓ 已訂閱：每月可翻 ${state.limit} 頁，${state.justPaid ? '每個月的今天重置' : '從訂閱那天起每月同一天重置'}。`}
+              : `✓ 已訂閱：每月可翻 ${pageCount(state.limit)} 頁，${state.justPaid ? '每個月的今天重置' : '從訂閱那天起每月同一天重置'}。`}
           </p>
         </Callout>
         <Button variant="primary" class="ob-big" onClick={onNext}>
@@ -260,7 +260,7 @@ function Plan({
         <section class="ob-plan" aria-label="先用免費額度">
           <p class="ob-plan__name">先用免費額度</p>
           <p class="ob-plan__price">{FREE_PAGES} 頁</p>
-          <p class="hint">大約兩話，不會過期。用完再決定要不要訂閱。</p>
+          <p class="hint">大約四話，不會過期。用完再決定要不要訂閱。</p>
           <Button onClick={free}>先用免費的 {FREE_PAGES} 頁</Button>
         </section>
         <section class="ob-plan ob-plan--hl" aria-label="訂閱（年繳）">

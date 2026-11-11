@@ -1,5 +1,5 @@
 /**
- * Free Pages（spec #86「額度規則」、#92）：新 Account 有一次性的 50 頁，翻譯成功才扣一頁，用完就拒絕。
+ * Free Pages（spec #86「額度規則」、#92）：新 Account 有一次性的 100 頁，翻譯成功才扣一頁，用完就拒絕。
  * 從 HTTP 觀察剩餘頁數（GET /v1/account）；Anthropic 用 vi.spyOn(fetch) 假的。
  * 用量紀錄沒有任何 API 看得到，只有它直接查 D1（跟「秘密只存 hash」一樣，是 docs/agents/testing.md 的例外）。
  */
@@ -38,10 +38,10 @@ afterEach(() => {
 const quota = async (token: string) => ((await (await get(ACCOUNT_PATH, token)).json()) as AccountResponse).quota;
 
 describe('Free Pages', () => {
-  it('新 Account 有 50 頁免費額度', async () => {
+  it('新 Account 有 100 頁免費額度', async () => {
     const token = await signIn();
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
   it('翻譯成功扣一頁', async () => {
@@ -50,7 +50,7 @@ describe('Free Pages', () => {
 
     expect((await translate(token)).status).toBe(200);
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
   });
 
   it('Anthropic 失敗不扣', async () => {
@@ -59,7 +59,7 @@ describe('Free Pages', () => {
 
     expect((await translate(token)).status).toBe(502);
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
   it('剩 0 頁時拒絕：402 freePagesExhausted，不呼叫 Anthropic', async () => {
@@ -111,7 +111,7 @@ describe('長 Page 的接續翻譯（spec #142「計費」）', () => {
     const next = await translateAs(token, first.usageRecordId);
 
     expect(next).toEqual({ status: 200, usageRecordId: first.usageRecordId });
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
     expect(await usageRecords(email)).toEqual([
       { id: first.usageRecordId, kind: 'translate', page_record_id: null },
       { id: expect.any(Number), kind: 'translate', page_record_id: first.usageRecordId },
@@ -122,14 +122,14 @@ describe('長 Page 的接續翻譯（spec #142「計費」）', () => {
     const token = await signIn();
     const first = await translateAs(token);
     for (let i = 0; i < 10; i++) expect((await translateAs(token, first.usageRecordId)).usageRecordId).toBe(first.usageRecordId);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
 
     const eleventh = await translateAs(token, first.usageRecordId);
 
     expect(eleventh.usageRecordId).not.toBe(first.usageRecordId);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 48 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 98 });
     expect((await translateAs(token, eleventh.usageRecordId)).usageRecordId).toBe(eleventh.usageRecordId);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 48 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 98 });
   });
 
   it('第一次翻譯超過 1 小時：當成新的一頁扣', async () => {
@@ -139,14 +139,14 @@ describe('長 Page 的接續翻譯（spec #142「計費」）', () => {
     const first = await translateAs(token);
     vi.setSystemTime(new Date('2026-11-01T00:59:59Z'));
     await translateAs(token, first.usageRecordId);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 49 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
 
     vi.setSystemTime(new Date('2026-11-01T01:00:01Z'));
     const late = await translateAs(token, first.usageRecordId);
     vi.useRealTimers();
 
     expect(late.usageRecordId).not.toBe(first.usageRecordId);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 48 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 98 });
   });
 
   it('紀錄不是自己的第一次翻譯（別人的、接續的、Notes 的、不存在的）：當成新的一頁扣', async () => {
@@ -163,7 +163,7 @@ describe('長 Page 的接續翻譯（spec #142「計費」）', () => {
 
     for (const id of [others.usageRecordId!, continued!.id, notes!.id, 999_999]) await translateAs(token, id);
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 45 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 95 });
   });
 
   it('額度用完時，條件內的接續請求照樣翻譯（這頁已經扣過）', async () => {
@@ -185,7 +185,7 @@ describe('用量紀錄', () => {
 
     expect((await post(NOTES_PATH, notesInput, { token })).status).toBe(200);
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
   it('翻譯與 Notes 各寫一筆：只有時間、種類、四種 tokens、依價目表算的成本與模型，沒有原文、譯文、Series 名稱或網址', async () => {
