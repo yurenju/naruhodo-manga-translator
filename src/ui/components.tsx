@@ -163,14 +163,6 @@ export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; childr
   );
 }
 
-/** 網站的雙價並列（site/src/components/PricePair.astro）的一半：小標、大字（價格＋「／年」這種單位）、大字下面的小字。 */
-export interface PriceSide {
-  label: string;
-  price: string;
-  unit: string;
-  note: string;
-}
-
 /** 提示框。info：一般說明；warn：需要注意（過期、沒有 key）；danger：錯誤。role 等屬性原樣傳下去。 */
 export type CalloutTone = 'info' | 'warn' | 'danger';
 
