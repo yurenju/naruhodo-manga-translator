@@ -9,14 +9,17 @@ import type { PageView } from '../../../src/shared/messages.ts';
 import type { PageText } from '../../../src/shared/page-text.ts';
 import { FREE_PAGES } from '../../../src/shared/hosted-api.ts';
 
-/** 展示從新帳號的 Free Pages 開始；翻完展示的這頁少一頁。 */
+/** 展示從新帳號的 Free Pages 開始；翻完一個 Page 少一頁（跨頁是兩頁）。 */
 export { FREE_PAGES };
 
 /** closed＝沒啟動、side panel 關著；stopped＝按了 side panel 的「停止」，side panel 還開著。 */
 export type DemoPhase = 'closed' | 'stopped' | 'recognizing' | 'translating' | 'done';
 
-/** 展示這頁的 Page 身分：side panel 與覆蓋層的 hover 同步靠它對上同一頁。 */
-export const DEMO_PAGE_HASH = 'demo';
+/** 展示的一個 Page：pageHash 是 side panel 與覆蓋層 hover 同步用的身分。 */
+export interface DemoViewPage {
+  pageHash: string;
+  text: PageText;
+}
 
 /** 每一步停多久才進下一步；加起來 1～2 秒，讓讀者看得到「翻譯中」又不用等太久。 */
 const STEPS: Partial<Record<DemoPhase, { phase: DemoPhase; afterMs: number }>> = {
@@ -62,17 +65,19 @@ function transcript(phase: DemoPhase, text: PageText): PageView['transcript'] {
   };
 }
 
-export function demoView(phase: DemoPhase, text: PageText): DemoView {
+export function demoView(phase: DemoPhase, demoPages: readonly DemoViewPage[]): DemoView {
   if (phase === 'closed') return { panelOpen: false, running: false, pages: [], remaining: FREE_PAGES, overlay: false };
   // 停止時外掛清掉這個 tab 的 Page 與覆蓋層；展示裡的額度在下一次啟動時重新從滿的開始
   if (phase === 'stopped') return { panelOpen: true, running: false, pages: [], remaining: FREE_PAGES, overlay: false };
-  const page: PageView = {
-    anchorId: 'demo',
-    rect: { x: 0, y: 0, width: 0, height: 0 },
-    thumbnail: '',
-    pageHash: DEMO_PAGE_HASH,
-    transcript: transcript(phase, text),
-  };
+  const pages = demoPages.map(
+    ({ pageHash, text }): PageView => ({
+      anchorId: 'demo',
+      rect: { x: 0, y: 0, width: 0, height: 0 },
+      thumbnail: '',
+      pageHash,
+      transcript: transcript(phase, text),
+    }),
+  );
   const done = phase === 'done';
-  return { panelOpen: true, running: true, pages: [page], remaining: done ? FREE_PAGES - 1 : FREE_PAGES, overlay: done };
+  return { panelOpen: true, running: true, pages, remaining: done ? FREE_PAGES - pages.length : FREE_PAGES, overlay: done };
 }

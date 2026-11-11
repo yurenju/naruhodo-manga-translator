@@ -93,13 +93,13 @@ test.describe('全新安裝', () => {
     const onboarding = await onboardingPage(context);
     await onboarding.getByRole('button', { name: '開始設定' }).click();
     await signInWithEmail(onboarding, freshEmail(testInfo.workerIndex));
-    await onboarding.getByRole('radio', { name: /季繳 US\$15/ }).check();
+    await onboarding.getByRole('radio', { name: /季繳・每 3 個月扣款 US\$15/ }).check();
 
     const checkout = await openCheckout(onboarding, context, '訂閱季繳，前往付款');
 
     await expect.poll(() => checkout.url()).toMatch(/^http:\/\/localhost:4321\/zh-tw\/checkout\?_ptxn=txn_fake_quarterly_/);
     await expect(onboarding.getByRole('heading', { name: '在付款分頁完成付款' })).toBeVisible();
-    await expect(onboarding.getByText('你選的是 季繳 US$15・每 3 個月扣款。', { exact: false })).toBeVisible();
+    await expect(onboarding.getByText('你選的是 季繳・每 3 個月扣款 US$15・平均每月 US$5。', { exact: false })).toBeVisible();
   });
 
   // unit 測不到的（#167）：onboarding 的第 3 步真的向 Worker 讀方案；剛登入與已登入時重開 onboarding 兩個入口都經過它
@@ -351,7 +351,7 @@ test('帳號頁選年繳：打開年繳的付款頁，帳號頁顯示「你選�
   const checkout = await opened;
 
   await expect.poll(() => checkout.url()).toMatch(/^http:\/\/localhost:4321\/zh-tw\/checkout\?_ptxn=txn_fake_yearly_/);
-  await expect(account.getByRole('status', { name: '在付款分頁完成付款' })).toContainText('你選的是 年繳 US$48・平均每月 US$4・省 20%。');
+  await expect(account.getByRole('status', { name: '在付款分頁完成付款' })).toContainText('你選的是 年繳・每年扣款 US$48・平均每月 US$4・省 20%。');
   await expect(account.getByRole('region', { name: '訂閱' })).toHaveCount(0);
 });
 

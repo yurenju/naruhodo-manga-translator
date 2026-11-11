@@ -4,12 +4,27 @@
  */
 import { MONTHLY_PAGES, pageCount, PERIOD_MONTHS, PRICE_USD, REFUND_WINDOW_DAYS, type BillingPeriod } from '../shared/hosted-api.ts';
 
-/** 一種 Billing Period 的價格：畫面上是「<strong>{name} {price}</strong>・{detail}」。 */
+/**
+ * 一種 Billing Period 的價格。先講實際扣款、再講平均月費（設計稿「購買流程」第 6 區 A4）：
+ * 句子裡是「<strong>{name}・{charge}</strong>・{detail}」（OfferText），卡片上是扣款一行、平均月費大字（OfferPrice）。
+ */
 export interface BillingPeriodOffer {
   billingPeriod: BillingPeriod;
   name: string;
-  price: string;
+  /** 實際扣款：「每年扣款 US$48」 */
+  charge: string;
+  /** 平均月費：「US$4」 */
+  average: string;
+  /** 比季繳省多少（只有年繳）：「省 20%」 */
+  saving: string | undefined;
+  /** 句子裡接在扣款後面：「平均每月 US$4・省 20%」 */
   detail: string;
+  /**
+   * side panel 的短寫法（設計稿 SidePanel-Exhausted，空間小、只是引導去看方案）：「<strong>{name} {price}</strong>・{brief}」，
+   * 例如「年繳 US$48・平均每月 US$4・省 20%」「季繳 US$15・每 3 個月扣款」。
+   */
+  price: string;
+  brief: string;
   /** 標「推薦」（年繳）。 */
   recommended: boolean;
   /** 選這一種的按鈕。 */
@@ -27,9 +42,9 @@ export const monthlyPriceUsd = (period: BillingPeriod) => PRICE_USD[period] / PE
 /** 年繳比季繳每月便宜幾 %（以季繳的每月價格為準）。 */
 export const yearlySavingPercent = () => Math.round((1 - monthlyPriceUsd('yearly') / monthlyPriceUsd('quarterly')) * 100);
 
-const DETAIL: Record<BillingPeriod, () => string> = {
-  quarterly: () => `每 ${PERIOD_MONTHS.quarterly} 個月扣款`,
-  yearly: () => `平均每月 ${usd(monthlyPriceUsd('yearly'))}・省 ${yearlySavingPercent()}%`,
+const CHARGE: Record<BillingPeriod, () => string> = {
+  quarterly: () => `每 ${PERIOD_MONTHS.quarterly} 個月扣款 ${usd(PRICE_USD.quarterly)}`,
+  yearly: () => `每年扣款 ${usd(PRICE_USD.yearly)}`,
 };
 
 /** 推薦的 Billing Period（標「推薦」、排在前面）。 */
@@ -37,11 +52,17 @@ const RECOMMENDED: BillingPeriod = 'yearly';
 
 export function billingPeriodOffer(billingPeriod: BillingPeriod): BillingPeriodOffer {
   const name = NAME[billingPeriod];
+  const average = usd(monthlyPriceUsd(billingPeriod));
+  const saving = billingPeriod === 'yearly' ? `省 ${yearlySavingPercent()}%` : undefined;
   return {
     billingPeriod,
     name,
+    charge: CHARGE[billingPeriod](),
+    average,
+    saving,
+    detail: [`平均每月 ${average}`, saving].filter(Boolean).join('・'),
     price: usd(PRICE_USD[billingPeriod]),
-    detail: DETAIL[billingPeriod](),
+    brief: billingPeriod === 'yearly' ? [`平均每月 ${average}`, saving].filter(Boolean).join('・') : `每 ${PERIOD_MONTHS[billingPeriod]} 個月扣款`,
     recommended: billingPeriod === RECOMMENDED,
     subscribe: `訂閱${name}`,
   };

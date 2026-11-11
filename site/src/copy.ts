@@ -31,7 +31,7 @@ export interface SiteCopy {
     lead: string;
     /** 第一個重點是「{grant.lead} <strong>{grant.pages}</strong>{grant.note}」，接著是 `items` */
     free: { title: string; tag: string; price: string; grant: { lead: string; pages: string; note: string }; items: readonly string[] };
-    /** 年繳在前（推薦、加粗框）。價格那一行是「<strong>{name}</strong>・{detail}」 */
+    /** 年繳在前（推薦、加粗框） */
     plans: readonly PlanCard[];
     /** 卡片下面的小字：兩種 Billing Period 內容一樣 */
     note: string;
@@ -69,26 +69,39 @@ export interface SiteCopy {
   };
 }
 
+/**
+ * 一張訂閱卡。價格分兩行：上面是實際扣款（粗體，不藏起來），下面是平均月費大字（「{averageLabel} <strong>{average}</strong>{per}」）。
+ * 月費大字方便跟同類外掛的月費比較；實際扣款緊貼在上面，讀者不會以為是月繳。
+ */
 export interface PlanCard {
+  /** Billing Period 名稱（年繳／季繳） */
   title: string;
   tag?: string;
   featured: boolean;
-  name: string;
-  detail: string;
+  /** 實際扣款：「每年扣款 US$48」 */
+  charge: string;
+  /** 實際扣款旁的小標籤（年繳的「省 20%」） */
+  saving?: string;
+  averageLabel: string;
+  average: string;
+  per: string;
   items: readonly string[];
 }
 
 // 價格與頁數跟外掛共用同一份常數（src/shared/hosted-api.ts），繁中的價格文案直接用外掛那幾句（src/ui/pricing.ts）
 const ZH_ITEMS: Record<BillingPeriod, readonly string[]> = {
-  yearly: [subscriptionHeadline(), '一年扣款一次，自動續訂', '隨時可以取消'],
-  quarterly: [subscriptionHeadline(), '先付少一點試試，自動續訂', '隨時可以取消'],
+  yearly: [subscriptionHeadline(), '不受免費名額影響，隨時都能翻', '一年扣款一次，自動續訂', '隨時可以取消'],
+  quarterly: [subscriptionHeadline(), '不受免費名額影響，隨時都能翻', '先付少一點試試，自動續訂', '隨時可以取消'],
 };
 const ZH_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map((offer) => ({
-  title: '訂閱',
+  title: offer.name,
   ...(offer.recommended && { tag: '推薦' }),
+  ...(offer.saving && { saving: offer.saving }),
   featured: offer.recommended,
-  name: `${offer.name} ${offer.price}`,
-  detail: offer.detail,
+  charge: offer.charge,
+  averageLabel: '平均',
+  average: offer.average,
+  per: '/ 月',
   items: ZH_ITEMS[offer.billingPeriod],
 }));
 
@@ -96,20 +109,22 @@ const enUsd = (amount: number) => usd(amount).replace('US$', '$');
 const EN_HEADLINE = `${pageCount(MONTHLY_PAGES)} pages a month · full refund within ${REFUND_WINDOW_DAYS} days`;
 // 英文版跟繁中一樣由 SUBSCRIPTION_OFFERS 決定順序與推薦，只換掉文字
 const EN_NAME: Record<BillingPeriod, string> = { quarterly: 'Quarterly', yearly: 'Yearly' };
-const EN_DETAIL: Record<BillingPeriod, string> = {
-  quarterly: `Billed every ${PERIOD_MONTHS.quarterly} months`,
-  yearly: `About ${enUsd(monthlyPriceUsd('yearly'))} a month · save ${yearlySavingPercent()}%`,
+const EN_CHARGE: Record<BillingPeriod, string> = {
+  yearly: `${enUsd(PRICE_USD.yearly)} billed yearly`,
+  quarterly: `${enUsd(PRICE_USD.quarterly)} billed every ${PERIOD_MONTHS.quarterly} months`,
 };
 const EN_ITEMS: Record<BillingPeriod, readonly string[]> = {
-  yearly: [EN_HEADLINE, 'Billed once a year, renews automatically', 'Cancel anytime'],
-  quarterly: [EN_HEADLINE, 'Pay less up front to try it, renews automatically', 'Cancel anytime'],
+  yearly: [EN_HEADLINE, 'Not affected by the shared free limit', 'Billed once a year, renews automatically', 'Cancel anytime'],
+  quarterly: [EN_HEADLINE, 'Not affected by the shared free limit', 'Pay less up front to try it, renews automatically', 'Cancel anytime'],
 };
 const EN_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map(({ billingPeriod, recommended }) => ({
-  title: 'Subscription',
-  ...(recommended && { tag: 'Recommended' }),
+  title: EN_NAME[billingPeriod],
+  ...(recommended && { tag: 'Recommended', saving: `Save ${yearlySavingPercent()}%` }),
   featured: recommended,
-  name: `${EN_NAME[billingPeriod]} ${enUsd(PRICE_USD[billingPeriod])}`,
-  detail: EN_DETAIL[billingPeriod],
+  charge: EN_CHARGE[billingPeriod],
+  averageLabel: 'avg.',
+  average: enUsd(monthlyPriceUsd(billingPeriod)),
+  per: '/ month',
   items: EN_ITEMS[billingPeriod],
 }));
 
@@ -118,13 +133,13 @@ export const copy: Record<Locale, SiteCopy> = {
     brand: 'Naruhodo 日文漫畫翻譯',
     nav: { pricing: '價格', faq: '常見問題', install: '安裝外掛', languageLabel: '語言' },
     hero: {
-      title: '看日文漫畫，旁邊就有中文',
-      lead: 'Naruhodo 是一個 Chrome 外掛。點一下圖示，它會找出畫面上的漫畫頁、讀出對話框裡的日文，再把繁體中文翻譯放回原本的位置，還附上振り仮名，邊看邊學日文。',
+      title: '新番日漫，不再苦等翻譯！',
+      lead: 'Naruhodo 是一個 Chrome 外掛。點一下圖示，對話框裡的日文就會變成繁體中文，還附上讀音，邊看邊學日文。',
       install: '加到 Chrome',
       pricing: '看價格',
     },
     demo: {
-      caption: '實際操作看看：點右上角的 Naruhodo 圖示，切到「學習」後把滑鼠移到對話框上；再點一次圖示就關掉。',
+      caption: '實際操作看看：點右上角的 Naruhodo 圖示，對話框馬上變中文，側邊欄還有原文和讀音。',
       hint: '點這裡開始翻譯',
     },
     how: {
@@ -151,13 +166,13 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     pricing: {
       title: '價格',
-      lead: '先用免費額度試試看。想繼續的話，訂閱只有一個方案，選季繳或年繳。',
+      lead: `註冊即有 ${pageCount(FREE_PAGES)} 頁額度可免費使用，試用滿意的話可以訂閱獲取更多翻譯頁數。`,
       free: {
         title: '免費額度',
         tag: '不需信用卡',
         price: 'US$0',
         grant: { lead: '註冊就送', pages: `${pageCount(FREE_PAGES)} 頁`, note: `，${FREE_PAGES_EPISODES}` },
-        items: ['不會過期', '用 email 註冊就能翻譯'],
+        items: ['不會過期', '免費翻譯量全站共用，每天有上限', '用 email 註冊就能翻譯'],
       },
       plans: ZH_PLANS,
       note: '年繳和季繳的內容完全一樣，只差扣款週期。每月在你訂閱的那天重置；以美元計價，標價就是刷卡金額。',
@@ -186,6 +201,10 @@ export const copy: Record<Locale, SiteCopy> = {
           a: '不會。漫畫圖片不會離開你的電腦，送去翻譯的只有辨識出來的日文文字。翻好的內容只存在你自己的瀏覽器裡，方便你下次翻回這一頁時不用重新翻譯。',
         },
         { q: '一頁怎麼算？', a: '成功翻譯一頁算一頁，要求重新翻譯也算；跨頁算兩頁。再看已經翻過的頁面、或翻譯失敗，都不算。' },
+        {
+          q: '為什麼我還有免費額度，今天卻不能翻？',
+          a: '免費翻譯量是全站共用的，每天有上限。今天的量發完後，只用免費額度的人要等到隔天（台灣時間早上 8 點）才能繼續翻，你自己剩下的頁數不會減少。訂閱不受這個上限影響。',
+        },
         { q: '可以退款嗎？', a: '詳見{link}。', link: 'refund' },
         {
           q: '可以在哪些網站上用？',
@@ -226,13 +245,13 @@ export const copy: Record<Locale, SiteCopy> = {
     brand: 'Naruhodo: Japanese Manga Translator',
     nav: { pricing: 'Pricing', faq: 'FAQ', install: 'Install', languageLabel: 'Language' },
     hero: {
-      title: 'Read Japanese manga with Chinese right where the words are',
-      lead: 'Naruhodo is a Chrome extension. Click its icon and it finds the manga page on your screen, reads the Japanese in each speech balloon, and places a Traditional Chinese translation right back where the text was, with furigana so you learn Japanese as you read.',
+      title: 'New Japanese manga, no more waiting for translations!',
+      lead: 'Naruhodo is a Chrome extension. Click its icon and the Japanese in each speech balloon turns into Traditional Chinese, with furigana so you learn Japanese as you read.',
       install: 'Add to Chrome',
       pricing: 'See pricing',
     },
     demo: {
-      caption: 'Try it: click the Naruhodo icon at the top right, then switch to 學習 (Study) and hover a balloon. Click the icon again to turn it off.',
+      caption: 'Try it: click the Naruhodo icon at the top right. The balloons turn into Chinese right away, and the side panel shows the original text and readings.',
       hint: 'Click to translate',
     },
     how: {
@@ -259,13 +278,13 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     pricing: {
       title: 'Pricing',
-      lead: 'Start with the free pages. If you want more, there is one subscription: pay quarterly or yearly.',
+      lead: `Sign up and get ${pageCount(FREE_PAGES)} free pages. If you like it, subscribe for more pages.`,
       free: {
         title: 'Free pages',
         tag: 'No credit card',
         price: '$0',
         grant: { lead: 'Sign up and get', pages: `${pageCount(FREE_PAGES)} pages`, note: ', about four episodes' },
-        items: ["They don't expire", 'Sign up with your email and start translating'],
+        items: ["They don't expire", 'Free translation is shared by everyone, with a daily limit', 'Sign up with your email and start translating'],
       },
       plans: EN_PLANS,
       note: 'Yearly and quarterly include exactly the same; only the billing period differs. Pages reset each month on the day you subscribed. Prices are in US dollars and are what your card is charged.',
@@ -294,6 +313,10 @@ export const copy: Record<Locale, SiteCopy> = {
           a: "No. Manga images never leave your computer; only the recognized Japanese text is sent for translation. Translations are kept in your own browser, so a page you come back to doesn't need translating again.",
         },
         { q: 'What counts as a page?', a: 'Each page translated successfully counts once, including one you ask to translate again; a two-page spread counts as two. Revisiting a translated page or a failed translation does not count.' },
+        {
+          q: "I still have free pages. Why can't I translate today?",
+          a: "Free translation is shared by everyone, with a daily limit. Once today's share is given out, accounts on free pages wait until the next day (00:00 UTC); your own free pages are not used up. Subscriptions are not affected by this limit.",
+        },
         { q: 'Can I get a refund?', a: 'See the {link}.', link: 'refund' },
         {
           q: 'Where does it work?',

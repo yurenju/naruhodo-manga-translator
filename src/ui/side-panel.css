@@ -57,7 +57,7 @@
 :where(.naru-side-panel) [aria-label='逐字稿'] li.hl { background: var(--naru-accent-weak); }
 :where(.naru-side-panel) [aria-label='逐字稿'] li.hl::before { background: var(--naru-brand); color: var(--naru-ink); box-shadow: none; }
 :where(.naru-side-panel) .original { font-size: var(--naru-text-ja); line-height: 1.6; }
-/* 加振り仮名時行高放大，ルビ才不會壓到上一行 */
+/* 加上讀音時行高放大，ルビ才不會壓到上一行 */
 :where(.naru-side-panel) .original.with-ruby { line-height: 2.2; }
 /* 譯文退一階（深灰、小一號），原文和譯文才分得出主從。
    標點用打包的 Noto Sans TC（src/shared/punctuation-face.ts 的 PUNCTUATION_FAMILY，SidePanel 載入）：微軟正黑體的 ―、。， 不在格子中間 */

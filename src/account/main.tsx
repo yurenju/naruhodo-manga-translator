@@ -33,7 +33,7 @@ import { Badge, Button, Callout } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
 import { SignIn } from '../ui/sign-in.tsx';
 import { RefundDialog } from '../ui/refund-dialog.tsx';
-import { OfferText, PaymentUnavailable } from '../ui/subscribe-button.tsx';
+import { OfferPrice, OfferText, PaymentUnavailable } from '../ui/subscribe-button.tsx';
 import { accountPageView, refundDialogView, signedOutText } from '../ui/view.ts';
 
 const LOGO = 'icons/naruhodo-small.svg';
@@ -265,9 +265,7 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
             {view.subscribe.offers.map((offer) => (
               <div key={offer.billingPeriod} class={offer.recommended ? 'ac-offer ac-offer--recommended' : 'ac-offer'}>
                 {offer.recommended ? <Badge tone="solid">推薦</Badge> : <span class="ac-offer__badge-space" aria-hidden="true" />}
-                <p class="ac-offer__price">
-                  <OfferText offer={offer} />
-                </p>
+                <OfferPrice offer={offer} />
                 <Button variant={offer.recommended ? 'primary' : 'secondary'} class="ac-big ac-offer__button" onClick={() => pay(offer.billingPeriod)}>
                   {offer.subscribe}
                 </Button>

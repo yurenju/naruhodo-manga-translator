@@ -111,9 +111,18 @@ html[data-locale="en"] .lang-toggle [data-set-locale="en"] { background: var(--n
   background: var(--naru-ink); color: var(--naru-on-accent);
 }
 .plan-tag--soft { background: var(--naru-accent-weak); color: var(--naru-ink); }
-/* 一行大字價格，後面接小字（「・平均每月 US$4・省 20%」） */
-.plan .price { margin: var(--naru-space-3) 0 0; font-size: var(--naru-text-label); line-height: 1.5; color: var(--naru-ink-2); }
-.plan .price strong { font-size: var(--naru-text-price); font-weight: 800; line-height: 1.2; color: var(--naru-ink); }
+/* 價格兩行：上面實際扣款（粗體，免費卡是同高的空行），下面「平均 US$4 / 月」大字 */
+.plan .charge {
+  display: flex; align-items: center; gap: var(--naru-space-2); min-height: 28px; margin: var(--naru-space-3) 0 0;
+  font-size: var(--naru-text-lead); font-weight: 700; line-height: 1.4; color: var(--naru-ink);
+}
+.plan .saving {
+  padding: 2px var(--naru-space-3); border-radius: var(--naru-radius-pill); background: var(--naru-accent-weak);
+  font-size: var(--naru-text-small); font-weight: 700;
+}
+.plan .price { margin: var(--naru-space-1) 0 0; font-size: var(--naru-text-lead); line-height: 1.15; color: var(--naru-ink-2); }
+.plan .price small { margin-right: 6px; font-size: var(--naru-text-body); }
+.plan .price strong { margin-right: var(--naru-space-1); font-size: var(--naru-text-price); font-weight: 800; color: var(--naru-ink); }
 .plan ul { flex: 1; margin: var(--naru-space-4) 0 0; padding: var(--naru-space-4) 0 0 var(--naru-space-5); border-top: 1px solid var(--naru-line); font-size: var(--naru-text-label); color: var(--naru-ink-2); }
 .plan ul strong { color: var(--naru-ink); }
 .plans-note { margin: var(--naru-space-3) 0 0; font-size: var(--naru-text-small); color: var(--naru-ink-3); }

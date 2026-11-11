@@ -46,13 +46,17 @@
   border: 6px solid transparent; border-top: 0; border-bottom-color: var(--naru-ink);
 }
 
-/* 整張漫畫頁照高度縮進視窗、不捲動，side panel 從右邊滑出來、擠窄漫畫頁 */
+/* 整頁縮進視窗、不捲動，side panel 從右邊滑出來、擠窄漫畫 */
 .demo-chrome__body { position: relative; display: flex; height: 640px; background: #2B2B2B; }
-/* isolation：覆蓋層的 z-index 只在漫畫頁裡比較，不會蓋到 side panel */
-.demo-chrome__page { display: flex; justify-content: center; flex: 1; min-width: 0; overflow: hidden; isolation: isolate; }
-/* 比例跟漫畫圖（880×1280）一樣；視窗太窄時改由寬度決定，圖下方留空 */
-.demo-chrome__manga { position: relative; height: 100%; aspect-ratio: 880 / 1280; max-width: 100%; }
-.demo-chrome__manga img { display: block; width: 100%; height: auto; }
+/* isolation：覆蓋層的 z-index 只在漫畫頁裡比較，不會蓋到 side panel。container：漫畫照這塊的寬高縮放 */
+.demo-chrome__page {
+  display: flex; align-items: center; justify-content: center; flex: 1; min-width: 0; overflow: hidden;
+  isolation: isolate; container-type: size;
+}
+/* 比例跟 Practice Spread 的一頁（1000×1342）一樣，整頁放得進這塊：寬或高先碰到邊就停 */
+.demo-chrome__manga { position: relative; width: min(100cqw, 100cqh * 1000 / 1342); overflow: hidden; }
+/* 圖是整張跨頁：放兩倍寬、往左移一頁，只露出右頁（覆蓋層照 img 的位置與 sub 算，跟著對齊） */
+.demo-chrome__manga img { display: block; width: 200%; height: auto; margin-left: -100%; }
 /* 抽屜的寬度做動畫，裡面的 side panel 固定寬度：滑出來的途中內容不會一直重排 */
 .demo-chrome__drawer { flex: none; width: 0; overflow: hidden; transition: width 0.3s ease; }
 .demo-chrome.is-open .demo-chrome__drawer { width: 360px; }

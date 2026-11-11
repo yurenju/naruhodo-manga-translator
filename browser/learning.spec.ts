@@ -29,11 +29,11 @@ test('閱讀時切換三種顯示層級，逐字稿內容正確', async ({ conte
   await expect(greeting).toBeVisible();
 
   // 只有三個層級（「只看日文」由學習取代）；上方不再有ルビ說明框
-  await expect(panel.getByRole('group', { name: '顯示層級' }).getByRole('button')).toHaveText(['只看譯文', '原文＋譯文', '加振り仮名']);
+  await expect(panel.getByRole('group', { name: '顯示層級' }).getByRole('button')).toHaveText(['只看譯文', '原文＋譯文', '加上讀音']);
   await expect(panel.getByText('ルビ為 LLM 推測')).toHaveCount(0);
 
-  // 預設：加振り仮名（原文帶ルビ＋譯文）；讀音全是推測，不另外標徽章
-  await expect(level(panel, '加振り仮名')).toHaveAttribute('aria-pressed', 'true');
+  // 預設：加上讀音（原文帶ルビ＋譯文）；讀音全是推測，不另外標徽章
+  await expect(level(panel, '加上讀音')).toHaveAttribute('aria-pressed', 'true');
   await expect(original(greeting).locator('rt')).toHaveText(['きょう', 'はや']);
   await expect(original(greeting).locator('ruby').first()).toContainText('今日');
   await expect(transcript.getByText('讀音為推測')).toHaveCount(0);
@@ -44,7 +44,7 @@ test('閱讀時切換三種顯示層級，逐字稿內容正確', async ({ conte
 
   await level(panel, '原文＋譯文').click();
   await expect(level(panel, '原文＋譯文')).toHaveAttribute('aria-pressed', 'true');
-  await expect(level(panel, '加振り仮名')).toHaveAttribute('aria-pressed', 'false');
+  await expect(level(panel, '加上讀音')).toHaveAttribute('aria-pressed', 'false');
   await expect(transcript.locator('rt')).toHaveCount(0);
   await expect(original(greeting)).toContainText('今日は早いね');
   await expect(translation(greeting)).toHaveText(GREETING_ZH);
@@ -57,7 +57,7 @@ test('閱讀時切換三種顯示層級，逐字稿內容正確', async ({ conte
   const second = panel.getByRole('list', { name: '逐字稿' }).nth(1);
   await expect(second.getByRole('listitem').first()).toBeVisible();
   await expect(second.locator('[lang="ja"]')).toHaveCount(0);
-  await level(panel, '加振り仮名').click();
+  await level(panel, '加上讀音').click();
   await expect(second.locator('rt').first()).toBeVisible();
 });
 
@@ -72,7 +72,7 @@ test('學習時逐字稿藏譯文，滑過「譯」區塊才出現；振り仮�
   await pageMode(panel, '學習').click();
   // 沒有 Display Level 切換，改成振り仮名 Switch（預設開）
   await expect(panel.getByRole('group', { name: '顯示層級' })).toHaveCount(0);
-  const furigana = panel.getByRole('switch', { name: '逐字稿加振り仮名' });
+  const furigana = panel.getByRole('switch', { name: '顯示讀音' });
   await expect(furigana).toBeChecked();
   await expect(original(greeting).locator('rt')).toHaveText(['きょう', 'はや']);
   // 譯文藏在「譯」區塊後面
@@ -97,7 +97,7 @@ test('學習時逐字稿藏譯文，滑過「譯」區塊才出現；振り仮�
 
   // 切回閱讀：Display Level 回來，譯文直接顯示
   await pageMode(panel, '閱讀').click();
-  await expect(level(panel, '加振り仮名')).toHaveAttribute('aria-pressed', 'true');
+  await expect(level(panel, '加上讀音')).toHaveAttribute('aria-pressed', 'true');
   await expect(translation(greeting)).toHaveText(GREETING_ZH);
 });
 

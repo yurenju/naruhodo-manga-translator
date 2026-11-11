@@ -19,7 +19,7 @@ export interface PlanChoiceOption {
 
 const offerOption = (billingPeriod: BillingPeriod): PlanChoiceOption => {
   const offer = billingPeriodOffer(billingPeriod);
-  return { choice: billingPeriod, title: `${offer.name} ${offer.price}`, detail: `・${offer.detail}`, recommended: offer.recommended, note: subscriptionHeadline() };
+  return { choice: billingPeriod, title: `${offer.name}・${offer.charge}`, detail: `・${offer.detail}`, recommended: offer.recommended, note: subscriptionHeadline() };
 };
 
 export const PLAN_CHOICES: readonly PlanChoiceOption[] = [

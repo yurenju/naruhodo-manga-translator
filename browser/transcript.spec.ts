@@ -27,7 +27,7 @@ const transcriptOf = (panel: Page, pageIndex: number): Locator =>
 async function lines(transcript: Locator) {
   return transcript.getByRole('listitem').evaluateAll((items) =>
     items.map((li) => {
-      // 預設層級「加振り仮名」：原文（lang="ja"）帶 <rt>，對不上時下面是整句讀音（<small>）
+      // 預設層級「加上讀音」：原文（lang="ja"）帶 <rt>，對不上時下面是整句讀音（<small>）
       const shown = li.querySelector('[lang="ja"]')!;
       const original = shown.cloneNode(true) as Element;
       const rts = [...original.querySelectorAll('rt, small')].map((rt) => (rt.remove(), rt.textContent ?? ''));

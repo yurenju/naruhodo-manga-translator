@@ -151,3 +151,12 @@ a.naru-btn { text-decoration: none; }
 /* 年繳、季繳兩行價格（SubscriptionPrice）：「<strong>年繳 US$48</strong>・平均每月 US$4・省 20%」 */
 .naru-offer-lines { display: grid; gap: var(--naru-space-1); margin: 0; padding: 0; list-style: none; }
 
+/* 卡片上的價格（OfferPrice）：方案名、實際扣款、平均月費大字 */
+.naru-offer-price { display: grid; gap: var(--naru-space-1); }
+.naru-offer-price p { margin: 0; }
+.naru-offer-price__name { font-size: var(--naru-text-label); font-weight: 700; color: var(--naru-ink-2); }
+.naru-offer-price__charge { display: flex; align-items: center; gap: var(--naru-space-2); font-size: var(--naru-text-body); font-weight: 700; color: var(--naru-ink); }
+.naru-offer-price__average { font-size: var(--naru-text-body); line-height: 1.2; color: var(--naru-ink-2); }
+.naru-offer-price__average small { margin-right: var(--naru-space-1); font-size: var(--naru-text-label); }
+.naru-offer-price__average strong { margin-right: var(--naru-space-1); font-size: 32px; font-weight: 800; color: var(--naru-ink); }
+

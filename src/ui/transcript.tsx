@@ -9,9 +9,9 @@ import { rubyDisplay, type RubyDisplay } from '../shared/ruby.ts';
 import { Badge, RevealChip, SegmentedControl, Switch } from './components.tsx';
 
 /** 閱讀時的 Display Level：整頁一起切。 */
-export const LEVELS = ['只看譯文', '原文＋譯文', '加振り仮名'] as const;
+export const LEVELS = ['只看譯文', '原文＋譯文', '加上讀音'] as const;
 export type Level = (typeof LEVELS)[number];
-export const DEFAULT_LEVEL: Level = '加振り仮名';
+export const DEFAULT_LEVEL: Level = '加上讀音';
 
 /**
  * 逐字稿要顯示什麼，依 Page Mode 而定（GLOSSARY 的 Display Level）：閱讀時三個層級；
@@ -34,7 +34,7 @@ export function DisplaySwitch({
       {display.mode === 'read' ? (
         <SegmentedControl label="顯示層級" options={LEVELS.map((l) => ({ value: l, label: l }))} value={display.level} onChange={onLevel} />
       ) : (
-        <Switch label="逐字稿加振り仮名" checked={display.furigana} onChange={onFurigana} />
+        <Switch label="顯示讀音" checked={display.furigana} onChange={onFurigana} />
       )}
     </div>
   );
@@ -78,7 +78,7 @@ export interface TranscriptProps {
 /** 逐字稿：Balloon 與 Loose Text 依閱讀順序混在同一串；Loose Text 標「框外文字」。 */
 export function Transcript({ text, translated, display, hoveredId, onHover }: TranscriptProps) {
   const learn = display.mode === 'learn';
-  const showRuby = learn ? display.furigana : display.level === '加振り仮名';
+  const showRuby = learn ? display.furigana : display.level === '加上讀音';
   const translationOnly = !learn && display.level === '只看譯文';
   const lines = [
     ...text.balloons.map((b) => ({ ...b, loose: false })),
