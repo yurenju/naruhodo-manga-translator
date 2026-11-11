@@ -220,7 +220,7 @@ WEBHOOK_PATH='/webhooks/paddle'
 # API key permissions the Worker and this wizard need; stage 3 lists them and checks them with GET /.
 PADDLE_PERMISSIONS=(transaction.write product.write price.write customer.write subscription.write
   notification_setting.write notification.read notification_simulation.write customer_portal_session.write adjustment.write)
-WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.updated"]'
+WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.created","adjustment.updated"]'
 
 # paddle_api METHOD PATH [JSON]: calls the sandbox API; sets HTTP_STATUS and RESPONSE.
 # The key goes through a header file so it never shows up in the process list.

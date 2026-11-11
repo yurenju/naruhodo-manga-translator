@@ -3,11 +3,10 @@
  * 讀者按「申請退款」時 Worker 向 Paddle 建立全額退款、記為處理中，不取消訂閱。
  * 從 HTTP 觀察：GET /v1/account 的 refund、退款 API 的回應，以及送給（假的）Paddle API 的請求。核准後的取消在 refund.test.ts。
  */
-import { env } from 'cloudflare:workers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACCOUNT_PATH, REFUND_PATH, type AccountResponse } from '../../src/shared/hosted-api.ts';
 import { get, post, signIn } from './test/http.ts';
-import { checkoutAccountId, fakePaddle, subscriptionEvent, transactionEvent, webhook, type SubscriptionFields, type TransactionFields } from './test/paddle.ts';
+import { adjustmentEvent, checkoutAccountId, fakePaddle, subscriptionEvent, transactionEvent, webhook, type SubscriptionFields, type TransactionFields } from './test/paddle.ts';
 
 const DAY = 24 * 60 * 60_000;
 
@@ -236,9 +235,8 @@ describe('申請退款：拒絕的原因', () => {
   });
 
   it('Paddle 拒絕過這筆', async () => {
-    const { token, transactionId } = await charged(new Date().toISOString());
-    // 被拒由 adjustment 的 webhook 記下（#261）；這裡直接寫 D1，只看退款 API 擋不擋
-    await env.DB.prepare("UPDATE charges SET refund_status = 'rejected' WHERE transaction_id = ?").bind(transactionId).run();
+    const { token, subscriptionId, transactionId } = await charged(new Date().toISOString());
+    await send(adjustmentEvent({ subscriptionId, transactionId, status: 'rejected' }));
 
     expect(await refused(token)).toBe('refundRejected');
     expect((await account(token)).refund).toMatchObject({ status: 'rejected', eligible: false });
