@@ -46,17 +46,20 @@ html, body { margin: 0; background: var(--naru-surface-2); }
 .ob input:focus-visible { outline: 2px solid var(--naru-accent); outline-offset: 1px; }
 .ob .sign-in__code { letter-spacing: 0.4em; font-family: var(--naru-font-mono); }
 
-/* 第 3 步：兩張並排的方案卡片 */
-.ob-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--naru-space-3); margin-top: var(--naru-space-3); }
-.ob-plan {
-  display: flex; flex-direction: column; align-items: flex-start; gap: var(--naru-space-1); padding: var(--naru-space-4);
-  border: 1px solid var(--naru-line); border-radius: var(--naru-radius-md); background: var(--naru-surface);
+/* 第 3 步：單選清單（免費、年繳、季繳）＋一顆跟著選項變文字的主按鈕（spec #254 設計稿 C 版） */
+.ob-choices { display: flex; flex-direction: column; gap: var(--naru-space-2); margin: var(--naru-space-3) 0 0; padding: 0; border: 0; }
+.ob-choices__legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ob-choice {
+  display: flex; align-items: flex-start; gap: var(--naru-space-3); padding: var(--naru-space-3) var(--naru-space-4);
+  border: 1px solid var(--naru-line); border-radius: var(--naru-radius-md); background: var(--naru-surface); cursor: pointer;
 }
-.ob-plan p { margin: 0; }
-.ob-plan--hl { border-color: var(--naru-accent); box-shadow: 0 0 0 1px var(--naru-accent); }
-.ob-plan__name { display: flex; align-items: center; gap: var(--naru-space-2); font-weight: 700; }
-.ob-plan__price { font-size: 22px; font-weight: 700; }
-.ob-plan .naru-btn { margin-top: auto; }
+.ob-choice--on { border-color: var(--naru-accent); box-shadow: 0 0 0 1px var(--naru-accent); }
+.ob-choice input { flex: none; width: 18px; height: 18px; margin: 3px 0 0; accent-color: var(--naru-accent); }
+.ob-choice__text { display: flex; flex-direction: column; min-width: 0; color: var(--naru-ink-2); }
+.ob-choice__text strong { font-size: 16px; color: var(--naru-ink); }
+.ob-choice__text .naru-badge { margin-left: var(--naru-space-1); }
+.ob-choice-action { display: flex; flex-direction: column; align-items: flex-start; gap: var(--naru-space-2); margin-top: var(--naru-space-4); }
+.ob-choice-action p { margin: 0; }
 /* 第 4 步的「看漫畫／學日文」（#185）：整張卡片是按鈕 */
 
 /* 第 1 步「開始設定」上方的模型下載說明（#169） */

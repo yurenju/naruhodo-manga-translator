@@ -1,5 +1,5 @@
 /**
- * 付款後回到外掛（#176，流程定案於 prototype/payment-return）：onboarding 與 side panel 的「訂閱」都請 SW 開付款分頁，
+ * 付款後回到外掛（#176，流程定案於 prototype/payment-return）：onboarding 與帳號頁的「訂閱」都請 SW 開付款分頁，
  * SW 記住「付款分頁 → 發起付款的分頁」，付款確認或付款分頁被關掉時把讀者帶回發起的分頁。
  * Chrome API 都從 deps 注入，SW 的 index.ts 負責接上真的 chrome.*。用到的 chrome.tabs 都不需要 tabs 權限。
  */
@@ -17,8 +17,8 @@ export interface PaymentReturnDeps {
   isActiveTab(tabId: number): Promise<boolean>;
   /** 向 Worker 查這個帳號是不是訂閱中；沒登入、連不上都當作不是。 */
   isSubscribed(): Promise<boolean>;
-  /** 付款確認了：通知 onboarding 與 side panel。 */
-  onConfirmed(from: PaymentFrom): void;
+  /** 付款確認了：通知 onboarding、帳號頁與 side panel；billingPeriod 是付款分頁那筆 transaction 的。 */
+  onConfirmed(from: PaymentFrom, billingPeriod: BillingPeriod): void;
   now(): number;
 }
 
@@ -91,7 +91,7 @@ export function createPaymentReturn(deps: PaymentReturnDeps) {
       await deps.closeTab(pending.checkoutTabId);
       if (watching) await deps.focusTab(pending.originTabId);
     }
-    deps.onConfirmed(pending.from);
+    deps.onConfirmed(pending.from, pending.billingPeriod);
     return false;
   }
 

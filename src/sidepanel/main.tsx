@@ -17,8 +17,8 @@ import type {
 } from '../shared/messages.ts';
 import { accountUrl } from '../shared/account-page.ts';
 import type { SeriesOption } from '../shared/series.ts';
-import { subscribe, useHostedQuota, useHostedSession, usePaymentAction, useTranslationMode } from '../shared/hosted-account-hooks.ts';
-import type { Quota } from '../shared/hosted-api.ts';
+import { useHostedQuota, useHostedSession, useTranslationMode } from '../shared/hosted-account-hooks.ts';
+import type { BillingPeriod, Quota } from '../shared/hosted-api.ts';
 import type { HostedSession } from '../shared/hosted-session.ts';
 import { dismissHostedHint, onboardingUrl, watchHostedHint, watchOnboarding, type OnboardingProgress } from '../shared/onboarding.ts';
 import { DEFAULT_PAGE_MODE, savePageMode, watchPageMode, type PageMode } from '../shared/page-mode.ts';
@@ -114,11 +114,11 @@ function useHostedHint(): boolean {
   return show;
 }
 
-/** side panel 發起的付款確認了、還沒按「知道了」（#176）。 */
-function useSubscribedNotice(): boolean {
-  const [show, setShow] = useState(false);
-  useEffect(() => watchSubscribedNotice(setShow), []);
-  return show;
+/** 帳號頁發起的付款確認了、還沒按「知道了」（#176）：付款的扣款週期；undefined＝不顯示。 */
+function useSubscribedNotice(): BillingPeriod | undefined {
+  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod | undefined>(undefined);
+  useEffect(() => watchSubscribedNotice(setBillingPeriod), []);
+  return billingPeriod;
 }
 
 /** 用新分頁打開 onboarding（#93）；signIn＝從第 2 步開始。 */
@@ -629,7 +629,6 @@ function App({ tabId }: { tabId: number | undefined }) {
   const onboarding = useOnboarding();
   const hostedHint = useHostedHint();
   const subscribedNotice = useSubscribedNotice();
-  const [paymentFailed, runPayment] = usePaymentAction();
   /** 作品卡的「取名字」：打開作品頁時直接顯示取名字表單（#191）。 */
   const [renameOnOpen, setRenameOnOpen] = useState(false);
   /** 這個 tab 的作品剛被刪掉（#214，不管是在哪個 side panel 刪的）：停用的畫面顯示「這部作品已刪除」，再啟動就不再顯示。 */
@@ -689,8 +688,8 @@ function App({ tabId }: { tabId: number | undefined }) {
       hostedHint={hostedHint}
       onDismissHostedHint={() => void dismissHostedHint()}
       quota={translationMode === 'hosted' ? quota : undefined}
-      onSubscribe={session ? () => runPayment(() => subscribe(session, 'panel', 'yearly', tabId)) : undefined}
-      paymentFailed={paymentFailed}
+      // 跟 Page 上的紅色標籤一樣帶著漫畫分頁打開帳號頁：付完款按「回到漫畫」接著翻
+      onViewPlans={() => void chrome.tabs.create({ url: accountUrl(tabId) })}
       subscribedNotice={subscribedNotice}
       onDismissSubscribedNotice={() => void dismissSubscribedNotice()}
       renderSeriesCard={(open) =>

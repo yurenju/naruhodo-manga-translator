@@ -4,7 +4,7 @@ import type { PageView } from '../shared/messages.ts';
 import type { RatioRect } from '../shared/page-text.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { SeriesOption } from '../shared/series.ts';
-import { accountPageView, accountPlanView, canTranslate, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView, translateAction } from './view.ts';
+import { accountPageView, accountPlanView, canTranslate, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView, subscribedNoticeText, translateAction } from './view.ts';
 
 type Transcript = PageView['transcript'];
 type Done = Extract<Transcript, { state: 'done' }>;
@@ -286,8 +286,8 @@ describe('作品頁與作品卡的操作（#191）', () => {
 });
 
 describe('內建翻譯的額度（底部那一行）', () => {
-  it('剩 37 頁：「免費額度剩 37 頁」，旁邊有「訂閱」連結，不用警告色', () => {
-    expect(quotaView(signedIn, free(37)).line).toEqual({ text: '免費額度剩 37 頁', warn: false, subscribeLink: true });
+  it('剩 37 頁：「免費額度剩 37 頁」，旁邊有「查看方案」連結，不用警告色', () => {
+    expect(quotaView(signedIn, free(37)).line).toEqual({ text: '免費額度剩 37 頁', warn: false, plansLink: true });
   });
 
   it('Free Pages 剩 25 頁以下改用警告色（跟圖示的橘點同一個門檻，#237）', () => {
@@ -304,15 +304,18 @@ describe('內建翻譯的額度（底部那一行）', () => {
 });
 
 describe('內建翻譯的免費額度用完', () => {
-  it('底部那一行改成「免費額度已用完」（警告色、沒有「訂閱」小字），逐字稿上方顯示用完的 Callout（有訂閱），底部按鈕換成「訂閱」', () => {
+  it('底部那一行改成「免費額度已用完」（警告色、沒有連結），逐字稿上方的 Callout 列出年繳、季繳兩行價格與「查看方案」，底部按鈕換成「查看方案」', () => {
     expect(quotaView(signedIn, free(0))).toEqual({
-      line: { text: '免費額度已用完', warn: true, subscribeLink: false },
+      line: { text: '免費額度已用完', warn: true, plansLink: false },
       exhausted: {
         title: '免費額度已用完',
         body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 3,000 頁。',
-        subscribe: true,
+        offers: [
+          { billingPeriod: 'yearly', name: '年繳', price: 'US$48', detail: '平均每月 US$4・省 20%', recommended: true, subscribe: '訂閱年繳' },
+          { billingPeriod: 'quarterly', name: '季繳', price: 'US$15', detail: '每 3 個月扣款', recommended: false, subscribe: '訂閱季繳' },
+        ],
       },
-      footerButton: 'subscribe',
+      footerButton: 'plans',
     });
   });
 
@@ -340,10 +343,17 @@ const subscribed = (fields: Partial<Extract<Quota, { plan: 'subscribed' }>> = {}
   ...fields,
 });
 
+describe('side panel 的「已訂閱」（付款確認後顯示一次）', () => {
+  it('帶扣款週期：年繳、季繳', () => {
+    expect(subscribedNoticeText('yearly')).toBe('✓ 已訂閱（年繳），每月可翻 3,000 頁。');
+    expect(subscribedNoticeText('quarterly')).toBe('✓ 已訂閱（季繳），每月可翻 3,000 頁。');
+  });
+});
+
 describe('訂閱者的本月額度（#94 畫面定案）', () => {
-  it('底部那一行是「本月剩 612 頁・11 月 15 日重置」，沒有「訂閱」連結，不顯示免費額度', () => {
+  it('底部那一行是「本月剩 612 頁・11 月 15 日重置」，沒有「查看方案」連結，不顯示免費額度', () => {
     expect(quotaView(signedIn, subscribed())).toEqual({
-      line: { text: '本月剩 612 頁・11 月 15 日重置', warn: false, subscribeLink: false },
+      line: { text: '本月剩 612 頁・11 月 15 日重置', warn: false, plansLink: false },
       exhausted: undefined,
       footerButton: 'translate',
     });
@@ -359,13 +369,13 @@ describe('訂閱者的本月額度（#94 畫面定案）', () => {
     expect(quotaView(signedIn, subscribed({ cancelScheduled: true }))).toEqual(quotaView(signedIn, subscribed()));
   });
 
-  it('本月額度用完：Callout 只有「使用自備金鑰」（沒有訂閱），底部那一行同樣文字，底部不放按鈕', () => {
+  it('本月額度用完：Callout 只有「使用自備金鑰」（沒有價格與查看方案），底部那一行同樣文字，底部不放按鈕', () => {
     expect(quotaView(signedIn, subscribed({ remaining: 0 }))).toEqual({
-      line: { text: '本月額度已用完，11 月 15 日重置', warn: true, subscribeLink: false },
+      line: { text: '本月額度已用完，11 月 15 日重置', warn: true, plansLink: false },
       exhausted: {
         title: '本月額度已用完，11 月 15 日重置',
         body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音，重置後就能繼續翻。',
-        subscribe: false,
+        offers: undefined,
       },
       footerButton: 'none',
     });
