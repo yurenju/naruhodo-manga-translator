@@ -213,14 +213,20 @@ const monthDay = (ms: number) => {
 /** 「2027 年 10 月 15 日」：續訂日與訂閱結束日。 */
 const fullDate = (ms: number) => `${new Date(ms).getFullYear()} 年 ${monthDay(ms)}`;
 
-/** 內建翻譯的額度在 side panel 上怎麼顯示（#92、#94 畫面定案）。 */
+/**
+ * 內建翻譯的額度在 side panel 上怎麼顯示（#92、#94 畫面定案；spec #254 的購買流程設計稿）。
+ * 購買入口都叫「查看方案」、打開帳號頁（跟 Page 上的紅色標籤一致），side panel 自己不建立 checkout。
+ */
 export interface QuotaView {
-  /** 底部狀態列（系列與翻譯狀態之間）多的那一行；subscribeLink＝右邊的「訂閱」小字連結。undefined＝不顯示。 */
-  line: { text: string; warn: boolean; subscribeLink: boolean } | undefined;
-  /** 額度用完：逐字稿上方的 warn Callout（粗體標題、說明、subscribe＝有沒有「訂閱」，「使用自備金鑰」一定有）。undefined＝還能翻。 */
-  exhausted: { title: string; body: string; subscribe: boolean } | undefined;
-  /** 底部狀態列右邊的按鈕：translate＝「翻譯此頁」（還要有沒翻譯的頁、送得出翻譯才出現），subscribe＝primary「訂閱」，none＝不放（本月額度用完，等重置）。 */
-  footerButton: 'translate' | 'subscribe' | 'none';
+  /** 底部狀態列（系列與翻譯狀態之間）多的那一行；plansLink＝右邊的「查看方案」小字連結。undefined＝不顯示。 */
+  line: { text: string; warn: boolean; plansLink: boolean } | undefined;
+  /**
+   * 額度用完：逐字稿上方的 warn Callout（粗體標題、說明，「使用自備金鑰」一定有）。offers＝年繳、季繳兩行價格與「查看方案」，
+   * undefined＝沒有（本月額度用完，等重置）。exhausted 是 undefined＝還能翻。
+   */
+  exhausted: { title: string; body: string; offers: readonly BillingPeriodOffer[] | undefined } | undefined;
+  /** 底部狀態列右邊的按鈕：translate＝「翻譯此頁」（還要有沒翻譯的頁、送得出翻譯才出現），plans＝primary「查看方案」，none＝不放（本月額度用完，等重置）。 */
+  footerButton: 'translate' | 'plans' | 'none';
 }
 
 /**
@@ -234,13 +240,13 @@ export function quotaView(access: TranslationAccess, quota: Quota | undefined): 
     if (quota.remaining === 0) {
       const title = `本月額度已用完，${reset}重置`;
       return {
-        line: { text: title, warn: true, subscribeLink: false },
-        exhausted: { title, body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音，重置後就能繼續翻。', subscribe: false },
+        line: { text: title, warn: true, plansLink: false },
+        exhausted: { title, body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音，重置後就能繼續翻。', offers: undefined },
         footerButton: 'none',
       };
     }
     return {
-      line: { text: `本月剩 ${pageCount(quota.remaining)} 頁・${reset}重置`, warn: lowQuota(quota), subscribeLink: false },
+      line: { text: `本月剩 ${pageCount(quota.remaining)} 頁・${reset}重置`, warn: lowQuota(quota), plansLink: false },
       exhausted: undefined,
       footerButton: 'translate',
     };
@@ -248,16 +254,24 @@ export function quotaView(access: TranslationAccess, quota: Quota | undefined): 
   // 沒有訂閱、免費額度是 0（包含訂閱結束後也用完的讀者）就是用完
   if (quota.remaining === 0)
     return {
-      line: { text: '免費額度已用完', warn: true, subscribeLink: false },
-      exhausted: { title: '免費額度已用完', body: `已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 ${pageCount(MONTHLY_PAGES)} 頁。`, subscribe: true },
-      footerButton: 'subscribe',
+      line: { text: '免費額度已用完', warn: true, plansLink: false },
+      exhausted: {
+        title: '免費額度已用完',
+        body: `已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 ${pageCount(MONTHLY_PAGES)} 頁。`,
+        offers: SUBSCRIPTION_OFFERS,
+      },
+      footerButton: 'plans',
     };
   return {
-    line: { text: `免費額度剩 ${quota.remaining} 頁`, warn: lowQuota(quota), subscribeLink: true },
+    line: { text: `免費額度剩 ${quota.remaining} 頁`, warn: lowQuota(quota), plansLink: true },
     exhausted: undefined,
     footerButton: 'translate',
   };
 }
+
+/** 付款確認後 side panel 顯示一次的「已訂閱」，帶讀者付的扣款週期。 */
+export const subscribedNoticeText = (billingPeriod: BillingPeriod): string =>
+  `✓ 已訂閱（${billingPeriodOffer(billingPeriod).name}），每月可翻 ${pageCount(MONTHLY_PAGES)} 頁。`;
 
 /** 設定頁「內建翻譯」卡片裡的方案：email 旁的 Badge、剩餘說明（一行一個），subscribed＝動作是「管理訂閱」而不是「訂閱」。 */
 export interface AccountPlanView {

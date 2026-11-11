@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { BillingPeriod } from '../shared/hosted-api.ts';
 import type { PendingPayment } from '../shared/payment-return.ts';
 import { createPaymentReturn, type PaymentReturnDeps } from './payment-return.ts';
 
@@ -14,7 +15,7 @@ function fakeChrome() {
   let nextId = 3;
   let pending: PendingPayment | undefined;
   /** gate：Worker 回答方案之前要等它（模擬查到一半）。 */
-  const world = { subscribed: false, now: 0, confirmed: [] as string[], gate: Promise.resolve() };
+  const world = { subscribed: false, now: 0, confirmed: [] as string[], confirmedPeriod: undefined as BillingPeriod | undefined, gate: Promise.resolve() };
   let paymentReturn: ReturnType<typeof createPaymentReturn>;
 
   /** 分頁被關掉：Chrome 先送 onRemoved，正在看的分頁被關掉時再切到鄰近的分頁。 */
@@ -51,7 +52,10 @@ function fakeChrome() {
       await world.gate;
       return world.subscribed;
     },
-    onConfirmed: (from) => void world.confirmed.push(from),
+    onConfirmed: (from, billingPeriod) => {
+      world.confirmed.push(from);
+      world.confirmedPeriod = billingPeriod;
+    },
     now: () => world.now,
   };
   paymentReturn = createPaymentReturn(deps);
@@ -93,9 +97,9 @@ describe('open', () => {
     expect(chrome.active()).toBe(3);
   });
 
-  it('付款分頁是 side panel 開的，又在 onboarding 按「訂閱」：沿用那個分頁，之後帶回 onboarding', async () => {
+  it('付款分頁是帳號頁開的，又在 onboarding 按「訂閱」：沿用那個分頁，之後帶回 onboarding', async () => {
     const chrome = fakeChrome();
-    await chrome.paymentReturn.open({ url: CHECKOUT_URL, originTabId: MANGA, from: 'panel', billingPeriod: 'yearly' });
+    await chrome.paymentReturn.open({ url: CHECKOUT_URL, originTabId: MANGA, from: 'account', billingPeriod: 'yearly' });
 
     await chrome.paymentReturn.open({ url: CHECKOUT_URL, originTabId: ONBOARDING, from: 'onboarding', billingPeriod: 'yearly' });
 
@@ -168,22 +172,34 @@ describe('check：每 3 秒查一次付款', () => {
     expect(chrome.tabs()).toEqual([MANGA]);
     expect(chrome.active()).toBe(MANGA);
   });
+
+  it('確認了：通知付款分頁的扣款週期（付款中改選另一種、付款分頁還開著時，讀者付的還是原本那一種）', async () => {
+    const chrome = fakeChrome();
+    await chrome.paymentReturn.open({ url: CHECKOUT_URL, originTabId: MANGA, from: 'account', billingPeriod: 'quarterly' });
+    await chrome.paymentReturn.open({ url: CHECKOUT_URL, originTabId: MANGA, from: 'account', billingPeriod: 'yearly' });
+    chrome.world.subscribed = true;
+
+    await chrome.paymentReturn.check();
+
+    expect(chrome.world.confirmed).toEqual(['account']);
+    expect(chrome.world.confirmedPeriod).toBe('quarterly');
+  });
 });
 
 describe('讀者自己關掉付款分頁', () => {
   it('關掉正在看的付款分頁：切回發起的分頁，繼續查，確認了照樣通知', async () => {
     const chrome = fakeChrome();
-    await chrome.paymentReturn.open({ url: CHECKOUT_URL, originTabId: MANGA, from: 'panel', billingPeriod: 'yearly' });
+    await chrome.paymentReturn.open({ url: CHECKOUT_URL, originTabId: MANGA, from: 'account', billingPeriod: 'yearly' });
     chrome.world.now = 1000;
 
     await chrome.reader.close(3);
 
     expect(chrome.active()).toBe(MANGA);
-    expect(chrome.pending()).toEqual({ checkoutTabId: null, originTabId: MANGA, from: 'panel', billingPeriod: 'yearly', closedAt: 1000 });
+    expect(chrome.pending()).toEqual({ checkoutTabId: null, originTabId: MANGA, from: 'account', billingPeriod: 'yearly', closedAt: 1000 });
     expect(await chrome.paymentReturn.check()).toBe(true);
     chrome.world.subscribed = true;
     expect(await chrome.paymentReturn.check()).toBe(false);
-    expect(chrome.world.confirmed).toEqual(['panel']);
+    expect(chrome.world.confirmed).toEqual(['account']);
     expect(chrome.active()).toBe(MANGA);
   });
 

@@ -9,8 +9,9 @@
  * 免費額度用完（#92）：Worker 回 402 → SW 的 Hosted Translator → side panel 重新向 Worker 讀額度，這串訊息與 API 契約只有這裡測得到；
  * Page 上的紅標籤（#185）：402 → transcript 的 quotaExhausted → content script 的小標籤 → 點了 SW 打開帳號與訂閱頁（#213）；
  * 顯示規則（哪一行文字、警告色、按鈕）在 src/ui/view.test.ts。
- * 訂閱（#94、#176）：side panel 的「訂閱」向 Worker 建立 checkout、請 SW 用新分頁打開 checkout 頁 → Paddle 的 webhook 送到 Worker →
- * SW 查到訂閱中就關掉付款分頁、side panel 重讀額度、顯示本月額度。Worker 的 Paddle 是假的（env.test），webhook 由測試用 env.test 的 secret 簽好送出；
+ * 訂閱（#94、#176、spec #254）：side panel 的「查看方案」打開帳號頁 → 帳號頁的「訂閱年繳」向 Worker 建立 checkout、請 SW 用新分頁打開 checkout 頁
+ * → Paddle 的 webhook 送到 Worker → SW 查到訂閱中就關掉付款分頁、side panel 重讀額度、顯示「已訂閱（年繳）」與本月額度。
+ * onboarding 第 3 步選季繳：把扣款週期帶到 Worker 的結帳 API。Worker 的 Paddle 是假的（env.test），webhook 由測試用 env.test 的 secret 簽好送出；
  * 真的 Paddle sandbox 只在 `npm run smoke:paddle`。webhook 與額度的規則在 worker/src/subscription.test.ts。
  * 已訂閱的帳號（#167）：onboarding 的第 3 步一進來就向 Worker 讀方案，訂閱中就不顯示方案選擇。
  * 帳號與訂閱頁（#213）：設定頁的「管理帳號 →」打開帳號頁；刪除帳號（#95）在帳號頁 → 確認畫面 → Worker 的 DELETE /v1/account →
@@ -47,7 +48,7 @@ test.describe('全新安裝', () => {
     await onboarding.getByRole('button', { name: '開始設定' }).click();
     const email = freshEmail(testInfo.workerIndex);
     await signInWithEmail(onboarding, email);
-    await onboarding.getByRole('button', { name: '先用免費的 100 頁' }).click();
+    await onboarding.getByRole('button', { name: '免費開始（100 頁）' }).click();
     // 第 4 步不讓讀者選：從「閱讀」開始；Side Panel on Activation 不寫（沒存過值就是開的，#269）
     await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
     await expect
@@ -85,6 +86,22 @@ test.describe('全新安裝', () => {
     await expect(transcript.getByText('早安！今天好早喔')).toBeVisible();
   });
 
+  // unit 測不到的（spec #254）：onboarding 第 3 步選的扣款週期一路帶到 Worker 的結帳 API（假 Paddle 的 transaction id 帶著它）、
+  // SW 用新分頁打開付款頁，onboarding 換成付款中。選項與按鈕文字在 src/onboarding/plan-choice.test.ts。
+  // extensionId 沒用到值，但要有它才會等外掛裝好、SW 打開 onboarding 分頁（只拿 context 的話等不到）。
+  test('onboarding 第 3 步選季繳：主按鈕是「訂閱季繳，前往付款」，打開季繳的付款頁，付款中顯示「你選的是 季繳」', async ({ context, extensionId: _ }, testInfo) => {
+    const onboarding = await onboardingPage(context);
+    await onboarding.getByRole('button', { name: '開始設定' }).click();
+    await signInWithEmail(onboarding, freshEmail(testInfo.workerIndex));
+    await onboarding.getByRole('radio', { name: /季繳 US\$15/ }).check();
+
+    const checkout = await openCheckout(onboarding, context, '訂閱季繳，前往付款');
+
+    await expect.poll(() => checkout.url()).toMatch(/^http:\/\/localhost:4321\/zh-tw\/checkout\?_ptxn=txn_fake_quarterly_/);
+    await expect(onboarding.getByRole('heading', { name: '在付款分頁完成付款' })).toBeVisible();
+    await expect(onboarding.getByText('你選的是 季繳 US$15・每 3 個月扣款。', { exact: false })).toBeVisible();
+  });
+
   // unit 測不到的（#167）：onboarding 的第 3 步真的向 Worker 讀方案；剛登入與已登入時重開 onboarding 兩個入口都經過它
   test('已訂閱的帳號：onboarding 登入後與重開時都直接顯示「已訂閱」，不出現方案選擇', async ({ context, extensionId }, testInfo) => {
     const email = freshEmail(testInfo.workerIndex);
@@ -94,7 +111,7 @@ test.describe('全新安裝', () => {
     await onboarding.getByRole('button', { name: '開始設定' }).click();
     await signInWithEmail(onboarding, email, { subscribed: true });
     await expect(onboarding.getByText('每月可翻 3,000 頁')).toBeVisible();
-    await expect(onboarding.getByRole('button', { name: '先用免費的 100 頁' })).toHaveCount(0);
+    await expect(onboarding.getByRole('button', { name: '免費開始（100 頁）' })).toHaveCount(0);
     await onboarding.getByRole('button', { name: '下一步' }).click();
     await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
 
@@ -102,7 +119,7 @@ test.describe('全新安裝', () => {
     const reopened = await context.newPage();
     await reopened.goto(`chrome-extension://${extensionId}/onboarding.html?step=signIn`);
     await expect(reopened.getByRole('heading', { name: '已訂閱' })).toBeVisible();
-    await expect(reopened.getByRole('button', { name: '先用免費的 100 頁' })).toHaveCount(0);
+    await expect(reopened.getByRole('button', { name: '免費開始（100 頁）' })).toHaveCount(0);
   });
 });
 
@@ -182,27 +199,25 @@ async function waitForVisiblePagesCharged(panel: Page): Promise<void> {
   await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(new RegExp(`^免費額度剩 ${FREE_PAGES - VISIBLE_PAGES} 頁`));
 }
 
-// unit 測不到的（#176）：side panel → SW 的 payment:open、SW 真的向 Worker 查方案、用真的 chrome.tabs 關掉付款分頁，
-// 再透過 chrome.storage.session 讓 side panel 顯示「已訂閱」。什麼時候關、切回哪個分頁的規則在 src/background/payment-return.test.ts。
-test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webhook 送到 Worker 後，SW 關掉付款分頁，side panel 顯示已訂閱與本月額度', async ({
+// unit 測不到的（#176、spec #254）：side panel 的「查看方案」帶著漫畫分頁打開帳號頁、帳號頁 → SW 的 payment:open、SW 真的向 Worker 查方案、
+// 用真的 chrome.tabs 關掉付款分頁，再透過 chrome.storage.session 讓 side panel 顯示「已訂閱（年繳）」。
+// 什麼時候關、切回哪個分頁的規則在 src/background/payment-return.test.ts，文字在 src/ui/view.test.ts。
+test('訂閱：side panel 的「查看方案」打開帳號頁，選年繳用新分頁打開 checkout 頁；webhook 送到 Worker 後，SW 關掉付款分頁，side panel 顯示已訂閱（年繳）與本月額度', async ({
   context,
   sw,
   extensionId,
   mockSite,
 }, testInfo) => {
-  const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
+  const { panel, tabId } = await activateOnMockSite({ context, sw, extensionId, mockSite });
   await signInOnPanel(panel, context, freshEmail(testInfo.workerIndex));
   const remaining = panel.getByRole('status', { name: '剩餘額度' });
   // 登入後畫面上的頁會直接翻（扣頁），等全部扣完再訂閱
   await waitForVisiblePagesCharged(panel);
 
-  // 本機的產品網站沒有啟動，只看網址：Worker 自己組的 checkout 頁，transaction id（假 Paddle 帶 Account id）。
-  // 網站回空白頁：連不上的話網址會變成 chrome-error://（Linux 上立刻就變），就看不到原本的網址
-  await context.route('http://localhost:4321/**', (route) => route.fulfill({ contentType: 'text/html', body: '' }));
-  const opened = context.waitForEvent('page');
-  await remaining.getByRole('button', { name: '訂閱' }).click();
-  const checkout = await opened;
-  await expect.poll(() => checkout.url()).toMatch(/^http:\/\/localhost:4321\/zh-tw\/checkout\?_ptxn=txn_fake_/);
+  const account = await openPlansFromPanel(panel, context);
+  await expect.poll(() => account.url()).toBe(`chrome-extension://${extensionId}/account.html?from=${tabId}`);
+  const checkout = await openCheckout(account, context, '訂閱年繳');
+  await expect.poll(() => checkout.url()).toMatch(/^http:\/\/localhost:4321\/zh-tw\/checkout\?_ptxn=txn_fake_yearly_/);
   const accountId = accountIdFromCheckout(checkout.url());
 
   // 讀者付完款不必自己切回來：SW 每 3 秒查一次，查到訂閱中就關掉付款分頁、通知 side panel 重讀額度
@@ -210,7 +225,7 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   await sendSubscriptionCreated(accountId);
   await closed;
 
-  await expect(panel.getByRole('group', { name: '已訂閱' })).toBeVisible();
+  await expect(panel.getByRole('group', { name: '已訂閱' })).toHaveText(/✓ 已訂閱（年繳），每月可翻 3,000 頁。/);
   await expect(remaining).toHaveText(/^本月剩 3,000 頁・\d+ 月 \d+ 日重置$/);
   await panel.getByRole('group', { name: '已訂閱' }).getByRole('button', { name: '知道了' }).click();
   await expect(panel.getByRole('group', { name: '已訂閱' })).toHaveCount(0);
@@ -219,6 +234,24 @@ test('訂閱：side panel 的「訂閱」用新分頁打開 checkout 頁；webho
   await expect(settings.getByText('訂閱中', { exact: true })).toBeVisible();
   await expect(settings.getByRole('button', { name: '管理帳號 →' })).toBeVisible();
 });
+
+/** side panel 剩餘額度那一行的「查看方案」打開帳號與訂閱頁。 */
+async function openPlansFromPanel(panel: Page, context: BrowserContext): Promise<Page> {
+  const opened = context.waitForEvent('page');
+  await panel.getByRole('status', { name: '剩餘額度' }).getByRole('button', { name: '查看方案' }).click();
+  return opened;
+}
+
+/**
+ * 在 page（帳號頁或 onboarding）按 button 打開付款分頁。本機的產品網站沒有啟動，只看網址：Worker 自己組的 checkout 頁，
+ * transaction id（假 Paddle 帶扣款週期與 Account id）。網站回空白頁：連不上的話網址會變成 chrome-error://（Linux 上立刻就變），就看不到原本的網址。
+ */
+async function openCheckout(page: Page, context: BrowserContext, button: string): Promise<Page> {
+  await context.route('http://localhost:4321/**', (route) => route.fulfill({ contentType: 'text/html', body: '' }));
+  const opened = context.waitForEvent('page');
+  await page.getByRole('button', { name: button }).click();
+  return opened;
+}
 
 /** 設定頁的「管理帳號 →」打開帳號與訂閱頁（#213）。 */
 async function openAccountFromSettings(panel: Page, context: BrowserContext): Promise<Page> {
@@ -267,12 +300,9 @@ test('直式捲動的長 Page 捲動兩次只扣一頁：扣掉最後一頁之�
   expect(await sw.evaluate(() => globalThis.__translateCalls ?? 0)).toBe(0);
 });
 
-/** 按「訂閱」拿到 Account id、送 webhook，回到 side panel 時已經是訂閱中。畫面上還有頁在翻的話先 waitForVisiblePagesCharged。 */
+/** 「查看方案」→ 帳號頁的「訂閱年繳」拿到 Account id、送 webhook，回到 side panel 時已經是訂閱中。畫面上還有頁在翻的話先 waitForVisiblePagesCharged。 */
 async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId?: string): Promise<void> {
-  await context.route('http://localhost:4321/**', (route) => route.fulfill({ contentType: 'text/html', body: '' }));
-  const opened = context.waitForEvent('page');
-  await panel.getByRole('status', { name: '剩餘額度' }).getByRole('button', { name: '訂閱' }).click();
-  const checkout = await opened;
+  const checkout = await openCheckout(await openPlansFromPanel(panel, context), context, '訂閱年繳');
   await expect.poll(() => checkout.url()).toMatch(/_ptxn=txn_fake_/);
   const closed = checkout.waitForEvent('close');
   await sendSubscriptionCreated(accountIdFromCheckout(checkout.url()), customerId);
@@ -343,7 +373,9 @@ test('免費額度用完：Worker 回額度不足後，side panel 顯示用完�
   await expect(exhausted).toBeVisible();
   await expect(exhausted.getByRole('button', { name: '使用自備金鑰' })).toBeVisible();
   await expect(remaining).toHaveText('免費額度已用完');
-  await expect(panel.getByRole('contentinfo').getByRole('button', { name: '訂閱' })).toBeVisible();
+  await expect(exhausted).toContainText('年繳 US$48・平均每月 US$4・省 20%');
+  await expect(exhausted).toContainText('季繳 US$15・每 3 個月扣款');
+  await expect(panel.getByRole('contentinfo').getByRole('button', { name: '查看方案' })).toBeVisible();
   await expect(panel.getByRole('button', { name: '翻譯此頁' })).toHaveCount(0);
   // 不是「翻譯失敗」：原文、kuromoji 推測的讀音與「未翻譯」
   const transcript = firstTranscript(panel);
