@@ -12,6 +12,8 @@ const subscribed = (remaining: number): Quota => ({
   status: 'active',
   cancelScheduled: false,
   periodEndsAt: new Date(2027, 10, 3).getTime(),
+  billingPeriod: 'yearly',
+  renewalPriceUsd: 48,
 });
 
 describe('圖示 hover 提示、右鍵選單與「快用完」（#237）', () => {

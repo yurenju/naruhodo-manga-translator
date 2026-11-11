@@ -1,7 +1,8 @@
 /**
  * Subscription（spec #86「額度規則」、#94）：把 Paddle 的 subscription.* webhook 寫進 D1，以及每月週期怎麼算。
- * D1 schema 在 worker/migrations/0003_subscriptions.sql。扣額度在 quota.ts。
+ * D1 schema 在 worker/migrations/0003_subscriptions.sql、0010_subscription_billing_period.sql。扣額度在 quota.ts。
  */
+import type { BillingPeriod } from '../../src/shared/hosted-api.ts';
 
 /** 有權限的狀態：active（包含排定取消）與 past_due（Paddle 重試扣款中）。canceled、paused 之後回到只剩 Free Pages。 */
 const ENTITLED = ['active', 'past_due'] as const;
@@ -12,6 +13,7 @@ export interface Subscription {
   startedAt: number;
   periodEndsAt: number;
   cancelScheduled: boolean;
+  billingPeriod: BillingPeriod;
   paddleSubscriptionId: string;
   paddleCustomerId: string;
 }
@@ -21,6 +23,7 @@ interface Row {
   started_at: number;
   period_ends_at: number | null;
   cancel_scheduled: number;
+  billing_period: BillingPeriod | null;
   paddle_subscription_id: string;
   paddle_customer_id: string;
 }
@@ -40,6 +43,7 @@ export async function activeSubscription(db: D1Database, accountId: string): Pro
     // 有權限的訂閱一定有目前的扣款週期；萬一沒有，就當作從開始日起一年
     periodEndsAt: row.period_ends_at ?? addMonths(row.started_at, 12),
     cancelScheduled: row.cancel_scheduled === 1,
+    billingPeriod: row.billing_period ?? 'yearly',
     paddleSubscriptionId: row.paddle_subscription_id,
     paddleCustomerId: row.paddle_customer_id,
   };
@@ -101,6 +105,16 @@ const object = (value: unknown): Record<string, unknown> => (typeof value === 'o
 const text = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
 /**
+ * 訂閱的 item 的 price 是哪一種 Billing Period：季繳的 price 是季繳，其他都當年繳，包括改版前的年繳 US$20
+ * （ADR 0012：舊訂閱者續約時改用新的年繳價格）。
+ */
+function billingPeriodOf(data: Record<string, unknown>, quarterlyPriceId: string | undefined): BillingPeriod {
+  const items = Array.isArray(data.items) ? data.items : [];
+  const prices = items.map((item) => text(object(object(item).price).id));
+  return quarterlyPriceId !== undefined && prices.includes(quarterlyPriceId) ? 'quarterly' : 'yearly';
+}
+
+/**
  * 套用一個已經驗過簽章的 Paddle 事件。只看 subscription.*，其他事件（transaction.completed 等）不做事。
  * - Account 來自 custom_data.account_id（Worker 建立 transaction 時放的，Paddle 帶到 subscription 上）；沒有的話用 subscription id 找已經存在的那一列
  * - 用 event_id 去重
@@ -109,8 +123,9 @@ const text = (value: unknown): string | undefined => (typeof value === 'string' 
  *   - 不同的 subscription id：只有目前這筆沒有權限（paused、canceled）、而且事件的那筆有權限時，才換成那一筆。
  *     所以舊訂閱之後才送來的事件（例如 paused 之後重新訂閱、舊的那筆才被取消）蓋不掉有權限的新訂閱；
  *     新訂閱的事件不看 occurred_at，比舊訂閱最後的事件還早發生也照樣換過去
+ * - quarterlyPriceId：季繳的 Paddle price（Worker 的 secret），用來分辨扣款週期
  */
-export async function applyPaddleEvent(db: D1Database, event: unknown, now: number): Promise<void> {
+export async function applyPaddleEvent(db: D1Database, event: unknown, now: number, quarterlyPriceId: string | undefined): Promise<void> {
   const e = object(event);
   const eventId = text(e.event_id);
   const occurredAt = time(e.occurred_at);
@@ -129,12 +144,12 @@ export async function applyPaddleEvent(db: D1Database, event: unknown, now: numb
   await db.batch([
     db
       .prepare(
-        `INSERT INTO subscriptions (account_id, paddle_subscription_id, paddle_customer_id, status, started_at, period_ends_at, cancel_scheduled, event_occurred_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO subscriptions (account_id, paddle_subscription_id, paddle_customer_id, status, started_at, period_ends_at, cancel_scheduled, billing_period, event_occurred_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (account_id) DO UPDATE SET
            paddle_subscription_id = excluded.paddle_subscription_id, paddle_customer_id = excluded.paddle_customer_id, status = excluded.status,
            started_at = excluded.started_at, period_ends_at = excluded.period_ends_at, cancel_scheduled = excluded.cancel_scheduled,
-           event_occurred_at = excluded.event_occurred_at
+           billing_period = excluded.billing_period, event_occurred_at = excluded.event_occurred_at
          WHERE (excluded.paddle_subscription_id = subscriptions.paddle_subscription_id AND excluded.event_occurred_at > subscriptions.event_occurred_at)
             OR (excluded.paddle_subscription_id <> subscriptions.paddle_subscription_id
                 AND subscriptions.status NOT IN (${ENTITLED_SQL}) AND excluded.status IN (${ENTITLED_SQL}))`,
@@ -147,6 +162,7 @@ export async function applyPaddleEvent(db: D1Database, event: unknown, now: numb
         startedAt,
         time(object(data.current_billing_period).ends_at) ?? null,
         text(object(data.scheduled_change).action) === 'cancel' ? 1 : 0,
+        billingPeriodOf(data, quarterlyPriceId),
         occurredAt,
       ),
     db.prepare('INSERT INTO paddle_events (event_id, received_at) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(eventId, now),

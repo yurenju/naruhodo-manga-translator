@@ -130,8 +130,12 @@ export type Quota =
       status: 'active' | 'pastDue';
       /** 排定取消：這一年結束時不續訂。 */
       cancelScheduled: boolean;
-      /** 這一年的結束：下次續訂日，排定取消時是訂閱結束日。 */
+      /** 這一期（Billing Period）的結束：下次續訂日，排定取消時是訂閱結束日。 */
       periodEndsAt: number;
+      /** 扣款週期（#259）。改版前的訂閱（年繳 US$20）是 yearly。 */
+      billingPeriod: BillingPeriod;
+      /** 下次續訂要扣的金額（美元、含稅）：這個 Billing Period 現在的標價，所以改版前的訂閱也是新的年繳價。 */
+      renewalPriceUsd: number;
     };
 
 /** 快用完：Free Pages 剩 LOW_FREE_PAGES 頁以下、本月額度剩 LOW_MONTHLY_PAGES 頁以下（用完也算）。 */
