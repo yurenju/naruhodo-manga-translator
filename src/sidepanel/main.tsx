@@ -23,16 +23,17 @@ import type { HostedSession } from '../shared/hosted-session.ts';
 import { dismissHostedHint, onboardingUrl, watchHostedHint, watchOnboarding, type OnboardingProgress } from '../shared/onboarding.ts';
 import { DEFAULT_PAGE_MODE, savePageMode, watchPageMode, type PageMode } from '../shared/page-mode.ts';
 import { dismissSubscribedNotice, watchSubscribedNotice } from '../shared/payment-return.ts';
+import { DEFAULT_SIDE_PANEL_ON_ACTIVATION, saveSidePanelOnActivation, watchSidePanelOnActivation } from '../shared/side-panel-setting.ts';
 import { saveTranslationMode, type TranslationMode } from '../shared/translation-mode.ts';
-import { Badge, Button, RadioCard } from '../ui/components.tsx';
+import { Badge, Button, RadioCard, Switch } from '../ui/components.tsx';
 import { CONTACT_EMAIL, DISCUSSIONS_URL } from '../ui/links.ts';
 import { SidePanel, type SeriesPage } from '../ui/side-panel.tsx';
 import { accountPlanView, seriesActions } from '../ui/view.ts';
 import { ClearCache, DeleteSeries, SeriesNotesSection } from './series-notes.tsx';
 
 /**
- * 點圖示啟動時，SW 用 sidepanel.html?tabId=N 打開這個 tab 專屬的 side panel。
- * 從 Chrome 內建 side panel 選單打開的沒有 tabId，也沒有 activeTab，只能提示去點圖示。
+ * 點圖示啟動時，SW 用 sidepanel.html?tabId=N 打開這個 tab 專屬的 side panel；Chrome 的「開啟側邊面板」也只在這些 tab 出現（#269）。
+ * 沒有 tabId 的只有測試與 debug 工具直接打開的頁面。
  */
 function readTabId(): number | undefined {
   const raw = new URLSearchParams(location.search).get('tabId');
@@ -238,9 +239,25 @@ function OwnKey({ onKeyChanged }: { onKeyChanged: (hasKey: boolean) => void }) {
   );
 }
 
+/** Side Panel on Activation（#269）：設定頁的「點圖示時也打開側邊欄」。 */
+function SidePanelOnActivation() {
+  const [open, setOpen] = useState(DEFAULT_SIDE_PANEL_ON_ACTIVATION);
+  useEffect(() => watchSidePanelOnActivation(setOpen), []);
+  return (
+    <Switch
+      label="點圖示時也打開側邊欄"
+      checked={open}
+      onChange={(checked) => {
+        setOpen(checked);
+        void saveSidePanelOnActivation(checked);
+      }}
+    />
+  );
+}
+
 /**
  * 設定頁（#93 畫面定案）：按頂部的 ⚙ 打開，整個 side panel 換成這一頁。
- * 翻譯方式是明確的二選一（不會自動切換；切到自備金鑰不會登出），下面是匯出／匯入。
+ * 翻譯方式是明確的二選一（不會自動切換；切到自備金鑰不會登出），然後是側邊欄、匯出／匯入。
  */
 function Settings({
   mode,
@@ -286,6 +303,8 @@ function Settings({
           <p class="hint">目前用自備金鑰翻譯，不會用到這個帳號的頁數；切回內建翻譯就能接著用。</p>
         </>
       )}
+      <h2>側邊欄</h2>
+      <SidePanelOnActivation />
       <h2>資料</h2>
       <p class="hint">在兩台電腦之間搬作品、角色與用語與翻譯快取（不含 API key 與帳號）。</p>
       <Backup />

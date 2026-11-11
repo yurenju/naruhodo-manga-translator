@@ -18,7 +18,6 @@ import type { Message, ModelStatus, ModelStatusResponse } from '../shared/messag
 import { downloadNotice, downloadPill } from '../shared/model-download.ts';
 import { loadOnboarding, onboardingRequest, saveOnboarding, startStep, type OnboardingProgress, type OnboardingStep, type RequestedStep } from '../shared/onboarding.ts';
 import { savePageMode } from '../shared/page-mode.ts';
-import { saveSidePanelOnActivation } from '../shared/side-panel-setting.ts';
 import { openPayment, ownPaymentChange, watchPendingPayment, type PendingPayment } from '../shared/payment-return.ts';
 import { saveTranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, Callout } from '../ui/components.tsx';
@@ -281,13 +280,12 @@ function Plan({
 }
 
 /**
- * 走完 onboarding 的新讀者一律從「看漫畫」開始（#185 的二選一拿掉了）：不開側邊欄＋閱讀。
- * 想要側邊欄的人在圖示右鍵改「啟動時打開側邊欄」。沒經過新 onboarding 的既有讀者沒有值，維持開側邊欄。
- * 進到第 4 步就寫好，Practice Spread 試翻也照這個設定走。
+ * 走完 onboarding 的新讀者從「閱讀」開始（#185）。Side Panel on Activation 不動（#269）：沒存過值就是開的，
+ * 只想看漫畫的人在側邊欄的 ⚙ 設定關掉。進到第 4 步就寫好，Practice Spread 試翻也照這個設定走。
  */
 function useReadingDefaults() {
   useEffect(() => {
-    void Promise.all([saveSidePanelOnActivation(false), savePageMode('read')]);
+    void savePageMode('read');
   }, []);
 }
 
@@ -331,7 +329,7 @@ function TryPractice() {
       <p class="hint">
         之後在任何日文漫畫網站，點工具列上的 Naruhodo 圖示或按 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> 就能翻譯。
       </p>
-      <p class="hint">想要側邊欄列出讀音與譯文，可以在 Naruhodo 圖示上按右鍵，勾選「啟動時打開側邊欄」。</p>
+      <p class="hint">點圖示時會一起打開側邊欄，列出讀音與譯文。只想看漫畫的話，可以在側邊欄的 ⚙ 設定關掉「點圖示時也打開側邊欄」。</p>
     </>
   );
 }

@@ -14,7 +14,7 @@ const icons = Object.fromEntries(ICON_SIZES.map((size) => [String(size), `icons/
  * 與 ADR 0003 的差異：ADR 只列 activeTab＋scripting＋sidePanel，這裡多了 offscreen（ADR 0001）
  * 與 unlimitedStorage（ADR 0002）。spec #27 第 13 節第 6 項決定以合併後的清單為準。
  * storage：Page Mode 存在 chrome.storage.local（spec #70、#73），沒有安裝警告。
- * contextMenus：圖示的右鍵選單（「啟動時打開側邊欄」「打開側邊欄」，#185；「帳號與訂閱」，#213），沒有安裝警告。
+ * contextMenus：圖示的右鍵選單（「帳號與訂閱」，#213；側邊欄用 Chrome 自己的「開啟側邊面板」，#269），沒有安裝警告。
  * minimum_chrome_version 141：圖示當開關、停止時用 sidePanel.close() 關掉 side panel（#185）。
  */
 export function buildManifest({ e2e, debug = false }: { e2e: boolean; debug?: boolean }): chrome.runtime.ManifestV3 {

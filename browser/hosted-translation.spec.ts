@@ -48,11 +48,11 @@ test.describe('全新安裝', () => {
     const email = freshEmail(testInfo.workerIndex);
     await signInWithEmail(onboarding, email);
     await onboarding.getByRole('button', { name: '先用免費的 50 頁' }).click();
-    // 第 4 步不讓讀者選：一律從「看漫畫」開始（不開側邊欄＋閱讀）
+    // 第 4 步不讓讀者選：從「閱讀」開始；Side Panel on Activation 不寫（沒存過值就是開的，#269）
     await expect(onboarding.getByRole('heading', { name: '設定完成，來試翻一頁吧' })).toBeVisible();
     await expect
       .poll(() => sw.evaluate(() => chrome.storage.local.get(['sidePanelOnActivation', 'pageMode'])))
-      .toEqual({ sidePanelOnActivation: false, pageMode: 'read' });
+      .toEqual({ pageMode: 'read' });
     // 第 4 步（#169）：用新分頁打開網站的試翻頁，onboarding 分頁留著。測試不連外：只看分頁要打開的網址
     // （外掛用 chrome.tabs.create 開的分頁攔不到 context.route，載入失敗時 tab.url 仍是要打開的網址）
     await onboarding.getByRole('button', { name: '到試翻頁試試看' }).click();

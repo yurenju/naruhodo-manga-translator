@@ -69,7 +69,7 @@ Which parts of every Line the side panel transcript shows, switched once for all
 _Avoid_: mode, learning mode (that is the whole feature)
 
 **Side Panel on Activation** (啟動時開側邊欄)
-A global setting, remembered like Page Mode, that decides whether activating the extension on a tab also opens the side panel. Pages are translated the same either way; a reader who only wants to read manga turns it off, one learning Japanese keeps it on.
+A global setting, remembered like Page Mode, that decides whether activating the extension on a tab also opens the side panel. On by default; changed in the side panel's ⚙ settings (「點圖示時也打開側邊欄」). Pages are translated the same either way; a reader who only wants to read manga turns it off, one learning Japanese keeps it on. When it is off, Chrome's own 「開啟側邊面板」 still opens the side panel of a tab being translated.
 _Avoid_: reader mode, learning mode, panel mode
 
 **Series Notes** (角色與用語)

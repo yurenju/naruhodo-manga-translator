@@ -3,6 +3,7 @@ import {
   expect,
   isContentScriptInjected,
   openMockSite,
+  openSettings,
   openSidePanel,
   tabIdOf,
   test,
@@ -77,8 +78,15 @@ test('換 origin 就停止', async ({ context, sw, extensionId, mockSite }) => {
   expect(await isContentScriptInjected(sw, tabId)).toBe(false);
 });
 
-test('從 Chrome 內建 side panel 選單打開（沒有 tabId）只提示點外掛圖示', async ({ context, extensionId }) => {
+// unit 看不到的：side panel 頁面的開關真的寫進 chrome.storage.local，SW 那邊（另一個 context）讀得到同一個值
+test('側邊欄設定的「點圖示時也打開側邊欄」預設開著，關掉後存成關（#269）', async ({ context, sw, extensionId }) => {
   const panel = await openSidePanel(context, extensionId);
+  await openSettings(panel);
+  const toggle = panel.getByRole('region', { name: '設定' }).getByRole('switch', { name: '點圖示時也打開側邊欄' });
+  await expect(toggle).toBeChecked();
 
-  await expect(panel.getByText('請點外掛圖示啟動')).toBeVisible();
+  await toggle.click();
+
+  await expect(toggle).not.toBeChecked();
+  await expect.poll(() => sw.evaluate(() => chrome.storage.local.get('sidePanelOnActivation'))).toEqual({ sidePanelOnActivation: false });
 });

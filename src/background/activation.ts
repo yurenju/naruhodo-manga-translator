@@ -7,6 +7,7 @@
  * 同分頁換網址：網址模式命中就換；對不上就在載入完成後重讀標題，跟上次一樣就不猜，不一樣才重猜。
  *
  * 圖示是開關（#185、ADR 0003）：沒啟動就啟動，Side Panel on Activation 開著才一起開 side panel；已啟動就停止並關掉 side panel。
+ * 只有翻譯中的 tab 的 side panel 是 enabled（#269）：Chrome 圖示右鍵的「開啟側邊面板」只在這些 tab 出現，打開一定有用。
  * 點圖示的當下卡住（沒同意、沒登入、額度 0）照常啟動，同時打開 onboarding 能解決問題的那一步。
  */
 import type { RequestedStep } from '../shared/onboarding.ts';
@@ -49,13 +50,16 @@ export interface ActivationDeps {
    * 一定要同步回答：sidePanel.open() 要在第一個 await 之前呼叫。
    */
   sidePanelOnActivation(): boolean | undefined;
-  /**
-   * 打開這個 tab 的 side panel，必須在 user gesture 裡同步呼叫。
-   * onlyIfEnabled：設定還沒讀到，只呼叫 open、不把這個 tab 設成 enabled，讓 Chrome 照 SW 同步過去的 enabled 決定開不開。
-   */
-  openSidePanel(tabId: number, options?: { onlyIfEnabled?: boolean }): Promise<void>;
-  /** 圖示當開關、停止時關掉這個 tab 的 side panel（沒開也沒關係）。 */
+  /** 從 chrome.storage 讀 Side Panel on Activation（SW 剛醒來、同步的值還是 undefined 時）。 */
+  loadSidePanelOnActivation(): Promise<boolean>;
+  /** 把這個 tab 的 side panel 設成 enabled（帶 tabId 的路徑）並打開，必須在 user gesture 裡同步呼叫。 */
+  openSidePanel(tabId: number): Promise<void>;
+  /** 只把這個 tab 的 side panel 設成 enabled、不打開：讀者之後能從 Chrome 的「開啟側邊面板」打開。 */
+  enableSidePanel(tabId: number): Promise<void>;
+  /** 只關掉這個 tab 的 side panel，仍是 enabled（沒開也沒關係）。 */
   closeSidePanel(tabId: number): Promise<void>;
+  /** 翻譯停止：關掉這個 tab 的 side panel 並設回 enabled: false，Chrome 的「開啟側邊面板」跟著消失。 */
+  disableSidePanel(tabId: number): Promise<void>;
   /** 點圖示的當下卡在哪一步（沒同意、沒登入、額度 0、沒有 key）；能翻譯就是 undefined。 */
   blockedStep(): Promise<BlockedStep | undefined>;
   /** 用新分頁打開能解決問題的那一頁（額度 0 是帳號頁，#213；其他是 onboarding 的那一步）；完成後「回到漫畫」切回 tabId。 */
@@ -122,12 +126,24 @@ export function createActivation(deps: ActivationDeps) {
 
   /**
    * 依 Side Panel on Activation 打開 side panel。必須在第一個 await 之前呼叫，否則 Chrome 認為已離開 user gesture。
+   * 設定關著也把這個 tab 設成 enabled，讀者之後能從 Chrome 的「開啟側邊面板」打開。
+   * SW 剛醒來還沒讀到設定：一律先打開，讀到是關的就馬上關掉（預設是開的，大部分讀者不受影響）。
    * 測試入口沒有 user gesture，這裡一定失敗；side panel 打不開不影響啟動。
    */
   function openPanelOnActivation(tabId: number): void {
     const setting = deps.sidePanelOnActivation();
-    if (setting === false) return;
-    deps.openSidePanel(tabId, setting === undefined ? { onlyIfEnabled: true } : {}).catch((e: unknown) => console.warn('sidePanel.open failed', e));
+    if (setting === false) {
+      deps.enableSidePanel(tabId).catch((e: unknown) => console.warn('sidePanel.setOptions failed', e));
+      return;
+    }
+    const opened = deps.openSidePanel(tabId).catch((e: unknown) => console.warn('sidePanel.open failed', e));
+    if (setting === undefined) void closeIfStoredOff(tabId, opened);
+  }
+
+  /** SW 剛醒來先打開了：等打開完、讀到設定是關的就關掉（仍是 enabled）。 */
+  async function closeIfStoredOff(tabId: number, opened: Promise<void>): Promise<void> {
+    const [, open] = await Promise.all([opened, deps.loadSidePanelOnActivation().catch(() => true)]);
+    if (!open) await deps.closeSidePanel(tabId).catch(() => {});
   }
 
   /** e2e 測試入口（等同點圖示啟動，但已啟動時不停止）。 */
@@ -144,13 +160,13 @@ export function createActivation(deps: ActivationDeps) {
     if (knownActive.get(tabId) !== true) openPanelOnActivation(tabId);
     if (await isActive(tabId)) {
       await stop(tabId);
-      await deps.closeSidePanel(tabId).catch(() => {});
+      await deps.disableSidePanel(tabId).catch(() => {});
       return;
     }
     await startFromGesture(tabId);
   }
 
-  /** 點圖示（或快捷鍵、右鍵「打開側邊欄」）的新啟動。 */
+  /** 點圖示（或快捷鍵）的新啟動。 */
   async function startFromGesture(tabId: number): Promise<void> {
     // 卡住（沒同意、沒登入、額度 0）時照常啟動，同時打開 onboarding；跟決定 Series 一起進行，不等它
     const blocked = deps.blockedStep().catch(() => undefined);
@@ -164,17 +180,15 @@ export function createActivation(deps: ActivationDeps) {
     if (await isActive(tabId)) await onboarding;
   }
 
-  /** 圖示右鍵的「打開側邊欄」：不管設定一律打開（同步，user gesture），還沒啟動就順便啟動。 */
-  async function openPanel(tabId: number): Promise<void> {
-    deps.openSidePanel(tabId).catch((e: unknown) => console.warn('sidePanel.open failed', e));
-    if (!(await isActive(tabId))) await startFromGesture(tabId);
-  }
-
   /** onStarted：新的啟動開始擷取的當下（不等 Series 決定）。 */
   async function start(tabId: number, onStarted?: () => void): Promise<void> {
     const url = await deps.getTabUrl(tabId);
     if (url === undefined) return;
-    if (!(await tryInject(tabId))) return;
+    if (!(await tryInject(tabId))) {
+      // 點圖示時已經把這個 tab 的 side panel 設成 enabled：沒啟動就收回來（#269）
+      await deps.disableSidePanel(tabId).catch(() => {});
+      return;
+    }
     // 已啟動的 tab 再啟動一次（測試入口、或 toggle 判斷時剛好啟動完成）不算新的啟動，沿用同一個 Series。
     const existing = await currentState(tabId);
     if (existing) {
@@ -208,7 +222,7 @@ export function createActivation(deps: ActivationDeps) {
     if (state) await store.set(tabId, state);
     starting.delete(tabId);
     trace('activate', { tabId, seriesId: state?.seriesId, reused: false });
-    if (!state) await markInactive(tabId);
+    if (!state) await markInactiveAndDisablePanel(tabId);
     else deps.onSeriesAssigned(tabId);
   }
 
@@ -282,14 +296,14 @@ export function createActivation(deps: ActivationDeps) {
     const state = await currentState(tabId);
     if (!state) return;
     if (change.url !== undefined && new URL(change.url).origin !== state.origin) {
-      await markInactive(tabId);
+      await markInactiveAndDisablePanel(tabId);
       return;
     }
     // 網址模式對不上：完整載入的等載入完成才讀標題；不重新載入的（SPA）馬上讀
     if (change.url !== undefined && !(await followSeries(tabId, state, change.url))) guessAfterNavigation(tabId, change.status !== 'loading');
     if (change.status === 'complete') {
       // 重新注入失敗通常是 activeTab 授權已失效，只能等使用者再點一次圖示。
-      if (!(await tryInject(tabId))) await markInactive(tabId);
+      if (!(await tryInject(tabId))) await markInactiveAndDisablePanel(tabId);
       else navigating.get(tabId)?.start?.();
     }
   }
@@ -354,13 +368,22 @@ export function createActivation(deps: ActivationDeps) {
     deps.onSeriesAssigned(tabId);
   }
 
+  /** 換網站、授權失效或決定 Series 失敗而停止（content script 已不在或沒在跑）：側邊欄也設回 disabled（#269）。 */
+  async function markInactiveAndDisablePanel(tabId: number): Promise<void> {
+    await markInactive(tabId);
+    await deps.disableSidePanel(tabId).catch(() => {});
+  }
+
   async function handleTabRemoved(tabId: number): Promise<void> {
     starting.delete(tabId);
     navigating.get(tabId)?.start?.();
     await store.delete(tabId);
   }
 
-  /** 停止但不關 side panel（e2e／debug 的 test:stop）。 */
+  /**
+   * 停止但不關 side panel（e2e／debug 的 test:stop；刪除作品時讓側邊欄顯示「已刪除」）。
+   * 這時 side panel 仍是 enabled：讀者關掉後，Chrome 的「開啟側邊面板」還在，打開只顯示「已刪除／請點圖示」，下次啟動或停止才收掉。
+   */
   async function stop(tabId: number): Promise<void> {
     await markInactive(tabId);
     // 頁面可能已經關掉或換頁，content script 不在也沒關係。
@@ -383,5 +406,5 @@ export function createActivation(deps: ActivationDeps) {
     return stopped;
   }
 
-  return { activate, toggle, openPanel, stop, stopSeries, isActive, isSeriesPending, getTab, getSeriesId, setSeriesId, handleTabUpdated, handleTabRemoved };
+  return { activate, toggle, stop, stopSeries, isActive, isSeriesPending, getTab, getSeriesId, setSeriesId, handleTabUpdated, handleTabRemoved };
 }
