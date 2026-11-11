@@ -4,6 +4,7 @@
  */
 import { experimental_readRawConfig } from 'wrangler';
 import { describe, expect, it } from 'vitest';
+import { MONTHLY_PAGES } from '../src/shared/hosted-api.ts';
 
 const { rawConfig } = experimental_readRawConfig({ config: 'worker/wrangler.jsonc' });
 
@@ -28,5 +29,12 @@ describe('worker/wrangler.jsonc', () => {
       expect(names(env.d1_databases)).toEqual(names(rawConfig.d1_databases));
       expect(names(env.ratelimits)).toEqual(names(rawConfig.ratelimits));
     }
+  });
+
+  it('每個 env 的 Monthly Page Limit 都是 3,000 頁，跟外掛文案用的 MONTHLY_PAGES 一致（ADR 0012）', () => {
+    const limits = [rawConfig, ...(Object.values(rawConfig.env ?? {}) as (typeof rawConfig)[])].map((env) => env.vars?.MONTHLY_PAGE_LIMIT);
+
+    expect(limits).toEqual(limits.map(() => '3000'));
+    expect(MONTHLY_PAGES).toBe(3000);
   });
 });
