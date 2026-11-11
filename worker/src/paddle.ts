@@ -1,5 +1,5 @@
 /**
- * Paddle（Merchant of Record，spec #86「Worker API」、#94、#95）：Worker 對 Paddle API 的三個呼叫，以及驗 webhook 的簽章。
+ * Paddle（Merchant of Record，spec #86「Worker API」、#94、#95）：Worker 對 Paddle API 的四個呼叫，以及驗 webhook 的簽章。
  * env.test（browser test）的 __FAKE_PADDLE__ 換成假的實作，不碰真的 Paddle；Worker 測試用 env.dev，Paddle API 用 vi.spyOn(fetch) 假的。
  */
 import type { BillingPeriod } from '../../src/shared/hosted-api.ts';
@@ -17,6 +17,8 @@ export interface Paddle {
   portalUrl(customerId: string, subscriptionId: string): Promise<string>;
   /** 刪除帳號時取消訂閱，不退款；什麼時候生效由 subscription.ts 的 cancellationOnDelete 決定。 */
   cancelSubscription(subscriptionId: string, timing: CancelTiming): Promise<void>;
+  /** 替這筆 transaction 建立整筆的全額退款（adjustment，Paddle 核准前是 pending_approval），回傳 adjustment id。不取消訂閱。 */
+  refundTransaction(transactionId: string): Promise<string>;
 }
 
 export function paddle(env: Env): Paddle {
@@ -66,6 +68,16 @@ function paddleApi(env: Env): Paddle {
     async cancelSubscription(subscriptionId, timing) {
       await call(`/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`, { effective_from: timing });
     },
+    async refundTransaction(transactionId) {
+      const { id } = await call<{ id?: string }>('/adjustments', {
+        action: 'refund',
+        type: 'full',
+        transaction_id: transactionId,
+        reason: '讀者在 Refund Window 內從外掛的帳號頁申請全額退款',
+      });
+      if (!id) throw new PaddleError('Paddle 沒有回傳 adjustment id');
+      return id;
+    },
   };
 }
 
@@ -81,6 +93,7 @@ function fakePaddle(env: Env): Paddle {
       return `${env.SITE_ORIGIN}/zh-tw/?fake-portal=${encodeURIComponent(customerId)}`;
     },
     cancelSubscription: async () => {},
+    refundTransaction: async (transactionId) => `adj_fake_${transactionId}`,
   };
 }
 

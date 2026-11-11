@@ -219,7 +219,7 @@ SITE_ORIGIN_LOCAL='http://localhost:4321'
 WEBHOOK_PATH='/webhooks/paddle'
 # API key permissions the Worker and this wizard need; stage 3 lists them and checks them with GET /.
 PADDLE_PERMISSIONS=(transaction.write product.write price.write customer.write subscription.write
-  notification_setting.write notification.read notification_simulation.write customer_portal_session.write)
+  notification_setting.write notification.read notification_simulation.write customer_portal_session.write adjustment.write)
 WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.updated"]'
 
 # paddle_api METHOD PATH [JSON]: calls the sandbox API; sets HTTP_STATUS and RESPONSE.
@@ -311,7 +311,7 @@ step "Name：naruhodo-local-dev；Description：本機 wrangler dev 用。"
 step "Permissions 勾這幾個（write 都包含 read）："
 note "    transaction.write、product.write、price.write、customer.write、"
 note "    subscription.write、notification_setting.write、notification.read、"
-note "    notification_simulation.write、customer_portal_session.write"
+note "    notification_simulation.write、customer_portal_session.write、adjustment.write"
 note "    （最後這個在畫面上是 Customer portal sessions → Write；旁邊的 Customer authentication tokens 不用勾）"
 step "Expiry date 設最長的一年（預設 90 天）。Rotatable 不用開。"
 step "按 Save，複製 key（只會顯示一次，開頭是 pdl_sdbx_apikey_）。"

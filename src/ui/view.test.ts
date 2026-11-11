@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Quota } from '../shared/hosted-api.ts';
+import type { Quota, RefundInfo } from '../shared/hosted-api.ts';
 import type { PageView } from '../shared/messages.ts';
 import type { RatioRect } from '../shared/page-text.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { SeriesOption } from '../shared/series.ts';
-import { accountPageView, accountPlanView, canTranslate, parentPage, quotaView, seriesActions, setupNotices, sidePanelScreen, sidePanelView, translateAction } from './view.ts';
+import { accountPageView, accountPlanView, canTranslate, parentPage, quotaView, seriesActions, refundDialogView, setupNotices, sidePanelScreen, sidePanelView, translateAction, type SubscribedQuota } from './view.ts';
 
 type Transcript = PageView['transcript'];
 type Done = Extract<Transcript, { state: 'done' }>;
@@ -403,7 +403,7 @@ describe('設定頁的方案（#94 畫面定案）', () => {
 });
 
 describe('帳號與訂閱頁（#213）', () => {
-  const hosted = { mode: 'hosted', signedIn: true, justPaid: undefined, payment: undefined, justSignedIn: false, hasOrigin: true } as const;
+  const hosted = { mode: 'hosted', signedIn: true, justPaid: undefined, payment: undefined, justSignedIn: false, hasOrigin: true, now: Date.now() } as const;
   /** 帳號頁的「訂閱」區塊（設計稿 A 版：年繳在左、季繳在右）。 */
   const subscribeSection = {
     headline: '每月 3,000 頁・14 天內可全額退款',
@@ -613,3 +613,81 @@ describe('帳號與訂閱頁（#213）', () => {
   });
 });
 
+
+describe('帳號頁的退款區塊（#260，設計稿 B 版）', () => {
+  const hosted = { mode: 'hosted', signedIn: true, justPaid: undefined, payment: undefined, justSignedIn: false, hasOrigin: false } as const;
+  /** 本機時區 11 月 3 日扣款，Refund Window 到 11 月 17 日；現在是 11 月 10 日（還剩 7 天）。 */
+  const billedAt = new Date(2026, 10, 3, 11, 0).getTime();
+  const windowEndsAt = new Date(2026, 10, 17, 11, 0).getTime();
+  const now = new Date(2026, 10, 10, 11, 0).getTime();
+  const refund = (fields: Partial<RefundInfo> = {}): RefundInfo => ({ billedAt, amountUsd: 48, windowEndsAt, inWindow: true, status: 'none', eligible: true, ...fields });
+  const plan = (quota: Quota, r: RefundInfo | undefined) => accountPageView({ ...hosted, now, quota, refund: r }).plan;
+
+  it('在退款期內：標題、扣款日與金額、還剩幾天，以及「申請退款」', () => {
+    expect(plan(subscribed(), refund())?.refund).toEqual({
+      kind: 'offer',
+      title: '扣款後 14 天內可以申請全額退款',
+      detail: '11 月 3 日已扣款 US$48・還剩 7 天（到 11 月 17 日）',
+    });
+  });
+
+  it('最後一天不到 24 小時：還剩 1 天', () => {
+    const lastDay = windowEndsAt - 60 * 60_000;
+    expect(accountPageView({ ...hosted, now: lastDay, quota: subscribed(), refund: refund() }).plan?.refund).toMatchObject({ detail: expect.stringContaining('還剩 1 天') });
+  });
+
+  it('部分折扣：寫實付金額', () => {
+    expect(plan(subscribed(), refund({ amountUsd: 1 }))?.refund).toMatchObject({ detail: '11 月 3 日已扣款 US$1・還剩 7 天（到 11 月 17 日）' });
+  });
+
+  it('已排定取消、還在退款期內：照樣有退款區塊', () => {
+    expect(plan(subscribed({ cancelScheduled: true }), refund())?.refund).toMatchObject({ kind: 'offer' });
+  });
+
+  const hidden: [string, Quota, RefundInfo | undefined][] = [
+    ['沒有扣款紀錄（舊版 Worker、或還沒收到扣款）', subscribed(), undefined],
+    ['實付 US$0', subscribed(), refund({ amountUsd: 0, eligible: false })],
+    ['過了退款期', subscribed(), refund({ inWindow: false, eligible: false })],
+    ['扣款失敗重試中', subscribed({ status: 'pastDue' }), refund({ eligible: false })],
+    ['免費方案', { plan: 'free', remaining: 62 }, refund()],
+  ];
+  for (const [name, quota, r] of hidden) {
+    it(`${name}：不顯示退款區塊`, () => {
+      expect(plan(quota, r)?.refund).toBeUndefined();
+    });
+  }
+
+  it('退款處理中：同一個位置換成「退款處理中」，「管理訂閱」照樣保留', () => {
+    expect(plan(subscribed(), refund({ status: 'pending', eligible: false }))).toMatchObject({
+      manage: true,
+      refund: { kind: 'pending', title: '退款處理中', body: '已向 Paddle 申請退回 11 月 3 日扣款的 US$48。核准前照常可以翻譯；核准後訂閱就會結束。' },
+    });
+  });
+
+  it('退款處理中、已過退款期：照樣顯示處理中', () => {
+    expect(plan(subscribed(), refund({ status: 'pending', inWindow: false, eligible: false }))?.refund).toMatchObject({ kind: 'pending' });
+  });
+});
+
+describe('申請退款的確認對話框（#260）', () => {
+  const billedAt = new Date(2026, 10, 3, 11, 0).getTime();
+  const refund: RefundInfo = { billedAt, amountUsd: 48, windowEndsAt: billedAt + 14 * 86_400_000, inWindow: true, status: 'none', eligible: true };
+
+  it('退多少、退回哪裡、核准後訂閱結束、Free Pages 恢復、核准前照常翻譯', () => {
+    expect(refundDialogView(subscribed({ freePages: 62 }) as SubscribedQuota, refund)).toEqual({
+      title: '退款 US$48，並結束訂閱？',
+      points: [
+        '11 月 3 日扣款的 US$48 會全額退回原本的付款方式，由 Paddle 處理。',
+        'Paddle 核准退款後，訂閱就會結束，不再有每月 3,000 頁。',
+        '訂閱前剩下的 62 頁免費額度會恢復可用。',
+        '核准之前照常可以翻譯。',
+      ],
+      cancel: '先不要',
+      confirm: '確定退款',
+    });
+  });
+
+  it('訂閱前的 Free Pages 已經用完：說訂閱結束後沒有免費額度', () => {
+    expect(refundDialogView(subscribed({ freePages: 0 }) as SubscribedQuota, refund).points[2]).toBe('訂閱前的免費額度已經用完，訂閱結束後就不能再翻新的頁。');
+  });
+});

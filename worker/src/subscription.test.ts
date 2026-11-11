@@ -62,6 +62,7 @@ const subscribed = (fields: Partial<Extract<Quota, { plan: 'subscribed' }>> = {}
   periodEndsAt: Date.parse('2027-10-15T03:00:00Z'),
   billingPeriod: 'yearly',
   renewalPriceUsd: 48,
+  freePages: 100,
   ...fields,
 });
 
@@ -347,7 +348,7 @@ describe('Monthly Page Limit', () => {
     await send({ accountId, occurredAt: '2026-10-30T10:00:00Z' });
 
     expect(await translate(token, 2)).toEqual([200, 200]);
-    expect(await quota(token)).toEqual(subscribed({ remaining: 1 }));
+    expect(await quota(token)).toEqual(subscribed({ remaining: 1, freePages: 10 }));
 
     await send({ accountId, eventType: 'subscription.canceled', status: 'canceled', occurredAt: '2026-10-30T11:00:00Z' });
     expect(await quota(token)).toEqual({ plan: 'free', remaining: 10 });

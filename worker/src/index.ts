@@ -21,6 +21,7 @@ import {
   NOTES_PATH,
   PADDLE_WEBHOOK_PATH,
   PORTAL_PATH,
+  REFUND_PATH,
   SEND_CODE_PATH,
   SERIES_GUESS_PATH,
   SIGN_OUT_PATH,
@@ -52,6 +53,7 @@ import {
   type UsageKind,
 } from './quota.ts';
 import { parseNotesInput, parseTitleSignals, parseTranslateInput } from './input.ts';
+import { applyChargeEvent, claimRefund, recordRefundAdjustment, refundInfo, releaseRefund } from './charges.ts';
 import { lastSentCode, mailer } from './mailer.ts';
 import { paddle, PaddleError, verifyWebhook } from './paddle.ts';
 import { activeSubscription, applyPaddleEvent, cancellationOnDelete, paddleIds, recordPaddleEvent, refundedSubscription } from './subscription.ts';
@@ -291,7 +293,9 @@ const ROUTES: Record<string, Handler> = {
   }),
   [`GET ${ACCOUNT_PATH}`]: authed(async ({ env, now }, accountId) => {
     const email = await accountEmail(env.DB, accountId);
-    return email ? Response.json({ email, quota: await quota(env.DB, accountId, quotaContext(env, now)) } satisfies AccountResponse) : signedOut();
+    if (!email) return signedOut();
+    const [q, refund] = await Promise.all([quota(env.DB, accountId, quotaContext(env, now)), refundInfo(env.DB, accountId, now)]);
+    return Response.json({ email, quota: q, ...(refund ? { refund } : {}) } satisfies AccountResponse);
   }),
   // 刪除帳號：先取消 Paddle 訂閱，失敗就 502、什麼都不刪（帳號刪了訂閱卻還在扣款就沒有人能取消了）。
   // 要不要送、何時生效見 cancellationOnDelete；刪除後 Paddle 送來的事件找不到 Account，applyPaddleEvent 會忽略
@@ -314,6 +318,21 @@ const ROUTES: Record<string, Handler> = {
     if (!ids) return error(404, '沒有訂閱');
     return viaPaddle(async () => Response.json({ url: await paddle(env).portalUrl(ids.customerId, ids.subscriptionId) } satisfies PortalResponse));
   }),
+  // 申請退款（#260）：先在 D1 把最近一次扣款記為處理中（同時的請求只有一個拿得到），再向 Paddle 建立全額退款；
+  // 不取消訂閱，核准的 webhook 才取消（refundedSubscription）。Paddle 失敗就放掉處理中，讀者可以再按一次
+  [`POST ${REFUND_PATH}`]: authed(async ({ env, now }, accountId) => {
+    const claim = await claimRefund(env.DB, accountId, now);
+    if (!claim.ok) return error(409, '這筆扣款不能申請退款', claim.reason);
+    try {
+      return await viaPaddle(async () => {
+        await recordRefundAdjustment(env.DB, claim.transactionId, await paddle(env).refundTransaction(claim.transactionId));
+        return new Response(null, { status: 204 });
+      });
+    } finally {
+      // 成功時已經記下 adjustment id，releaseRefund 不會動它；只有 Paddle 失敗（或其他錯誤）才放掉處理中
+      await releaseRefund(env.DB, claim.transactionId);
+    }
+  }),
   // Paddle 的 webhook：先驗簽章（偽造的請求不能把任何人變成訂閱者），再套用；只做幾個 D1 查詢，遠低於 Paddle 要的 5 秒
   [`POST ${PADDLE_WEBHOOK_PATH}`]: async ({ request, env, now }) => {
     const body = await request.text();
@@ -335,6 +354,7 @@ const ROUTES: Record<string, Handler> = {
       });
     }
     await applyPaddleEvent(env.DB, event, now, env.PADDLE_PRICE_ID_QUARTERLY);
+    await applyChargeEvent(env.DB, event, now);
     return new Response(null, { status: 200 });
   },
   // 實際查一次 D1：database_id 填錯或 migrations 沒套用時，部署後的健康檢查就會失敗

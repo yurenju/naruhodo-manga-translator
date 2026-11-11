@@ -222,7 +222,7 @@ PADDLE_API_BASE_URL='https://api.paddle.com'
 PADDLE_DASHBOARD='https://vendors.paddle.com'
 # Worker 需要的 API key 權限；第 10 步照這份清單請使用者勾選，再用 GET / 核對。
 PADDLE_PERMISSIONS=(transaction.write product.write price.write customer.write subscription.write
-  notification_setting.write notification.read customer_portal_session.write)
+  notification_setting.write notification.read customer_portal_session.write adjustment.write)
 WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.updated"]'
 
 CF_SECRETS=() # 這次設定到 Cloudflare 的 Worker secrets
@@ -503,7 +503,8 @@ else
   note "    transaction.write、product.write、price.write、customer.write、"
   note "    subscription.write、notification_setting.write、notification.read、"
   note "    customer_portal_session.write（畫面上是 Customer portal sessions → Write；"
-  note "    旁邊的 Customer authentication tokens 不用勾）"
+  note "    旁邊的 Customer authentication tokens 不用勾）、"
+  note "    adjustment.write（讀者在外掛申請退款，#260）"
   step "Expiry date 設最長；Save 後複製 key（只會顯示一次，開頭是 pdl_live_apikey_）。"
   while :; do
     ask_secret PADDLE_API_KEY "貼上 API key（輸入不會顯示）："
