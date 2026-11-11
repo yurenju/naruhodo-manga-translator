@@ -163,47 +163,12 @@ export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; childr
   );
 }
 
-/** 雙價並列的一半：小標、大字（價格＋「／年」這種單位）、大字下面的小字。 */
+/** 網站的雙價並列（site/src/components/PricePair.astro）的一半：小標、大字（價格＋「／年」這種單位）、大字下面的小字。 */
 export interface PriceSide {
   label: string;
   price: string;
   unit: string;
   note: string;
-}
-
-/**
- * 雙價並列（價格呈現定案）：左半「你付」、右半「平均」，交界的箭頭圓章只是裝飾。夠寬時左右排，窄的時候上下排
- * （container query，components.css）。網站的 site/src/components/PricePair.astro 輸出同一份 DOM，改的時候兩邊一起改。
- */
-export function PricePair({ pay, average }: { pay: PriceSide; average: PriceSide }) {
-  const side = (s: PriceSide) => (
-    <>
-      <span class="naru-price-pair__k">{s.label}</span>
-      <span class="naru-price-pair__v">
-        {s.price}
-        <small>{s.unit}</small>
-      </span>
-      <span class="naru-price-pair__s">{s.note}</span>
-    </>
-  );
-  return (
-    <div class="naru-price-pair">
-      <div class="naru-price-pair__box">
-        <div class="naru-price-pair__side">{side(pay)}</div>
-        <div class="naru-price-pair__side naru-price-pair__side--avg">
-          {side(average)}
-          <span class="naru-price-pair__arrow" aria-hidden="true">
-            <svg class="naru-price-pair__right" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1.5 6h9M7 2.5l3.5 3.5L7 9.5" />
-            </svg>
-            <svg class="naru-price-pair__down" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 1.5v9M2.5 7l3.5 3.5L9.5 7" />
-            </svg>
-          </span>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /** 提示框。info：一般說明；warn：需要注意（過期、沒有 key）；danger：錯誤。role 等屬性原樣傳下去。 */

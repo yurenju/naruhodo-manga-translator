@@ -1,3 +1,4 @@
+import type { BillingPeriod } from './hosted-api.ts';
 import type { Stripe } from './long-page.ts';
 import type { PageText, RatioRect } from './page-text.ts';
 import type { EditableFields, NotesSuggestion, StaleReason, SuggestionRef } from './series-notes.ts';
@@ -37,7 +38,7 @@ export type Message =
   /** SW → side panel：內建翻譯的剩餘額度可能變了（翻譯扣了一頁、Worker 說用完了），重新向 Worker 讀。 */
   | { type: 'quota:changed' }
   /** onboarding、side panel、帳號頁 → SW：「訂閱」拿到 checkout 網址（from＝誰按了「訂閱」，shared/payment-return.ts 的 PaymentFrom），請 SW 開付款分頁，付款後帶讀者回到 originTabId（#176）。 */
-  | { type: 'payment:open'; url: string; originTabId: number; from: 'onboarding' | 'panel' | 'account' }
+  | { type: 'payment:open'; url: string; originTabId: number; from: 'onboarding' | 'panel' | 'account'; billingPeriod: BillingPeriod }
   /** side panel、onboarding → SW：目前的模型狀態。回應 ModelStatusResponse。 */
   | { type: 'panel:getModelStatus' }
   /** onboarding → SW：在背景把辨識模型下載進快取（#169），進度走 models:status。 */

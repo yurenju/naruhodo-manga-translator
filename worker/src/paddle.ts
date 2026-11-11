@@ -2,6 +2,7 @@
  * Paddle（Merchant of Record，spec #86「Worker API」、#94、#95）：Worker 對 Paddle API 的三個呼叫，以及驗 webhook 的簽章。
  * env.test（browser test）的 __FAKE_PADDLE__ 換成假的實作，不碰真的 Paddle；Worker 測試用 env.dev，Paddle API 用 vi.spyOn(fetch) 假的。
  */
+import type { BillingPeriod } from '../../src/shared/hosted-api.ts';
 import type { CancelTiming } from './subscription.ts';
 
 type Env = Cloudflare.Env;
@@ -10,8 +11,8 @@ type Env = Cloudflare.Env;
 export class PaddleError extends Error {}
 
 export interface Paddle {
-  /** 建立年繳 price 的 transaction，custom_data 放 Account id；回傳 transaction id（checkout 頁用 `_ptxn` 打開）。 */
-  createTransaction(accountId: string): Promise<string>;
+  /** 建立這個 Billing Period 的 price 的 transaction，custom_data 放 Account id；回傳 transaction id（checkout 頁用 `_ptxn` 打開）。 */
+  createTransaction(accountId: string, billingPeriod: BillingPeriod): Promise<string>;
   /** 替這個 customer 建立 customer portal session（取消訂閱、更新付款方式、收據），回傳網址。 */
   portalUrl(customerId: string, subscriptionId: string): Promise<string>;
   /** 刪除帳號時取消訂閱，不退款；什麼時候生效由 subscription.ts 的 cancellationOnDelete 決定。 */
@@ -21,6 +22,10 @@ export interface Paddle {
 export function paddle(env: Env): Paddle {
   return __FAKE_PADDLE__ ? fakePaddle(env) : paddleApi(env);
 }
+
+/** 每個 Billing Period 的 Paddle price（secret，換價格不用改程式）。 */
+const priceId = (env: Env, billingPeriod: BillingPeriod): string | undefined =>
+  billingPeriod === 'quarterly' ? env.PADDLE_PRICE_ID_QUARTERLY : env.PADDLE_PRICE_ID_YEARLY;
 
 function paddleApi(env: Env): Paddle {
   async function call<T>(path: string, body: unknown): Promise<T> {
@@ -40,9 +45,11 @@ function paddleApi(env: Env): Paddle {
   }
 
   return {
-    async createTransaction(accountId) {
+    async createTransaction(accountId, billingPeriod) {
+      const price = priceId(env, billingPeriod);
+      if (!price) throw new PaddleError(`沒有設定 ${billingPeriod} 的 Paddle price`);
       const { id } = await call<{ id?: string }>('/transactions', {
-        items: [{ price_id: env.PADDLE_PRICE_ID, quantity: 1 }],
+        items: [{ price_id: price, quantity: 1 }],
         custom_data: { account_id: accountId },
       });
       if (!id) throw new PaddleError('Paddle 沒有回傳 transaction id');
@@ -65,10 +72,10 @@ function paddleApi(env: Env): Paddle {
 /** 假 Paddle 拒絕替這個 customer 建立 portal session：browser test 的 webhook 用這個 customer id，模擬 key 少了權限（#156）。 */
 const FAKE_PORTAL_FORBIDDEN_CUSTOMER = 'ctm_fake_portal_forbidden';
 
-/** browser test 的假 Paddle：transaction id 帶 Account id（測試從 checkout 網址取出來組 webhook 事件）。 */
+/** browser test 的假 Paddle：transaction id 帶 Billing Period 與 Account id（測試從 checkout 網址看選了哪個週期、取出 Account id 組 webhook 事件）。 */
 function fakePaddle(env: Env): Paddle {
   return {
-    createTransaction: async (accountId) => `txn_fake_${accountId}`,
+    createTransaction: async (accountId, billingPeriod) => `txn_fake_${billingPeriod}_${accountId}`,
     async portalUrl(customerId) {
       if (customerId === FAKE_PORTAL_FORBIDDEN_CUSTOMER) throw new PaddleError(`Paddle API /customers/${customerId}/portal-sessions 失敗：HTTP 403`);
       return `${env.SITE_ORIGIN}/zh-tw/?fake-portal=${encodeURIComponent(customerId)}`;

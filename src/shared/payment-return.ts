@@ -3,6 +3,7 @@
  * SW 寫（background/payment-return.ts），onboarding 讀它決定第 3 步顯示「在付款分頁完成付款」還是「付款頁已經關閉」，帳號頁讀它決定要不要顯示「訂閱完成」，
  * side panel 讀「已訂閱」提示要不要顯示。
  */
+import type { BillingPeriod } from './hosted-api.ts';
 import type { Message } from './messages.ts';
 import { watchStorage } from './watch-local.ts';
 
@@ -15,6 +16,8 @@ export interface PendingPayment {
   /** 發起付款的分頁：付款確認或付款分頁被關掉時切回這裡。 */
   originTabId: number;
   from: PaymentFrom;
+  /** 付款分頁的 transaction 是哪個 Billing Period（付款中顯示「你選的是…」、「訂閱完成」帶上它）。 */
+  billingPeriod: BillingPeriod;
   /** 付款分頁被關掉的時間（ms）；SW 從這時候起再查一段時間就放棄。 */
   closedAt?: number;
 }
@@ -41,12 +44,12 @@ export function ownPaymentChange(
 /**
  * 請 SW 開付款分頁。originTabId 沒給時：onboarding、帳號頁是自己這個分頁，side panel 是這個視窗正在看的分頁（它跟著的漫畫分頁）。
  */
-export async function openPayment(url: string, from: PaymentFrom, originTabId?: number): Promise<void> {
+export async function openPayment(url: string, from: PaymentFrom, billingPeriod: BillingPeriod, originTabId?: number): Promise<void> {
   const origin = originTabId ?? (await chrome.tabs.getCurrent())?.id ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
   // 找不到發起的分頁、或 SW 沒回應（幾乎不會發生）：照舊只開付款頁，不帶回去
   const fallback = () => chrome.tabs.create({ url }).then(() => {});
   if (origin === undefined) return fallback();
-  await chrome.runtime.sendMessage({ type: 'payment:open', url, originTabId: origin, from } satisfies Message).catch(fallback);
+  await chrome.runtime.sendMessage({ type: 'payment:open', url, originTabId: origin, from, billingPeriod } satisfies Message).catch(fallback);
 }
 
 export async function loadPendingPayment(): Promise<PendingPayment | undefined> {

@@ -689,7 +689,7 @@ function App({ tabId }: { tabId: number | undefined }) {
       hostedHint={hostedHint}
       onDismissHostedHint={() => void dismissHostedHint()}
       quota={translationMode === 'hosted' ? quota : undefined}
-      onSubscribe={session ? () => runPayment(() => subscribe(session, 'panel', tabId)) : undefined}
+      onSubscribe={session ? () => runPayment(() => subscribe(session, 'panel', 'yearly', tabId)) : undefined}
       paymentFailed={paymentFailed}
       subscribedNotice={subscribedNotice}
       onDismissSubscribedNotice={() => void dismissSubscribedNotice()}

@@ -119,9 +119,9 @@ test('Paddle sandbox：side panel 訂閱 → checkout overlay 用測試卡付款
   const children: ChildProcess[] = [];
   let stopWorker: (() => Promise<void>) | undefined;
   try {
-    // Worker 只拿它要的四個值（.dev.vars 格式）
+    // Worker 只拿它要的五個值（.dev.vars 格式）
     const envFile = join(dir, '.dev.vars');
-    const keys = ['PADDLE_API_KEY', 'PADDLE_API_BASE_URL', 'PADDLE_PRICE_ID', 'PADDLE_WEBHOOK_SECRET'];
+    const keys = ['PADDLE_API_KEY', 'PADDLE_API_BASE_URL', 'PADDLE_PRICE_ID_QUARTERLY', 'PADDLE_PRICE_ID_YEARLY', 'PADDLE_WEBHOOK_SECRET'];
     await writeFile(envFile, keys.map((k) => `${k}=${env[k] ?? ''}`).join('\n') + '\n', { mode: 0o600 });
     stopWorker = await startWorker({ env: 'dev', envFile });
 

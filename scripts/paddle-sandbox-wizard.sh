@@ -360,22 +360,34 @@ note "程式不會讀這個值，所以不記錄；第 9 步建立 transaction �
 pause "確認有值後按 Enter"
 
 # ── 6 ────────────────────────────────────────────────────────────────────
-stage "產品與年繳 price（自動）"
-say "用 API 建立產品「Naruhodo Hosted Translation」和一個 USD 20／年 的 price。"
-say "金額是暫定值；之後要改價格就新增一個 price，不要修改已經有人訂閱的 price。"
-if [[ -n "$(_existing PADDLE_PRICE_ID || true)" ]]; then
-  PADDLE_PRODUCT_ID=$(_existing PADDLE_PRODUCT_ID); PADDLE_PRICE_ID=$(_existing PADDLE_PRICE_ID)
-  note "已經建立過：$PADDLE_PRODUCT_ID / $PADDLE_PRICE_ID，略過。"
-elif confirm "要建立產品與 price 嗎？"; then
-  paddle_api POST /products '{"name":"Naruhodo Hosted Translation","tax_category":"standard","description":"Hosted translation for the Naruhodo Chrome extension (annual subscription)."}'
+stage "產品與季繳、年繳兩個 price（自動）"
+say "用 API 建立產品「Naruhodo Hosted Translation」，以及兩個 price：季繳 USD 15／3 個月、年繳 USD 48／年（ADR 0012）。"
+say "之後要改價格就新增一個 price，不要修改已經有人訂閱的 price。"
+if [[ -n "$(_existing PADDLE_PRODUCT_ID || true)" ]]; then
+  PADDLE_PRODUCT_ID=$(_existing PADDLE_PRODUCT_ID)
+  note "產品已經建立過：$PADDLE_PRODUCT_ID，略過。"
+elif confirm "要建立產品嗎？"; then
+  paddle_api POST /products '{"name":"Naruhodo Hosted Translation","tax_category":"standard","description":"Hosted translation for the Naruhodo Chrome extension (quarterly or yearly subscription)."}'
   api_ok || api_fail "create product"
-  write_env PADDLE_PRODUCT_ID "$(json_get 'data.id')"
-  paddle_api POST /prices "{\"product_id\":\"$PADDLE_PRODUCT_ID\",\"description\":\"Annual\",\"name\":\"Annual\",\"unit_price\":{\"amount\":\"2000\",\"currency_code\":\"USD\"},\"billing_cycle\":{\"interval\":\"year\",\"frequency\":1}}"
-  api_ok || api_fail "create price"
-  write_env PADDLE_PRICE_ID "$(json_get 'data.id')"
-else
-  warn "沒有 price 就無法建立 transaction；之後重跑這個 wizard 再建。"
+  PADDLE_PRODUCT_ID=$(json_get 'data.id')
+  write_env PADDLE_PRODUCT_ID "$PADDLE_PRODUCT_ID"
 fi
+# create_price <env 名稱> <名稱> <美分> <interval> <frequency>：已經建立過就略過
+create_price() {
+  if [[ -n "$(_existing "$1" || true)" ]]; then
+    printf -v "$1" '%s' "$(_existing "$1")"
+    note "$2 price 已經建立過：$(_existing "$1")，略過。"
+  elif [[ -n "${PADDLE_PRODUCT_ID:-}" ]] && confirm "要建立 $2 price 嗎？"; then
+    paddle_api POST /prices "{\"product_id\":\"$PADDLE_PRODUCT_ID\",\"description\":\"$2\",\"name\":\"$2\",\"unit_price\":{\"amount\":\"$3\",\"currency_code\":\"USD\"},\"billing_cycle\":{\"interval\":\"$4\",\"frequency\":$5}}"
+    api_ok || api_fail "create $2 price"
+    printf -v "$1" '%s' "$(json_get 'data.id')"
+    write_env "$1" "${!1}"
+  else
+    warn "沒有 $2 price 就無法用這個扣款週期結帳；之後重跑這個 wizard 再建。"
+  fi
+}
+create_price PADDLE_PRICE_ID_QUARTERLY Quarterly 1500 month 3
+create_price PADDLE_PRICE_ID_YEARLY Yearly 4800 year 1
 pause
 
 # ── 7 ────────────────────────────────────────────────────────────────────
@@ -415,8 +427,8 @@ pause
 stage "驗證：建立一筆 transaction（自動）"
 say "模擬 Worker 會做的事：建立 transaction、custom_data 放 account id，拿回 checkout.url。"
 say "不會付款；這筆 transaction 會停在 ready 狀態，放著不管就好。"
-[[ -n "${PADDLE_PRICE_ID:-}" ]] || { warn "還沒有 price（第 6 步），重跑 wizard 補上"; exit 1; }
-paddle_api POST /transactions "{\"items\":[{\"price_id\":\"$PADDLE_PRICE_ID\",\"quantity\":1}],\"custom_data\":{\"account_id\":\"wizard-check\"}}"
+[[ -n "${PADDLE_PRICE_ID_YEARLY:-}" ]] || { warn "還沒有年繳 price（第 6 步），重跑 wizard 補上"; exit 1; }
+paddle_api POST /transactions "{\"items\":[{\"price_id\":\"$PADDLE_PRICE_ID_YEARLY\",\"quantity\":1}],\"custom_data\":{\"account_id\":\"wizard-check\"}}"
 api_ok || api_fail "create transaction"
 step "Paddle 回的 checkout.url（default payment link）：$(json_get 'data.checkout.url')"
 step "Worker 實際回給外掛的網址：$SITE_ORIGIN_LOCAL/zh-tw/checkout?_ptxn=$(json_get 'data.id')"

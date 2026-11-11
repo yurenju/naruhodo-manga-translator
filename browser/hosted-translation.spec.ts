@@ -112,7 +112,7 @@ async function subscribeWithoutExtension(email: string): Promise<void> {
   expect((await client.sendCode(email)).ok).toBe(true);
   const verified = await client.verifyCode(email, await lastCode(email));
   if (!verified.ok) throw new Error(`登入失敗：${verified.message}`);
-  const checkout = await client.checkout(verified.token, 'zh-tw');
+  const checkout = await client.checkout(verified.token, 'zh-tw', 'yearly');
   if (!checkout.ok) throw new Error(`checkout 失敗：${checkout.message}`);
   await sendSubscriptionCreated(accountIdFromCheckout(checkout.url));
 }
@@ -123,8 +123,8 @@ const TEST_WEBHOOK_SECRET = 'pdl_ntfset_browser_test';
 /** worker/src/paddle.ts 的假 Paddle 拒絕替這個 customer 建立 portal session（像 API key 少了 customer_portal_session.write）。 */
 const PORTAL_FORBIDDEN_CUSTOMER = 'ctm_fake_portal_forbidden';
 
-/** 假 Paddle 的 transaction id 是 txn_fake_<Account id>，放在 checkout 頁網址的 _ptxn。 */
-const accountIdFromCheckout = (url: string) => new URL(url).searchParams.get('_ptxn')!.replace('txn_fake_', '');
+/** 假 Paddle 的 transaction id 是 txn_fake_<Billing Period>_<Account id>，放在 checkout 頁網址的 _ptxn。 */
+const accountIdFromCheckout = (url: string) => new URL(url).searchParams.get('_ptxn')!.replace(/^txn_fake_(quarterly|yearly)_/, '');
 
 /**
  * 像 Paddle 一樣簽好、送一個 subscription.created 給本機 Worker；custom_data 的 Account id 是 Worker 建立 transaction 時放的。
@@ -280,6 +280,23 @@ async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId
   await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/^本月剩 3,000 頁/);
 }
 
+// unit 測不到的：帳號頁按下的扣款週期一路帶到 Worker 的結帳 API（假 Paddle 的 transaction id 帶著它）、SW 用新分頁打開付款頁，
+// 帳號頁從 SW 記的付款狀態換成付款中（#257）。各種付款狀態顯示什麼在 src/ui/view.test.ts，price 的選擇在 worker/src/subscription.test.ts。
+test('帳號頁選年繳：打開年繳的付款頁，帳號頁顯示「你選的是 年繳」並收起訂閱區塊', async ({ context, sw, extensionId, mockSite }, testInfo) => {
+  const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
+  await signInOnPanel(panel, context, freshEmail(testInfo.workerIndex));
+  const account = await openAccountFromSettings(panel, context);
+  await context.route('http://localhost:4321/**', (route) => route.fulfill({ contentType: 'text/html', body: '' }));
+
+  const opened = context.waitForEvent('page');
+  await account.getByRole('region', { name: '訂閱' }).getByRole('button', { name: '訂閱年繳' }).click();
+  const checkout = await opened;
+
+  await expect.poll(() => checkout.url()).toMatch(/^http:\/\/localhost:4321\/zh-tw\/checkout\?_ptxn=txn_fake_yearly_/);
+  await expect(account.getByRole('status', { name: '在付款分頁完成付款' })).toContainText('你選的是 年繳 US$48・平均每月 US$4・省 20%。');
+  await expect(account.getByRole('region', { name: '訂閱' })).toHaveCount(0);
+});
+
 // unit 測不到的：Worker 的 502 經過 hosted-account-client 回到帳號頁，畫面真的出現錯誤、沒有打開新分頁（#156）。
 // 「訂閱」失敗走同一個 usePaymentAction 與 PaymentUnavailable，只留「管理訂閱」這一條代表路徑。
 test('管理訂閱：設定頁的「管理帳號 →」打開帳號頁；Paddle 拒絕建立 customer portal 時，帳號頁顯示付款服務暫時無法使用，不打開新分頁', async ({
@@ -340,7 +357,7 @@ test('免費額度用完：Worker 回額度不足後，side panel 顯示用完�
   const account = await opened;
   await expect.poll(() => account.url()).toBe(`chrome-extension://${extensionId}/account.html?from=${tabId}`);
   await expect(account.getByRole('status').filter({ hasText: '免費額度已用完' })).toBeVisible();
-  await expect(account.getByRole('region', { name: '訂閱' }).getByRole('button', { name: '訂閱' })).toBeVisible();
+  await expect(account.getByRole('region', { name: '訂閱' }).getByRole('button', { name: '訂閱年繳' })).toBeVisible();
 });
 
 test('刪除帳號：帳號頁的「刪除帳號」換到確認畫面 → 確定刪除 → 帳號頁是未登入，side panel 顯示「尚未登入」', async ({

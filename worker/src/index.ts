@@ -11,11 +11,13 @@ import { isPracticeSpreadPage, type PracticeSpreadText } from '../../src/shared/
 import practiceSpread from '../../practice-spread/ocr.json' with { type: 'json' };
 import {
   ACCOUNT_PATH,
+  BILLING_PERIODS,
   CHECKOUT_PATH,
   DEV_DAILY_FREE_PAGES_PATH,
   DEV_FREE_PAGES_PATH,
   DEV_OUTBOX_PATH,
   HEALTH_PATH,
+  LEGACY_CHECKOUT_PATH,
   NOTES_PATH,
   PADDLE_WEBHOOK_PATH,
   PORTAL_PATH,
@@ -25,6 +27,7 @@ import {
   TRANSLATE_PATH,
   VERIFY_CODE_PATH,
   type AccountResponse,
+  type BillingPeriod,
   type CheckoutLocale,
   type CheckoutResponse,
   type HostedError,
@@ -190,6 +193,26 @@ const llm =
 
 const CHECKOUT_LOCALES: readonly CheckoutLocale[] = ['zh-tw', 'en'];
 
+/**
+ * 建立 checkout（CHECKOUT_PATH 與舊版外掛的 LEGACY_CHECKOUT_PATH）：billingPeriodOf 從 body 取扣款週期，取不到回 400。
+ * Account id 只來自 session token；Paddle 回的 checkout.url 只能是核准過的網域，所以 checkout 網址由 Worker 自己組。
+ */
+const checkout = (billingPeriodOf: (body: unknown) => BillingPeriod | undefined) =>
+  authed(async ({ request, env }, accountId) => {
+    const body = await jsonBody(request);
+    const requested = field(body, 'locale');
+    const locale = CHECKOUT_LOCALES.find((l) => l === requested) ?? 'zh-tw';
+    const billingPeriod = billingPeriodOf(body);
+    if (!billingPeriod) return error(400, 'billingPeriod 要是 quarterly 或 yearly');
+    if (!env.SITE_ORIGIN) return error(500, '沒有設定產品網站的網址');
+    const site = env.SITE_ORIGIN;
+    if (await activeSubscription(env.DB, accountId)) return error(409, '已經訂閱中', 'alreadySubscribed');
+    return viaPaddle(async () => {
+      const transactionId = await paddle(env).createTransaction(accountId, billingPeriod);
+      return Response.json({ url: `${site}/${locale}/checkout?_ptxn=${encodeURIComponent(transactionId)}` } satisfies CheckoutResponse);
+    });
+  });
+
 /** Paddle API 失敗回 502（細節只在 Worker 的 log）；其他錯誤照常往上丟。 */
 async function viaPaddle(run: () => Promise<Response>): Promise<Response> {
   try {
@@ -280,18 +303,12 @@ const ROUTES: Record<string, Handler> = {
       return new Response(null, { status: 204 });
     }),
   ),
-  [`POST ${CHECKOUT_PATH}`]: authed(async ({ request, env }, accountId) => {
-    const requested = field(await jsonBody(request), 'locale');
-    const locale = CHECKOUT_LOCALES.find((l) => l === requested) ?? 'zh-tw';
-    if (!env.SITE_ORIGIN) return error(500, '沒有設定產品網站的網址');
-    const site = env.SITE_ORIGIN;
-    if (await activeSubscription(env.DB, accountId)) return error(409, '已經訂閱中', 'alreadySubscribed');
-    return viaPaddle(async () => {
-      // Account id 只來自 session token；Paddle 回的 checkout.url 只能是核准過的網域，所以 checkout 網址由 Worker 自己組
-      const transactionId = await paddle(env).createTransaction(accountId);
-      return Response.json({ url: `${site}/${locale}/checkout?_ptxn=${encodeURIComponent(transactionId)}` } satisfies CheckoutResponse);
-    });
+  [`POST ${CHECKOUT_PATH}`]: checkout((body) => {
+    // 扣款週期只能由外掛選：沒給或不認得就不建立 transaction（不猜一個預設值，免得讀者付到沒選的價格）
+    const requested = field(body, 'billingPeriod');
+    return BILLING_PERIODS.find((p) => p === requested);
   }),
+  [`POST ${LEGACY_CHECKOUT_PATH}`]: checkout(() => 'yearly'),
   [`POST ${PORTAL_PATH}`]: authed(async ({ env }, accountId) => {
     const ids = await paddleIds(env.DB, accountId);
     if (!ids) return error(404, '沒有訂閱');
