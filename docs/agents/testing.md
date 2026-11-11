@@ -9,7 +9,7 @@
 | browser test | Do the pieces connect? | `npm run test:browser` | real (mock site) | FakeEngine (replayed) | FakeTranslator (in the extension, or in the local Worker) | none: much of the extension can only be checked in a browser | every change that touches the extension's behaviour |
 | e2e | Still right with the real models? | `npm run e2e` | real (mock site) | real models (wasm) | FakeTranslator | none; run only when needed | see below |
 | smoke | Does the real Claude API still work? | `npm run smoke` | real (mock site) | real models | real Claude API (direct, and through the local Worker) | — | only when the Claude integration changes; costs money; the key comes from 1Password (below) |
-| smoke:paddle | Does a real Paddle sandbox checkout reach the Worker? | `npm run smoke:paddle` | real (mock site + local product site) | FakeEngine | — (Paddle sandbox: real checkout overlay, test card, webhook through a cloudflared tunnel) | — | only when the Paddle integration changes; needs `~/.config/naruhodo/paddle-sandbox.env`; a CAPTCHA on the payment screen means stop and ask the developer |
+| smoke:paddle | Do a real Paddle sandbox checkout (quarterly and yearly) and a refund reach the Worker? | `npm run smoke:paddle` | real (mock site + local product site) | FakeEngine | — (Paddle sandbox: real checkout overlay, test card, webhook through a cloudflared tunnel) | — | only when the Paddle integration changes; needs `~/.config/naruhodo/paddle-sandbox.env`; takes about 15 minutes (the sandbox approves the refund after ~8); a CAPTCHA on the payment screen means stop and ask the developer |
 
 A layer over its budget is a signal that tests have drifted up: find the ones that belong lower.
 
