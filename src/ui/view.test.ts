@@ -337,6 +337,8 @@ const subscribed = (fields: Partial<Extract<Quota, { plan: 'subscribed' }>> = {}
   status: 'active',
   cancelScheduled: false,
   periodEndsAt: oct15NextYear,
+  billingPeriod: 'yearly',
+  renewalPriceUsd: 48,
   ...fields,
 });
 
@@ -415,7 +417,18 @@ describe('帳號與訂閱頁（#213）', () => {
   it('免費額度用完：warn 說明不提訂閱、進度條是空的、有訂閱段', () => {
     expect(accountPageView({ ...hosted, quota: free(0) })).toEqual({
       notice: { tone: 'warn', title: '免費額度已用完', body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。', backToManga: false },
-      plan: { name: '免費', note: '新帳號一次 100 頁，不會過期', quotaLabel: '免費額度', left: '已用完', fraction: 0, warn: true },
+      plan: {
+        name: '免費',
+        badge: undefined,
+        note: '新帳號一次 100 頁，不會過期',
+        manage: false,
+        rows: [],
+        quotaLabel: '免費額度',
+        left: '已用完',
+        reset: undefined,
+        fraction: 0,
+        warn: true,
+      },
       payment: undefined,
       subscribe: subscribeSection,
       ownKeyNote: false,
@@ -432,14 +445,67 @@ describe('帳號與訂閱頁（#213）', () => {
     expect(accountPageView({ ...hosted, quota: free(25) }).plan).toMatchObject({ left: '剩 25 / 100 頁', warn: true });
   });
 
-  it('訂閱中：方案名「訂閱（年繳）」、本月剩 N / 上限，沒有訂閱段', () => {
+  it('年繳訂閱中（設計稿 B 版）：「訂閱」＋ok「訂閱中」、管理訂閱；扣款週期、下次續訂的日期與金額、本月額度與重置日；沒有訂閱段', () => {
     expect(accountPageView({ ...hosted, quota: subscribed() })).toEqual({
       notice: undefined,
-      plan: { name: '訂閱（年繳）', note: undefined, quotaLabel: '本月額度', left: '剩 612 / 3,000 頁', fraction: 0.204, warn: false },
+      plan: {
+        name: '訂閱',
+        badge: { text: '訂閱中', tone: 'ok' },
+        note: undefined,
+        manage: true,
+        rows: [
+          { label: '扣款週期', value: '年繳', warn: false },
+          { label: '下次續訂', value: '2027 年 10 月 15 日・US$48', warn: false },
+        ],
+        quotaLabel: '本月額度',
+        left: '剩 612 / 3,000 頁',
+        reset: '11 月 15 日重置',
+        fraction: 0.204,
+        warn: false,
+      },
       payment: undefined,
       subscribe: undefined,
       ownKeyNote: false,
       signedOut: undefined,
+    });
+  });
+
+  it('季繳訂閱中：扣款週期「季繳」，下次續訂 US$15', () => {
+    const jan15 = new Date(2027, 0, 15, 11, 0).getTime();
+    expect(accountPageView({ ...hosted, quota: subscribed({ billingPeriod: 'quarterly', renewalPriceUsd: 15, periodEndsAt: jan15 }) }).plan?.rows).toEqual([
+      { label: '扣款週期', value: '季繳', warn: false },
+      { label: '下次續訂', value: '2027 年 1 月 15 日・US$15', warn: false },
+    ]);
+  });
+
+  it('舊訂閱者（原本年繳 US$20）：Worker 給的下次續訂金額是新的年繳價，卡片寫 US$48', () => {
+    const mar1 = new Date(2027, 2, 1, 11, 0).getTime();
+    expect(accountPageView({ ...hosted, quota: subscribed({ periodEndsAt: mar1 }) }).plan?.rows).toContainEqual({
+      label: '下次續訂',
+      value: '2027 年 3 月 1 日・US$48',
+      warn: false,
+    });
+  });
+
+  it('排定取消：warn「訂閱中・不會續訂」，「訂閱結束」只寫日期（不會再扣款）', () => {
+    expect(accountPageView({ ...hosted, quota: subscribed({ cancelScheduled: true }) }).plan).toMatchObject({
+      badge: { text: '訂閱中・不會續訂', tone: 'warn' },
+      manage: true,
+      rows: [
+        { label: '扣款週期', value: '年繳', warn: false },
+        { label: '訂閱結束', value: '2027 年 10 月 15 日', warn: false },
+      ],
+    });
+  });
+
+  it('扣款失敗重試中：warn「扣款失敗，重試中」，「扣款」那一列用警告色請讀者更新付款方式，不寫下次續訂', () => {
+    expect(accountPageView({ ...hosted, quota: subscribed({ status: 'pastDue', billingPeriod: 'quarterly', renewalPriceUsd: 15 }) }).plan).toMatchObject({
+      badge: { text: '扣款失敗，重試中', tone: 'warn' },
+      manage: true,
+      rows: [
+        { label: '扣款週期', value: '季繳', warn: false },
+        { label: '扣款', value: 'Paddle 會再嘗試扣款，這段期間照常可以使用；請到「管理訂閱」更新付款方式', warn: true },
+      ],
     });
   });
 
@@ -456,7 +522,7 @@ describe('帳號與訂閱頁（#213）', () => {
       body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音，重置後就會繼續翻。',
       backToManga: true,
     });
-    expect(view.plan).toMatchObject({ left: '本月已用完', fraction: 0, warn: true });
+    expect(view.plan).toMatchObject({ badge: { text: '訂閱中', tone: 'ok' }, left: '本月已用完', reset: '11 月 15 日重置', fraction: 0, warn: true });
     expect(accountPageView({ ...hosted, hasOrigin: false, quota: subscribed({ remaining: 0 }) }).notice?.backToManga).toBe(false);
   });
 

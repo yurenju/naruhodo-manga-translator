@@ -311,7 +311,7 @@ test('管理訂閱：設定頁的「管理帳號 →」打開帳號頁；Paddle 
   await subscribeOnPanel(panel, context, PORTAL_FORBIDDEN_CUSTOMER);
   const account = await openAccountFromSettings(panel, context);
   await expect.poll(() => account.url()).toBe(`chrome-extension://${extensionId}/account.html`);
-  await expect(account.getByRole('region', { name: '目前方案' })).toContainText('訂閱（年繳）');
+  await expect(account.getByRole('region', { name: '目前方案' })).toContainText('下次續訂');
 
   const pagesBefore = context.pages().length;
   await account.getByRole('button', { name: '管理訂閱（付款方式、取消）' }).click();

@@ -2,7 +2,7 @@
  * 帳號與訂閱頁（#213，prototype/account-status 的方案 B）：所有帳號狀態的家。圖示右鍵選單「帳號與訂閱」直接打開；
  * 額度用完時 Page 上的紅色小標籤與點圖示帶著漫畫分頁打開（?from=N，「回到漫畫」切回去）；side panel 設定頁的「管理帳號 →」也到這裡。
  *
- * 由上到下：狀態說明（需要時）、付款中（需要時）、登入的帳號＋登出、目前方案（進度條畫剩下多少）、
+ * 由上到下：狀態說明（需要時）、付款中（需要時）、登入的帳號＋登出、目前方案（設計稿 B 版：狀態 Badge、扣款週期、下次續訂、本月額度的進度條，#259）、
  * 訂閱（只有免費方案；年繳、季繳兩張並排的卡片，#257）、刪除帳號。
  * 要顯示什麼由 view.ts 的 accountPageView 決定；這裡只接上 chrome、Worker 與畫面。
  */
@@ -31,7 +31,7 @@ import { Badge, Button, Callout } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
 import { SignIn } from '../ui/sign-in.tsx';
 import { OfferText, PaymentUnavailable } from '../ui/subscribe-button.tsx';
-import { accountPageView, accountPlanView, signedOutText } from '../ui/view.ts';
+import { accountPageView, signedOutText } from '../ui/view.ts';
 
 const LOGO = 'icons/naruhodo-small.svg';
 
@@ -132,7 +132,6 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
     justSignedIn,
     hasOrigin: from !== undefined,
   });
-  const plan = quota && accountPlanView(quota);
   /** 打開這個扣款週期的付款頁：付款分頁還開著的話 SW 切過去，不開第二個。 */
   const pay = (billingPeriod: BillingPeriod) => runPayment(() => subscribe(session, 'account', billingPeriod));
   return (
@@ -182,35 +181,35 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
           <Button onClick={() => void signOut(accountExit, session.token)}>登出</Button>
         </div>
       </section>
-      {view.plan && plan && (
-        <section class="ac-sec" aria-label="目前方案">
-          <h2>目前方案</h2>
+      {view.plan && (
+        <section class="ac-sec ac-plan" aria-label="目前方案">
+          <div class="ac-split">
+            <h2>目前方案</h2>
+            {view.plan.manage && <Button onClick={() => runPayment(() => managePlan(session))}>管理訂閱（付款方式、取消）</Button>}
+          </div>
           <div class="ac-plan-head">
             <span class="ac-plan-name">{view.plan.name}</span>
-            {quota?.plan === 'subscribed' ? <Badge tone={plan.badge.tone}>{plan.badge.text}</Badge> : <span class="hint">{view.plan.note}</span>}
+            {view.plan.badge && <Badge tone={view.plan.badge.tone}>{view.plan.badge.text}</Badge>}
+            {view.plan.note && <span class="hint">{view.plan.note}</span>}
           </div>
-          <div class="ac-split ac-small">
-            <span class="ac-muted">{view.plan.quotaLabel}</span>
-            <span class={view.plan.warn ? 'ac-warn' : undefined}>{view.plan.left}</span>
-          </div>
-          <div class={view.plan.warn ? 'ac-meter ac-meter--warn' : 'ac-meter'} role="presentation">
-            <i style={{ width: `${Math.round(view.plan.fraction * 100)}%` }} />
-          </div>
-          {quota?.plan === 'subscribed' && (
-            <>
-              <p class="hint">
-                {plan.lines.map((line, i) => (
-                  <Fragment key={line}>
-                    {i > 0 && <br />}
-                    {line}
-                  </Fragment>
-                ))}
-              </p>
-              <div>
-                <Button onClick={() => runPayment(() => managePlan(session))}>管理訂閱（付款方式、取消）</Button>
-              </div>
-            </>
-          )}
+          <dl class="ac-plan-rows">
+            {view.plan.rows.map((row) => (
+              <Fragment key={row.label}>
+                <dt>{row.label}</dt>
+                <dd class={row.warn ? 'ac-warn' : undefined}>{row.value}</dd>
+              </Fragment>
+            ))}
+            <dt>{view.plan.quotaLabel}</dt>
+            <dd class="ac-plan-quota">
+              <span class="ac-split">
+                <span class={view.plan.warn ? 'ac-warn' : undefined}>{view.plan.left}</span>
+                {view.plan.reset && <span class="ac-muted">{view.plan.reset}</span>}
+              </span>
+              <span class={view.plan.warn ? 'ac-meter ac-meter--warn' : 'ac-meter'} role="presentation">
+                <i style={{ width: `${Math.round(view.plan.fraction * 100)}%` }} />
+              </span>
+            </dd>
+          </dl>
         </section>
       )}
       {view.subscribe && (

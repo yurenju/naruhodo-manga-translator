@@ -19,7 +19,7 @@ export interface BillingPeriodOffer {
 const NAME: Record<BillingPeriod, string> = { quarterly: '季繳', yearly: '年繳' };
 
 /** 美元金額：整數不帶小數，其他兩位小數。 */
-const usd = (amount: number) => `US$${Number.isInteger(amount) ? amount : amount.toFixed(2)}`;
+export const usd = (amount: number) => `US$${Number.isInteger(amount) ? amount : amount.toFixed(2)}`;
 
 const monthly = (period: BillingPeriod) => PRICE_USD[period] / PERIOD_MONTHS[period];
 

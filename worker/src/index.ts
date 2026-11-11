@@ -334,7 +334,7 @@ const ROUTES: Record<string, Handler> = {
         return new Response(null, { status: 200 });
       });
     }
-    await applyPaddleEvent(env.DB, event, now);
+    await applyPaddleEvent(env.DB, event, now, env.PADDLE_PRICE_ID_QUARTERLY);
     return new Response(null, { status: 200 });
   },
   // 實際查一次 D1：database_id 填錯或 migrations 沒套用時，部署後的健康檢查就會失敗
