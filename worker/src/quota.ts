@@ -16,6 +16,26 @@ export interface QuotaContext {
 /** wrangler.jsonc 的 MONTHLY_PAGE_LIMIT。 */
 export const monthlyLimit = (env: Cloudflare.Env): number => Number(env.MONTHLY_PAGE_LIMIT);
 
+/** wrangler.jsonc 的 DAILY_FREE_PAGES_CAP：Daily Free Pages Cap（#241）。 */
+export const dailyFreePagesCap = (env: Cloudflare.Env): number => Number(env.DAILY_FREE_PAGES_CAP);
+
+/** Daily Free Pages Cap 算的那一天：UTC 的 YYYY-MM-DD，UTC 0 點換下一天。 */
+const utcDay = (now: number): string => new Date(now).toISOString().slice(0, 10);
+
+/** 今天（UTC）全站送出的 Free Pages 到了 cap 沒（#241）。到了，只靠 Free Pages 的 Account 今天剩下的時間不再送 Anthropic。 */
+export async function freePagesPausedToday(db: D1Database, now: number, cap: number): Promise<boolean> {
+  const row = await db.prepare('SELECT used FROM daily_free_pages WHERE day = ?').bind(utcDay(now)).first<{ used: number }>();
+  return (row?.used ?? 0) >= cap;
+}
+
+/** 開發用：直接設定今天（UTC）全站已送出的 Free Pages。 */
+export async function setDailyFreePages(db: D1Database, now: number, used: number): Promise<void> {
+  await db
+    .prepare('INSERT INTO daily_free_pages (day, used) VALUES (?1, ?2) ON CONFLICT (day) DO UPDATE SET used = ?2')
+    .bind(utcDay(now), used)
+    .run();
+}
+
 /** 新 Account 的 Free Pages：這個 email 沒領過才給 FREE_PAGES 頁，領過（刪除帳號後重新註冊）就是 0。 */
 export async function grantFreePages(db: D1Database, accountId: string, email: string, now: number): Promise<void> {
   const grant = await db.prepare('INSERT INTO free_page_grants (email_hash, granted_at) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(await sha256(email), now).run();
@@ -45,19 +65,28 @@ export async function quota(db: D1Database, accountId: string, { now, limit }: Q
 /**
  * 扣一個 Translated Page：訂閱中扣本月額度，否則扣 Free Pages。條件式 UPDATE 一次做完「還有沒有、扣掉」，不先讀再寫；
  * false＝已經沒有了。本月額度那一句同時處理重置：存的週期起點不是現在的週期，就從 1 重新算。
+ * 扣到 Free Pages 也算進今天全站的總數（Daily Free Pages Cap，#241）。這裡不看上限（送出前已經看過）：同時送來的請求
+ * 可能讓當天超出幾頁，可以接受；超出之後送出前的檢查就會擋，不會一直超過下去。
  */
 export async function deductPage(db: D1Database, accountId: string, { now, limit }: QuotaContext): Promise<boolean> {
   const subscription = await activeSubscription(db, accountId);
-  const result = subscription
-    ? await db
-        .prepare(
-          `UPDATE quotas SET cycle_used = CASE WHEN cycle_start = ?1 THEN cycle_used + 1 ELSE 1 END, cycle_start = ?1
-           WHERE account_id = ?2 AND (cycle_start IS NOT ?1 OR cycle_used < ?3) AND ?3 > 0`,
-        )
-        .bind(monthlyCycle(subscription.startedAt, now).start, accountId, limit)
-        .run()
-    : await db.prepare('UPDATE quotas SET free_pages = free_pages - 1 WHERE account_id = ? AND free_pages > 0').bind(accountId).run();
-  return result.meta.changes === 1;
+  if (subscription) {
+    const result = await db
+      .prepare(
+        `UPDATE quotas SET cycle_used = CASE WHEN cycle_start = ?1 THEN cycle_used + 1 ELSE 1 END, cycle_start = ?1
+         WHERE account_id = ?2 AND (cycle_start IS NOT ?1 OR cycle_used < ?3) AND ?3 > 0`,
+      )
+      .bind(monthlyCycle(subscription.startedAt, now).start, accountId, limit)
+      .run();
+    return result.meta.changes === 1;
+  }
+  const result = await db.prepare('UPDATE quotas SET free_pages = free_pages - 1 WHERE account_id = ? AND free_pages > 0').bind(accountId).run();
+  if (result.meta.changes !== 1) return false;
+  await db
+    .prepare('INSERT INTO daily_free_pages (day, used) VALUES (?, 1) ON CONFLICT (day) DO UPDATE SET used = used + 1')
+    .bind(utcDay(now))
+    .run();
+  return true;
 }
 
 /** series_guess：猜作品原名（#186），不扣頁、不屬於任何一頁。 */

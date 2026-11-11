@@ -130,6 +130,10 @@ _Avoid_: credit, 點數, token, request
 The 100 Translated Pages every new Account gets once, roughly four Episodes. Never reset. Not used while a Subscription is active; whatever is left is usable again after it ends.
 _Avoid_: trial, free tier, 免費頁數 (in the UI)
 
+**Daily Free Pages Cap** (每日免費額度總量)
+The most Free Pages all Accounts together can use in one UTC day, a setting of the Worker. Once it is reached, Accounts that only have Free Pages cannot translate new Pages until 00:00 UTC, even with Free Pages left; their own Free Pages are untouched. Subscriptions, the Practice Spread and the rest of a Page already counted are not affected. Unlike running out of Free Pages, it is never the reader's own limit, so the UI says today's free pages are given out, not that theirs are used up.
+_Avoid_: daily limit (sounds per Account), 免費額度用完 (that is the reader's own Free Pages)
+
 **Subscription** (訂閱)
 The one paid plan on an Account that grants a Monthly Page Limit, paid either quarterly or yearly. Both Billing Periods give the same Monthly Page Limit; only the price differs.
 _Avoid_: membership, license, tier (there is only one plan)

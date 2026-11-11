@@ -12,6 +12,7 @@ import practiceSpread from '../../practice-spread/ocr.json' with { type: 'json' 
 import {
   ACCOUNT_PATH,
   CHECKOUT_PATH,
+  DEV_DAILY_FREE_PAGES_PATH,
   DEV_FREE_PAGES_PATH,
   DEV_OUTBOX_PATH,
   HEALTH_PATH,
@@ -34,7 +35,19 @@ import {
 } from '../../src/shared/hosted-api.ts';
 import type { CallInfo, SeriesGuessOutput, TranslateOutput, Translator } from '../../src/shared/translator.ts';
 import { accountEmail, authenticate, deleteAccount, revokeSession, sendCode, verifyCode } from './auth.ts';
-import { continuable, deductPage, monthlyLimit, quota, recordUsage, setFreePages, type QuotaContext, type UsageKind } from './quota.ts';
+import {
+  continuable,
+  dailyFreePagesCap,
+  deductPage,
+  freePagesPausedToday,
+  monthlyLimit,
+  quota,
+  recordUsage,
+  setDailyFreePages,
+  setFreePages,
+  type QuotaContext,
+  type UsageKind,
+} from './quota.ts';
 import { parseNotesInput, parseTitleSignals, parseTranslateInput } from './input.ts';
 import { lastSentCode, mailer } from './mailer.ts';
 import { paddle, PaddleError, verifyWebhook } from './paddle.ts';
@@ -118,6 +131,9 @@ function anthropicFailed(kind: UsageKind, e: unknown): Response {
 const exhausted = (plan: Quota['plan']) =>
   plan === 'free' ? error(402, '免費額度已用完', 'freePagesExhausted') : error(402, '本月額度已用完', 'monthlyLimitReached');
 
+/** 今天全站的 Free Pages 已經送完（Daily Free Pages Cap，#241）：不是這個 Account 的額度用完，隔天 UTC 0 點恢復。 */
+const pausedToday = () => error(402, '今天的免費額度已經發完', 'freePagesPausedToday');
+
 const quotaContext = (env: Env, now: number): QuotaContext => ({ now, limit: monthlyLimit(env) });
 
 /**
@@ -144,9 +160,16 @@ const llm =
     const page = isPractice ? undefined : pageRecord(input);
     if (charged) {
       const before = await quota(env.DB, accountId, quotaContext(env, now));
-      // 額度用完時，條件內的長 Page 接續照樣翻（刻意的）：一張長圖只扣一個 Translated Page，這一頁已經扣過，
+      // 只靠 Free Pages 的 Account，今天全站送出的 Free Pages 到了上限（#241）也擋；要在呼叫 Anthropic 之前，呼叫完錢就花了
+      const blocked =
+        before.remaining === 0
+          ? exhausted(before.plan)
+          : before.plan === 'free' && (await freePagesPausedToday(env.DB, now, dailyFreePagesCap(env)))
+            ? pausedToday()
+            : undefined;
+      // 擋下時，條件內的長 Page 接續照樣翻（刻意的）：一張長圖只扣一個 Translated Page，這一頁已經扣過，
       // 擋下來會讓讀者付過的頁翻到一半。濫用的空間由接續條件限住（同一個 Account、1 小時內、最多 10 次，quota.ts）
-      if (before.remaining === 0 && !(page !== undefined && (await continuable(env.DB, accountId, page, now)))) return exhausted(before.plan);
+      if (blocked && !(page !== undefined && (await continuable(env.DB, accountId, page, now)))) return blocked;
     }
     let output: CallInfo;
     try {
@@ -315,6 +338,13 @@ const ROUTES: Record<string, Handler> = {
     const remaining = field(body, 'remaining');
     if (!email || !Number.isInteger(remaining) || (remaining as number) < 0) return invalid();
     return (await setFreePages(env.DB, email, remaining as number)) ? new Response(null, { status: 204 }) : error(404, '沒有這個 Account');
+  },
+  [`POST ${DEV_DAILY_FREE_PAGES_PATH}`]: async ({ request, env, now }) => {
+    if (env.DEV_ENDPOINTS !== 'true') return error(404, '沒有這個端點');
+    const used = field(await jsonBody(request), 'used');
+    if (!Number.isInteger(used) || (used as number) < 0) return invalid();
+    await setDailyFreePages(env.DB, now, used as number);
+    return new Response(null, { status: 204 });
   },
 };
 

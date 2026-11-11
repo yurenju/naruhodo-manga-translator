@@ -41,6 +41,11 @@ export const DEV_OUTBOX_PATH = '/v1/dev/outbox';
  * browser test 與本機開發用它試「快用完」「用完」的畫面；production 一律 404。
  */
 export const DEV_FREE_PAGES_PATH = '/v1/dev/free-pages';
+/**
+ * POST { used }：把今天（UTC）全站已送出的 Free Pages 改成 used 頁，204（Daily Free Pages Cap，#241）。只有 DEV_ENDPOINTS 的 env 有，
+ * 測試與本機開發用它試「今天的免費額度已經發完」；production 一律 404。
+ */
+export const DEV_DAILY_FREE_PAGES_PATH = '/v1/dev/daily-free-pages';
 
 /**
  * POST { locale }（帶 token）：用 Paddle API 建立年繳 Subscription 的 transaction（custom_data 放這個 Account 的 id，
@@ -121,6 +126,8 @@ export interface AccountResponse {
  * - rateLimited：寄送或驗證太頻繁（依 IP 與 email），或同一個 email 一小時內驗證太多次，或猜作品原名太頻繁（依 Account）
  * - wrongCode／codeExpired／tooManyAttempts：驗證碼錯、過期（或沒寄過）、錯太多次這組已失效
  * - freePagesExhausted：沒有訂閱、免費額度用完（402）；訂閱結束後免費額度也是 0 的也是這個
+ * - freePagesPausedToday：沒有訂閱、還有免費額度，但今天（UTC）全站送出的 Free Pages 已經到了 Daily Free Pages Cap（402，#241）；
+ *   不是這個 Account 的額度用完，隔天 UTC 0 點恢復
  * - monthlyLimitReached：訂閱中、本月額度用完（402）；重置日期在 GET /v1/account 的 quota.resetsAt
  * - alreadySubscribed：已經訂閱中，不再建立 checkout（409）
  */
@@ -131,6 +138,7 @@ export type HostedErrorReason =
   | 'codeExpired'
   | 'tooManyAttempts'
   | 'freePagesExhausted'
+  | 'freePagesPausedToday'
   | 'monthlyLimitReached'
   | 'alreadySubscribed';
 

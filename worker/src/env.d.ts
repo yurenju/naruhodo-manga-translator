@@ -25,6 +25,8 @@ declare namespace Cloudflare {
     CLAUDE_API_KEY?: string;
     /** 訂閱者每月可翻的頁數（wrangler.jsonc 的 vars，起始 800）；調整不用發新版外掛。 */
     MONTHLY_PAGE_LIMIT: string;
+    /** Daily Free Pages Cap（#241）：全站每天（UTC）最多送出幾頁 Free Pages（wrangler.jsonc 的 vars，起始 2000）；調整不用改程式。 */
+    DAILY_FREE_PAGES_CAP: string;
     /** checkout 頁所在的產品網站 origin（Worker 組 `<origin>/<locale>/checkout?_ptxn=…`）。 */
     SITE_ORIGIN?: string;
     /** Paddle API：網址是 vars；key、年繳 price 與 webhook secret 用 wrangler secret，本機從 ~/.config/naruhodo/paddle-sandbox.env 讀。 */

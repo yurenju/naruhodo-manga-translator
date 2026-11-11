@@ -415,6 +415,18 @@ describe('翻譯此頁', () => {
     expect(transcriber.get(1)[0]!.transcript).toMatchObject({ translated: false, quotaExhausted: 'monthly' });
   });
 
+  it('今天全站的免費額度發完了（Daily Free Pages Cap）：記成 pausedToday，不是自己的免費額度用完', async () => {
+    const translator: Translator = {
+      ...noNotes,
+      translatePage: async () => Promise.reject(new QuotaExhaustedError('Hosted Translation 402：今天的免費額度已經發完', 'freePagesPausedToday')),
+    };
+    const { transcriber } = setup({ getTranslator: () => translator });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    expect(transcriber.get(1)[0]!.transcript).toMatchObject({ translated: false, quotaExhausted: 'pausedToday' });
+  });
+
   it('還沒設定 key 時按「翻譯此頁」不改變逐字稿', async () => {
     const { transcriber, published } = setup();
     await transcriber.update(1, [thumb('a1')], capture);
