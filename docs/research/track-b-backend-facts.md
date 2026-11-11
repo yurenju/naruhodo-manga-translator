@@ -259,7 +259,7 @@
 ### 4.6 sandbox 實測過的行為（2026-10-30）
 
 文件沒寫、在 sandbox 試出來的：
-- **核准全額退款不會取消訂閱**：訂閱照樣是 `active`，到期還會續約扣款。所以 Worker 收到 `adjustment.updated`（refund 且 `approved`）時自己立即取消（`worker/src/subscription.ts` 的 `refundedSubscription`）；notification 設定要訂閱 `adjustment.updated`。
+- **核准全額退款不會取消訂閱**：訂閱照樣是 `active`，到期還會續約扣款。所以 Worker 收到 `adjustment.created` 或 `adjustment.updated`（refund 且 `approved`）時自己立即取消（`worker/src/charges.ts` 的 `refundOutcome`，#261）；notification 設定要訂閱這兩個事件。
 - **後台按「全額退款」，adjustment 最上層的 `type` 是 `partial`**，只有每個 item 的 `type` 是 `full`。判斷全額要看 items，不能只看最上層。
 - **`paused` 的訂閱只能立即取消**：`effective_from: next_billing_period` 回 400，要用 `immediately`。
 - **cloudflared quick tunnel 約一小時後失效**：網址的 DNS 查不到，webhook 變成 `needs_retry`。重開 `scripts/paddle-tunnel.ts` 就好。

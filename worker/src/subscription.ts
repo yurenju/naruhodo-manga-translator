@@ -1,7 +1,12 @@
 /**
  * Subscription（spec #86「額度規則」、#94）：把 Paddle 的 subscription.* webhook 寫進 D1，以及每月週期怎麼算。
- * D1 schema 在 worker/migrations/0003_subscriptions.sql。扣額度在 quota.ts。
+ * D1 schema 在 worker/migrations/0003_subscriptions.sql、0010_subscription_billing_period.sql。扣額度在 quota.ts。
  */
+import { BILLING_PERIODS, type BillingPeriod } from '../../src/shared/hosted-api.ts';
+import { eventHandled, eventOwner, markEventHandled, object, text, time } from './paddle-event.ts';
+
+/** 每個 Billing Period 的 Paddle price id（Worker 的 secret；沒設定是 undefined）。 */
+export type PriceIds = Readonly<Record<BillingPeriod, string | undefined>>;
 
 /** 有權限的狀態：active（包含排定取消）與 past_due（Paddle 重試扣款中）。canceled、paused 之後回到只剩 Free Pages。 */
 const ENTITLED = ['active', 'past_due'] as const;
@@ -12,6 +17,9 @@ export interface Subscription {
   startedAt: number;
   periodEndsAt: number;
   cancelScheduled: boolean;
+  billingPeriod: BillingPeriod;
+  /** 下次續訂的金額（美元，含稅）：事件裡 price 的 unit_price；這個欄位之前寫入的訂閱沒有，是 undefined。 */
+  renewalPriceUsd: number | undefined;
   paddleSubscriptionId: string;
   paddleCustomerId: string;
 }
@@ -21,6 +29,8 @@ interface Row {
   started_at: number;
   period_ends_at: number | null;
   cancel_scheduled: number;
+  billing_period: BillingPeriod | null;
+  renewal_price_cents: number | null;
   paddle_subscription_id: string;
   paddle_customer_id: string;
 }
@@ -40,6 +50,8 @@ export async function activeSubscription(db: D1Database, accountId: string): Pro
     // 有權限的訂閱一定有目前的扣款週期；萬一沒有，就當作從開始日起一年
     periodEndsAt: row.period_ends_at ?? addMonths(row.started_at, 12),
     cancelScheduled: row.cancel_scheduled === 1,
+    billingPeriod: row.billing_period ?? 'yearly',
+    renewalPriceUsd: row.renewal_price_cents === null ? undefined : row.renewal_price_cents / 100,
     paddleSubscriptionId: row.paddle_subscription_id,
     paddleCustomerId: row.paddle_customer_id,
   };
@@ -91,14 +103,22 @@ export function monthlyCycle(anchor: number, now: number): { start: number; rese
   return { start: addMonths(anchor, n), resetsAt: addMonths(anchor, n + 1) };
 }
 
-const time = (value: unknown): number | undefined => {
-  const ms = typeof value === 'string' ? Date.parse(value) : NaN;
-  return Number.isNaN(ms) ? undefined : ms;
-};
+/**
+ * 訂閱的 item 的 price 是哪一種 Billing Period：季繳的 price 是季繳，其他都當年繳，包括改版前的年繳 US$20
+ * （ADR 0012：舊訂閱者續約時改用新的年繳價格）。
+ */
+function billingPeriodOf(data: Record<string, unknown>, priceIds: PriceIds): BillingPeriod {
+  const items = Array.isArray(data.items) ? data.items : [];
+  const prices = items.map((item) => text(object(object(item).price).id));
+  return BILLING_PERIODS.find((period) => priceIds[period] !== undefined && prices.includes(priceIds[period])) ?? 'yearly';
+}
 
-const object = (value: unknown): Record<string, unknown> => (typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {});
-
-const text = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
+/** 下次續訂的金額（美分）：每個 item 的 price 的 unit_price × quantity 加起來；有任何一個讀不到就是 null（退回定價常數）。 */
+function renewalPriceCents(data: Record<string, unknown>): number | null {
+  const items = Array.isArray(data.items) ? data.items.map(object) : [];
+  const amounts = items.map((item) => Number(text(object(object(item.price).unit_price).amount)) * (typeof item.quantity === 'number' ? item.quantity : 1));
+  return items.length > 0 && amounts.every(Number.isInteger) ? amounts.reduce((sum, amount) => sum + amount, 0) : null;
+}
 
 /**
  * 套用一個已經驗過簽章的 Paddle 事件。只看 subscription.*，其他事件（transaction.completed 等）不做事。
@@ -109,13 +129,14 @@ const text = (value: unknown): string | undefined => (typeof value === 'string' 
  *   - 不同的 subscription id：只有目前這筆沒有權限（paused、canceled）、而且事件的那筆有權限時，才換成那一筆。
  *     所以舊訂閱之後才送來的事件（例如 paused 之後重新訂閱、舊的那筆才被取消）蓋不掉有權限的新訂閱；
  *     新訂閱的事件不看 occurred_at，比舊訂閱最後的事件還早發生也照樣換過去
+ * - priceIds：每個 Billing Period 的 Paddle price（Worker 的 secret），用來分辨扣款週期
  */
-export async function applyPaddleEvent(db: D1Database, event: unknown, now: number): Promise<void> {
+export async function applyPaddleEvent(db: D1Database, event: unknown, now: number, priceIds: PriceIds): Promise<void> {
   const e = object(event);
   const eventId = text(e.event_id);
   const occurredAt = time(e.occurred_at);
   if (!eventId || occurredAt === undefined || !text(e.event_type)?.startsWith('subscription.')) return;
-  if (await db.prepare('SELECT 1 FROM paddle_events WHERE event_id = ?').bind(eventId).first()) return;
+  if (await eventHandled(db, eventId)) return;
 
   const data = object(e.data);
   const subscriptionId = text(data.id);
@@ -123,18 +144,18 @@ export async function applyPaddleEvent(db: D1Database, event: unknown, now: numb
   const status = text(data.status);
   const startedAt = time(data.started_at) ?? time(object(data.current_billing_period).starts_at) ?? occurredAt;
   if (!subscriptionId || !customerId || !status) return;
-  const accountId = await owner(db, text(object(data.custom_data).account_id), subscriptionId);
+  const accountId = await eventOwner(db, text(object(data.custom_data).account_id), subscriptionId);
   if (!accountId) return;
 
   await db.batch([
     db
       .prepare(
-        `INSERT INTO subscriptions (account_id, paddle_subscription_id, paddle_customer_id, status, started_at, period_ends_at, cancel_scheduled, event_occurred_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO subscriptions (account_id, paddle_subscription_id, paddle_customer_id, status, started_at, period_ends_at, cancel_scheduled, billing_period, renewal_price_cents, event_occurred_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (account_id) DO UPDATE SET
            paddle_subscription_id = excluded.paddle_subscription_id, paddle_customer_id = excluded.paddle_customer_id, status = excluded.status,
            started_at = excluded.started_at, period_ends_at = excluded.period_ends_at, cancel_scheduled = excluded.cancel_scheduled,
-           event_occurred_at = excluded.event_occurred_at
+           billing_period = excluded.billing_period, renewal_price_cents = excluded.renewal_price_cents, event_occurred_at = excluded.event_occurred_at
          WHERE (excluded.paddle_subscription_id = subscriptions.paddle_subscription_id AND excluded.event_occurred_at > subscriptions.event_occurred_at)
             OR (excluded.paddle_subscription_id <> subscriptions.paddle_subscription_id
                 AND subscriptions.status NOT IN (${ENTITLED_SQL}) AND excluded.status IN (${ENTITLED_SQL}))`,
@@ -147,45 +168,10 @@ export async function applyPaddleEvent(db: D1Database, event: unknown, now: numb
         startedAt,
         time(object(data.current_billing_period).ends_at) ?? null,
         text(object(data.scheduled_change).action) === 'cancel' ? 1 : 0,
+        billingPeriodOf(data, priceIds),
+        renewalPriceCents(data),
         occurredAt,
       ),
-    db.prepare('INSERT INTO paddle_events (event_id, received_at) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(eventId, now),
+    markEventHandled(db, eventId, now),
   ]);
-}
-
-/**
- * 全額退款核准後要立即取消的訂閱（REFUND.md：退款的訂閱會被取消）。Paddle 核准退款並不會取消訂閱（sandbox 實測：訂閱照樣
- * active、到期還會續約），所以 Worker 自己取消；取消後 Paddle 送來的 subscription.canceled 由 applyPaddleEvent 套用。
- * - 只看 adjustment.updated 裡已核准的 refund
- * - 全額才取消：最上層 type 是 full，或每個 item 都是 full（Paddle 後台的全額退款最上層是 partial，sandbox 實測）
- * - 只取消 D1 裡還沒 canceled 的訂閱：同一個 Paddle 帳號底下其他產品的退款不動
- * undefined＝不用取消，包括已經處理過的事件。處理完要 recordPaddleEvent。
- */
-export async function refundedSubscription(db: D1Database, event: unknown): Promise<{ eventId: string; subscriptionId: string } | undefined> {
-  const e = object(event);
-  const eventId = text(e.event_id);
-  const data = object(e.data);
-  const subscriptionId = text(data.subscription_id);
-  if (!eventId || !subscriptionId || text(e.event_type) !== 'adjustment.updated') return undefined;
-  if (text(data.action) !== 'refund' || text(data.status) !== 'approved') return undefined;
-  const items = Array.isArray(data.items) ? data.items.map((item) => text(object(item).type)) : [];
-  if (text(data.type) !== 'full' && (items.length === 0 || items.some((type) => type !== 'full'))) return undefined;
-  if (await db.prepare('SELECT 1 FROM paddle_events WHERE event_id = ?').bind(eventId).first()) return undefined;
-  const row = await db.prepare('SELECT status FROM subscriptions WHERE paddle_subscription_id = ?').bind(subscriptionId).first<{ status: string }>();
-  return row && row.status !== 'canceled' ? { eventId, subscriptionId } : undefined;
-}
-
-/** 記下處理過的 Paddle 事件，重送時就不再處理。 */
-export async function recordPaddleEvent(db: D1Database, eventId: string, now: number): Promise<void> {
-  await db.prepare('INSERT INTO paddle_events (event_id, received_at) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(eventId, now).run();
-}
-
-/** 事件屬於哪個 Account：custom_data 的 id 要是存在的 Account（刪除帳號後的事件就不套用）。 */
-async function owner(db: D1Database, fromCustomData: string | undefined, subscriptionId: string): Promise<string | undefined> {
-  if (fromCustomData) {
-    const account = await db.prepare('SELECT id FROM accounts WHERE id = ?').bind(fromCustomData).first<{ id: string }>();
-    return account?.id;
-  }
-  const row = await db.prepare('SELECT account_id FROM subscriptions WHERE paddle_subscription_id = ?').bind(subscriptionId).first<{ account_id: string }>();
-  return row?.account_id;
 }

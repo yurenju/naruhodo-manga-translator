@@ -2,7 +2,7 @@
  * 額度（spec #86「額度規則」、#92、#94）：新 Account 有一次性的 Free Pages；訂閱中（subscription.ts）只扣本月的 Monthly Page Limit，
  * Free Pages 不動，訂閱結束後剩下的照常可用。D1 schema 在 worker/migrations/0002_free_pages.sql、0003_subscriptions.sql。
  */
-import { FREE_PAGES, type Quota } from '../../src/shared/hosted-api.ts';
+import { FREE_PAGES, PRICE_USD, type Quota } from '../../src/shared/hosted-api.ts';
 import type { CallInfo } from '../../src/shared/translator.ts';
 import { sha256 } from './hash.ts';
 import { activeSubscription, monthlyCycle } from './subscription.ts';
@@ -59,6 +59,10 @@ export async function quota(db: D1Database, accountId: string, { now, limit }: Q
     status: subscription.status === 'past_due' ? 'pastDue' : 'active',
     cancelScheduled: subscription.cancelScheduled,
     periodEndsAt: subscription.periodEndsAt,
+    billingPeriod: subscription.billingPeriod,
+    // 從 Paddle 事件的 price 來；這個欄位之前寫入的訂閱才退回定價常數
+    renewalPriceUsd: subscription.renewalPriceUsd ?? PRICE_USD[subscription.billingPeriod],
+    freePages: row?.free_pages ?? 0,
   };
 }
 

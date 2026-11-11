@@ -26,15 +26,15 @@ You must be at least 13 years old to use Naruhodo. To buy a subscription, you mu
 
 ## 4. Free pages
 
-Every new account gets a one-time allowance of free pages (currently 50). Free pages are given once per email address, including if you delete your account and sign up again. They have no cash value and cannot be transferred. We may change the number of free pages for accounts created in the future.
+Every new account gets a one-time allowance of free pages (currently 100). Free pages are given once per email address, including if you delete your account and sign up again. They have no cash value and cannot be transferred. We may change the number of free pages for accounts created in the future.
 
 ## 5. Subscriptions and payment
 
 - **Seller.** The subscription is sold by Paddle.com, our reseller and Merchant of Record, on behalf of Sad Coder, Inc. Paddle processes your payment, and Paddle's buyer terms, linked from the checkout, also apply to your purchase. Google is not the seller.
-- **Billing.** The subscription is billed yearly, in advance, and renews automatically each year until you cancel. The price is shown before you pay. Taxes may be added depending on where you live.
-- **Monthly page limit.** A subscription includes a number of translated pages per month (currently 800). The month starts on the day your subscription started and resets on the same day each month, or on the last day of a month that has no such day. Unused pages do not carry over. While you are subscribed, your remaining free pages are kept and not used; they become available again after the subscription ends.
+- **Billing.** There is one subscription, billed in advance either quarterly (every 3 months) or yearly; you choose the billing period when you subscribe. Both include the same monthly page limit. The subscription renews automatically at the end of each billing period until you cancel. Prices are in US dollars and include any applicable tax: the price shown before you pay is the amount charged.
+- **Monthly page limit.** A subscription includes a number of translated pages per month (currently 3,000). The month starts on the day your subscription started and resets on the same day each month, or on the last day of a month that has no such day. Unused pages do not carry over. While you are subscribed, your remaining free pages are kept and not used; they become available again after the subscription ends.
 - **What counts as a page.** A page counts when it is translated successfully. Viewing a page that was already translated, and failed translations, do not count. Asking for a page to be translated again counts as a new translation.
-- **Cancelling.** You can cancel at any time (Settings → Manage subscription). The subscription stays usable until the end of the year you paid for and then ends.
+- **Cancelling.** You can cancel at any time (Settings → Manage subscription). The subscription stays usable until the end of the quarter or year you paid for and then ends.
 - **Failed payments.** If a renewal payment fails, Paddle retries it for a period; you can keep using the subscription during that time. If payment cannot be collected, the subscription ends.
 - **Price and limit changes.** We may change the price or the monthly page limit. A price change applies from your next renewal, and we will tell you before it takes effect. If a change does not suit you, you can cancel your subscription.
 - **Refunds.** See the [Refund Policy](/refund).
@@ -59,7 +59,7 @@ We may limit, suspend or close accounts that break these rules.
 
 ## 8. Availability and changes to Naruhodo
 
-We work to keep Naruhodo available, but we do not guarantee that it will always work or be free of errors. We may change, add or remove features, or stop offering Hosted Translation. If we stop offering it, we will tell you in advance, and refund any part of a year you have paid for where the law requires us to.
+We work to keep Naruhodo available, but we do not guarantee that it will always work or be free of errors. We may change, add or remove features, or stop offering Hosted Translation. If we stop offering it, we will tell you in advance, and refund any part of a billing period you have paid for where the law requires us to.
 
 ## 9. Ending your use
 

@@ -12,11 +12,11 @@
 //   env.dev 打 Paddle sandbox；env.test 的 __FAKE_PADDLE__ 換成假的 Paddle，webhook secret 是測試用的假值。
 // env.dev 的 secrets.required（#175）：有這個欄位，wrangler dev 會把 process env 一起讀進來，只綁定列出的名稱。
 //   CLAUDE_API_KEY 由 op run 從 1Password 放進 env（scripts/with-op.ts），不寫進 .dev.vars；
-//   Paddle 的三個值由 --env-file ~/.config/naruhodo/paddle-sandbox.env 讀。
+//   Paddle 的四個值由 --env-file ~/.config/naruhodo/paddle-sandbox.env 讀。
 // production（#97）：CI 在合併到 main 後部署（.github/workflows/ci.yml 的 deploy-worker，ADR 0008）。
-//   secrets（只存在 Cloudflare）：CLAUDE_API_KEY、RESEND_API_KEY、PADDLE_API_KEY、PADDLE_PRICE_ID、PADDLE_WEBHOOK_SECRET，
+//   secrets（只存在 Cloudflare）：CLAUDE_API_KEY、RESEND_API_KEY、PADDLE_API_KEY、PADDLE_PRICE_ID_QUARTERLY、PADDLE_PRICE_ID_YEARLY、PADDLE_WEBHOOK_SECRET，
 //   在 Cloudflare 後台 naruhodo-api → Settings → Variables and Secrets 設定（本機沒有寫入權，ADR 0011）；
-//   scripts/production-wizard.sh 帶你做。PADDLE_PRICE_ID 不是秘密，但跟本機一樣當 secret，換價格不用改這個檔。
+//   scripts/production-wizard.sh 帶你做。兩個 price id（季繳、年繳）不是秘密，但跟本機一樣當 secret，換價格不用改這個檔。
 //   observability：Workers Logs 留 7 天，本機用 npm run prod:logs 查（ADR 0011）。本機 wrangler dev 不受影響。
 //   routes 的 custom_domain：部署時 Cloudflare 自動建 api.naruhodo.page 的 DNS 記錄與 HTTPS 憑證。
 //   env.dev 有的 vars，最上層也要有（FAKE_MAIL、DEV_ENDPOINTS 除外），由 scripts/wrangler-config.test.ts 檢查。
@@ -38,7 +38,7 @@
     { "name": "SERIES_GUESS_BY_ACCOUNT", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } }
   ],
   "vars": {
-    "MONTHLY_PAGE_LIMIT": "800",
+    "MONTHLY_PAGE_LIMIT": "3000",
     "DAILY_FREE_PAGES_CAP": "2000",
     "SITE_ORIGIN": "https://naruhodo.page",
     "PADDLE_API_BASE_URL": "https://api.paddle.com",
@@ -51,12 +51,12 @@
       "vars": {
         "FAKE_MAIL": "true",
         "DEV_ENDPOINTS": "true",
-        "MONTHLY_PAGE_LIMIT": "800",
+        "MONTHLY_PAGE_LIMIT": "3000",
         "DAILY_FREE_PAGES_CAP": "2000",
         "SITE_ORIGIN": "http://localhost:4321",
         "PADDLE_API_BASE_URL": "https://sandbox-api.paddle.com"
       },
-      "secrets": { "required": ["CLAUDE_API_KEY", "PADDLE_API_KEY", "PADDLE_PRICE_ID", "PADDLE_WEBHOOK_SECRET"] },
+      "secrets": { "required": ["CLAUDE_API_KEY", "PADDLE_API_KEY", "PADDLE_PRICE_ID_QUARTERLY", "PADDLE_PRICE_ID_YEARLY", "PADDLE_WEBHOOK_SECRET"] },
       "d1_databases": [{ "binding": "DB", "database_name": "naruhodo", "database_id": "local", "migrations_dir": "migrations" }],
       "ratelimits": [
         { "name": "SEND_CODE_BY_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
@@ -71,16 +71,18 @@
       "vars": {
         "FAKE_MAIL": "true",
         "DEV_ENDPOINTS": "true",
-        "MONTHLY_PAGE_LIMIT": "800",
+        "MONTHLY_PAGE_LIMIT": "3000",
         "DAILY_FREE_PAGES_CAP": "2000",
         "SITE_ORIGIN": "http://localhost:4321",
         "PADDLE_WEBHOOK_SECRET": "pdl_ntfset_browser_test"
       },
       "d1_databases": [{ "binding": "DB", "database_name": "naruhodo", "database_id": "local", "migrations_dir": "migrations" }],
+      // browser test 全部從 localhost 登入、每個測試一個新 email：照 production 的每 IP 每分鐘 10 次，一分鐘內登入超過 10 次的那個測試就拿到「嘗試太頻繁」。
+      // 這兩個每 IP 的限制在 env.test 放寬；頻率限制本身由 worker/src/auth.test.ts 在 env.dev 測。
       "ratelimits": [
-        { "name": "SEND_CODE_BY_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+        { "name": "SEND_CODE_BY_IP", "namespace_id": "1001", "simple": { "limit": 1000, "period": 60 } },
         { "name": "SEND_CODE_BY_EMAIL", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } },
-        { "name": "VERIFY_CODE_BY_IP", "namespace_id": "1003", "simple": { "limit": 30, "period": 60 } },
+        { "name": "VERIFY_CODE_BY_IP", "namespace_id": "1003", "simple": { "limit": 1000, "period": 60 } },
         { "name": "VERIFY_CODE_BY_EMAIL", "namespace_id": "1004", "simple": { "limit": 20, "period": 60 } },
         { "name": "SERIES_GUESS_BY_ACCOUNT", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } }
       ],

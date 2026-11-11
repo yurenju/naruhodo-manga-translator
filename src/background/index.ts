@@ -691,15 +691,15 @@ const paymentReturn = createPaymentReturn({
     const result = await hostedAccount.account(token);
     return result.ok && result.account.quota.plan === 'subscribed';
   },
-  onConfirmed(from) {
-    trace('payment:confirmed', { from });
+  onConfirmed(from, billingPeriod) {
+    trace('payment:confirmed', { from, billingPeriod });
     notifyPanel({ type: 'quota:changed' });
     // 訂閱了就能翻：額度用完而沒翻的頁接著翻（#185 的「回到漫畫」）
     accessChanged();
     // onboarding 分頁可能已經關了：付款完成就算設定完成，跟 onboarding 頁自己寫的一樣
     if (from === 'onboarding') void saveTranslationMode('hosted').then(() => saveOnboarding('done'));
-    // 帳號頁自己顯示「訂閱完成」
-    else if (from === 'panel') void showSubscribedNotice();
+    // 帳號頁自己顯示「訂閱完成」；讀者回到漫畫時 side panel 也說一次（side panel 的「查看方案」打開的就是帳號頁）
+    else void showSubscribedNotice(billingPeriod);
   },
   now: () => Date.now(),
 });

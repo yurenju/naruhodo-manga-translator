@@ -30,7 +30,8 @@
     "prod:sql": "node scripts/prod-query.ts sql",
     "prod:logs": "node scripts/prod-query.ts logs",
     "prod:tail": "node scripts/prod-query.ts tail",
-    "smoke:paddle": "npm run build:e2e && playwright test --config playwright.smoke-paddle.config.ts"
+    "smoke:paddle": "npm run build:e2e && playwright test --config playwright.smoke-paddle.config.ts",
+    "paddle:renewal-price": "node scripts/paddle-renewal-price.ts"
   },
   "dependencies": {
     "kuromoji": "0.1.2",

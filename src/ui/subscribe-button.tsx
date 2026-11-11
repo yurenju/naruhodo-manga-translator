@@ -1,22 +1,28 @@
-import { MONTHLY_AVERAGE_USD, MONTHLY_PAGES, YEARLY_PRICE_USD } from '../shared/hosted-api.ts';
-import { Button, Callout, PricePair } from './components.tsx';
+import { Callout } from './components.tsx';
+import type { BillingPeriodOffer } from './pricing.ts';
 
-/** 訂閱的雙價並列（onboarding 的方案卡、side panel 的免費額度用完）：你付 US$20／年 → 平均 US$1.67／月。 */
-export function SubscriptionPrice() {
+/** 一種 Billing Period 的共用文字：「<strong>年繳 US$48</strong>・平均每月 US$4・省 20%」。 */
+export function OfferText({ offer }: { offer: BillingPeriodOffer }) {
   return (
-    <PricePair
-      pay={{ label: '你付', price: `US$${YEARLY_PRICE_USD}`, unit: '／年', note: '一年扣款一次' }}
-      average={{ label: '平均', price: `US$${MONTHLY_AVERAGE_USD}`, unit: '／月', note: `每月 ${MONTHLY_PAGES} 頁` }}
-    />
+    <>
+      <strong>
+        {offer.name} {offer.price}
+      </strong>
+      ・{offer.detail}
+    </>
   );
 }
 
-/** 「訂閱」按鈕（side panel、設定頁、onboarding 共用）。沒給 onSubscribe（網站上的展示、還在讀方案）時停用。 */
-export function SubscribeButton({ variant, onSubscribe }: { variant: 'primary' | 'link'; onSubscribe: (() => void) | undefined }) {
+/** 年繳、季繳兩行價格（side panel 的免費額度用完）。 */
+export function SubscriptionPrice({ offers }: { offers: readonly BillingPeriodOffer[] }) {
   return (
-    <Button variant={variant} disabled={!onSubscribe} onClick={onSubscribe}>
-      訂閱
-    </Button>
+    <ul class="naru-offer-lines">
+      {offers.map((offer) => (
+        <li key={offer.billingPeriod}>
+          <OfferText offer={offer} />
+        </li>
+      ))}
+    </ul>
   );
 }
 

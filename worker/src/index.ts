@@ -11,20 +11,24 @@ import { isPracticeSpreadPage, type PracticeSpreadText } from '../../src/shared/
 import practiceSpread from '../../practice-spread/ocr.json' with { type: 'json' };
 import {
   ACCOUNT_PATH,
+  BILLING_PERIODS,
   CHECKOUT_PATH,
   DEV_DAILY_FREE_PAGES_PATH,
   DEV_FREE_PAGES_PATH,
   DEV_OUTBOX_PATH,
   HEALTH_PATH,
+  LEGACY_CHECKOUT_PATH,
   NOTES_PATH,
   PADDLE_WEBHOOK_PATH,
   PORTAL_PATH,
+  REFUND_PATH,
   SEND_CODE_PATH,
   SERIES_GUESS_PATH,
   SIGN_OUT_PATH,
   TRANSLATE_PATH,
   VERIFY_CODE_PATH,
   type AccountResponse,
+  type BillingPeriod,
   type CheckoutLocale,
   type CheckoutResponse,
   type HostedError,
@@ -49,9 +53,10 @@ import {
   type UsageKind,
 } from './quota.ts';
 import { parseNotesInput, parseTitleSignals, parseTranslateInput } from './input.ts';
+import { applyChargeEvent, claimRefund, recordRefundAdjustment, recordRefundOutcome, refundInfo, refundOutcome, releaseRefund } from './charges.ts';
 import { lastSentCode, mailer } from './mailer.ts';
-import { paddle, PaddleError, verifyWebhook } from './paddle.ts';
-import { activeSubscription, applyPaddleEvent, cancellationOnDelete, paddleIds, recordPaddleEvent, refundedSubscription } from './subscription.ts';
+import { paddle, PaddleError, priceIds, verifyWebhook } from './paddle.ts';
+import { activeSubscription, applyPaddleEvent, cancellationOnDelete, paddleIds } from './subscription.ts';
 
 type Env = Cloudflare.Env;
 
@@ -190,6 +195,26 @@ const llm =
 
 const CHECKOUT_LOCALES: readonly CheckoutLocale[] = ['zh-tw', 'en'];
 
+/**
+ * 建立 checkout（CHECKOUT_PATH 與舊版外掛的 LEGACY_CHECKOUT_PATH）：billingPeriodOf 從 body 取扣款週期，取不到回 400。
+ * Account id 只來自 session token；Paddle 回的 checkout.url 只能是核准過的網域，所以 checkout 網址由 Worker 自己組。
+ */
+const checkout = (billingPeriodOf: (body: unknown) => BillingPeriod | undefined) =>
+  authed(async ({ request, env }, accountId) => {
+    const body = await jsonBody(request);
+    const requested = field(body, 'locale');
+    const locale = CHECKOUT_LOCALES.find((l) => l === requested) ?? 'zh-tw';
+    const billingPeriod = billingPeriodOf(body);
+    if (!billingPeriod) return error(400, 'billingPeriod 要是 quarterly 或 yearly');
+    if (!env.SITE_ORIGIN) return error(500, '沒有設定產品網站的網址');
+    const site = env.SITE_ORIGIN;
+    if (await activeSubscription(env.DB, accountId)) return error(409, '已經訂閱中', 'alreadySubscribed');
+    return viaPaddle(async () => {
+      const transactionId = await paddle(env).createTransaction(accountId, billingPeriod);
+      return Response.json({ url: `${site}/${locale}/checkout?_ptxn=${encodeURIComponent(transactionId)}` } satisfies CheckoutResponse);
+    });
+  });
+
 /** Paddle API 失敗回 502（細節只在 Worker 的 log）；其他錯誤照常往上丟。 */
 async function viaPaddle(run: () => Promise<Response>): Promise<Response> {
   try {
@@ -268,7 +293,9 @@ const ROUTES: Record<string, Handler> = {
   }),
   [`GET ${ACCOUNT_PATH}`]: authed(async ({ env, now }, accountId) => {
     const email = await accountEmail(env.DB, accountId);
-    return email ? Response.json({ email, quota: await quota(env.DB, accountId, quotaContext(env, now)) } satisfies AccountResponse) : signedOut();
+    if (!email) return signedOut();
+    const [q, refund] = await Promise.all([quota(env.DB, accountId, quotaContext(env, now)), refundInfo(env.DB, accountId, now)]);
+    return Response.json({ email, quota: q, ...(refund ? { refund } : {}) } satisfies AccountResponse);
   }),
   // 刪除帳號：先取消 Paddle 訂閱，失敗就 502、什麼都不刪（帳號刪了訂閱卻還在扣款就沒有人能取消了）。
   // 要不要送、何時生效見 cancellationOnDelete；刪除後 Paddle 送來的事件找不到 Account，applyPaddleEvent 會忽略
@@ -280,22 +307,31 @@ const ROUTES: Record<string, Handler> = {
       return new Response(null, { status: 204 });
     }),
   ),
-  [`POST ${CHECKOUT_PATH}`]: authed(async ({ request, env }, accountId) => {
-    const requested = field(await jsonBody(request), 'locale');
-    const locale = CHECKOUT_LOCALES.find((l) => l === requested) ?? 'zh-tw';
-    if (!env.SITE_ORIGIN) return error(500, '沒有設定產品網站的網址');
-    const site = env.SITE_ORIGIN;
-    if (await activeSubscription(env.DB, accountId)) return error(409, '已經訂閱中', 'alreadySubscribed');
-    return viaPaddle(async () => {
-      // Account id 只來自 session token；Paddle 回的 checkout.url 只能是核准過的網域，所以 checkout 網址由 Worker 自己組
-      const transactionId = await paddle(env).createTransaction(accountId);
-      return Response.json({ url: `${site}/${locale}/checkout?_ptxn=${encodeURIComponent(transactionId)}` } satisfies CheckoutResponse);
-    });
+  [`POST ${CHECKOUT_PATH}`]: checkout((body) => {
+    // 扣款週期只能由外掛選：沒給或不認得就不建立 transaction（不猜一個預設值，免得讀者付到沒選的價格）
+    const requested = field(body, 'billingPeriod');
+    return BILLING_PERIODS.find((p) => p === requested);
   }),
+  [`POST ${LEGACY_CHECKOUT_PATH}`]: checkout(() => 'yearly'),
   [`POST ${PORTAL_PATH}`]: authed(async ({ env }, accountId) => {
     const ids = await paddleIds(env.DB, accountId);
     if (!ids) return error(404, '沒有訂閱');
     return viaPaddle(async () => Response.json({ url: await paddle(env).portalUrl(ids.customerId, ids.subscriptionId) } satisfies PortalResponse));
+  }),
+  // 申請退款（#260）：先在 D1 把最近一次扣款記為處理中（同時的請求只有一個拿得到），再向 Paddle 建立全額退款；
+  // 不取消訂閱，核准的 webhook 才取消（refundOutcome）。Paddle 失敗就放掉處理中，讀者可以再按一次
+  [`POST ${REFUND_PATH}`]: authed(async ({ env, now }, accountId) => {
+    const claim = await claimRefund(env.DB, accountId, now);
+    if (!claim.ok) return error(409, '這筆扣款不能申請退款', claim.reason);
+    try {
+      return await viaPaddle(async () => {
+        await recordRefundAdjustment(env.DB, claim.transactionId, await paddle(env).refundTransaction(claim.transactionId));
+        return new Response(null, { status: 204 });
+      });
+    } finally {
+      // 成功時已經記下 adjustment id，releaseRefund 不會動它；只有 Paddle 失敗（或其他錯誤）才放掉處理中
+      await releaseRefund(env.DB, claim.transactionId);
+    }
   }),
   // Paddle 的 webhook：先驗簽章（偽造的請求不能把任何人變成訂閱者），再套用；只做幾個 D1 查詢，遠低於 Paddle 要的 5 秒
   [`POST ${PADDLE_WEBHOOK_PATH}`]: async ({ request, env, now }) => {
@@ -308,16 +344,17 @@ const ROUTES: Record<string, Handler> = {
     } catch {
       return invalid();
     }
-    // 全額退款：立即取消訂閱；Paddle 失敗就回 502、不記下事件，讓 Paddle 重送
-    const refund = await refundedSubscription(env.DB, event);
+    // 全額退款的結果：核准就立即取消訂閱；Paddle 失敗就回 502、什麼都不記，讓 Paddle 重送
+    const refund = await refundOutcome(env.DB, event);
     if (refund) {
       return viaPaddle(async () => {
-        await paddle(env).cancelSubscription(refund.subscriptionId, 'immediately');
-        await recordPaddleEvent(env.DB, refund.eventId, now);
+        if (refund.cancel) await paddle(env).cancelSubscription(refund.subscriptionId, 'immediately');
+        await recordRefundOutcome(env.DB, refund, now);
         return new Response(null, { status: 200 });
       });
     }
-    await applyPaddleEvent(env.DB, event, now);
+    await applyPaddleEvent(env.DB, event, now, priceIds(env));
+    await applyChargeEvent(env.DB, event, now);
     return new Response(null, { status: 200 });
   },
   // 實際查一次 D1：database_id 填錯或 migrations 沒套用時，部署後的健康檢查就會失敗

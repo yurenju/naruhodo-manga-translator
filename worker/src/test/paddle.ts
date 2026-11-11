@@ -44,6 +44,10 @@ export interface SubscriptionFields {
   eventId?: string;
   eventType?: string;
   subscriptionId?: string;
+  /** 訂閱的 item 的 Paddle price（預設是測試的年繳 price，vitest.config.ts）。 */
+  priceId?: string;
+  /** 那個 price 的 unit_price（美分，Paddle 給的是字串）；沒給就不帶 unit_price。 */
+  unitPriceCents?: string;
 }
 
 /** Paddle 的 subscription.* 事件（只放 Worker 會讀的欄位）。custom_data 的 account_id 是 transaction 帶過來的。 */
@@ -57,7 +61,10 @@ export function subscriptionEvent({
   eventId = `evt_test_${++events}_${crypto.randomUUID().slice(0, 8)}`,
   eventType = 'subscription.updated',
   subscriptionId = `sub_test_${accountId}`,
+  priceId = 'pri_worker_test_yearly',
+  unitPriceCents,
 }: SubscriptionFields) {
+  const unitPrice = unitPriceCents === undefined ? {} : { unit_price: { amount: unitPriceCents, currency_code: 'USD' } };
   return {
     event_id: eventId,
     event_type: eventType,
@@ -71,6 +78,7 @@ export function subscriptionEvent({
       first_billed_at: startedAt,
       current_billing_period: { starts_at: startedAt, ends_at: endsAt },
       scheduled_change: cancelScheduled ? { action: 'cancel', effective_at: endsAt, resume_at: null } : null,
+      items: [{ status: 'active', quantity: 1, price: { id: priceId, ...unitPrice } }],
       custom_data: { account_id: accountId },
     },
   };
@@ -85,9 +93,17 @@ export interface AdjustmentFields {
   type?: string;
   eventType?: string;
   eventId?: string;
+  /** adjustment id（Worker 建立退款時記下的 id，核准、被拒的事件對得到它）。 */
+  adjustmentId?: string;
+  /** 退款的是哪一筆扣款。 */
+  transactionId?: string;
 }
 
-/** Paddle 的 adjustment.* 事件（只放 Worker 會讀的欄位）。預設是後台按「全額退款」、Paddle 核准之後送來的樣子。 */
+/**
+ * Paddle 的 adjustment.* 事件（只放 Worker 會讀的欄位）。預設是後台按「全額退款」、Paddle 核准之後送來的樣子。
+ * 用 API 建立的全額退款（退款 API）最上層 type 是 full、item 也是 full：建立時送 adjustment.created（pending_approval），
+ * 核准後送 adjustment.updated（approved），sandbox 約 8 分鐘（#261 sandbox 實測，2026-11-11）。
+ */
 export function adjustmentEvent({
   subscriptionId,
   status = 'approved',
@@ -96,6 +112,8 @@ export function adjustmentEvent({
   type = 'partial',
   eventType = 'adjustment.updated',
   eventId = `evt_test_${++events}_${crypto.randomUUID().slice(0, 8)}`,
+  adjustmentId = `adj_test_${events}`,
+  transactionId = `txn_test_${events}`,
 }: AdjustmentFields) {
   return {
     event_id: eventId,
@@ -103,13 +121,52 @@ export function adjustmentEvent({
     occurred_at: new Date().toISOString(),
     notification_id: `ntf_test_${events}`,
     data: {
-      id: `adj_test_${events}`,
+      id: adjustmentId,
       action,
       type,
       status,
-      transaction_id: `txn_test_${events}`,
+      transaction_id: transactionId,
       subscription_id: subscriptionId,
       items: itemTypes.map((itemType, i) => ({ type: itemType, item_id: `txnitm_test_${i}`, amount: '2000' })),
+    },
+  };
+}
+
+export interface TransactionFields {
+  /** 有 custom_data 的話（首購：Worker 建立 transaction 時放的）。續約的 transaction 用 subscriptionId 對到 Account。 */
+  accountId?: string;
+  subscriptionId: string;
+  transactionId?: string;
+  /** 扣款時間（ISO）。 */
+  billedAt?: string;
+  /** 實付金額（美分，Paddle 的 details.totals.grand_total 是字串）。 */
+  grandTotal?: string;
+  eventId?: string;
+}
+
+/** Paddle 的 transaction.completed 事件（只放 Worker 會讀的欄位）：一次成功的扣款。 */
+export function transactionEvent({
+  accountId,
+  subscriptionId,
+  transactionId = `txn_test_${crypto.randomUUID().slice(0, 8)}`,
+  billedAt = new Date().toISOString(),
+  grandTotal = '4800',
+  eventId = `evt_test_${++events}_${crypto.randomUUID().slice(0, 8)}`,
+}: TransactionFields) {
+  return {
+    event_id: eventId,
+    event_type: 'transaction.completed',
+    occurred_at: billedAt,
+    notification_id: `ntf_test_${events}`,
+    data: {
+      id: transactionId,
+      status: 'completed',
+      subscription_id: subscriptionId,
+      customer_id: 'ctm_test',
+      billed_at: billedAt,
+      currency_code: 'USD',
+      details: { totals: { subtotal: grandTotal, tax: '0', total: grandTotal, grand_total: grandTotal } },
+      custom_data: accountId ? { account_id: accountId } : null,
     },
   };
 }
@@ -135,7 +192,7 @@ export const transactionCreated = (id = `txn_test_${crypto.randomUUID().slice(0,
  */
 export async function checkoutAccountId(token: string): Promise<string> {
   const paddle = fakePaddle([transactionCreated()]);
-  const response = await post(CHECKOUT_PATH, { locale: 'zh-tw' }, { token });
+  const response = await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly' }, { token });
   if (response.status !== 200) throw new Error(`checkout 失敗：${response.status} ${await response.text()}`);
   vi.restoreAllMocks();
   return (paddle.calls[0]!.body as { custom_data: { account_id: string } }).custom_data.account_id;

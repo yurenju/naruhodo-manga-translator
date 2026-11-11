@@ -65,7 +65,7 @@ describe('猜作品原名', () => {
     ]);
     for (const content of ['範例作品', '作者', '網站']) expect(JSON.stringify(results)).not.toContain(content);
     vi.restoreAllMocks();
-    expect(((await (await get(ACCOUNT_PATH, guesser)).json()) as AccountResponse).quota.remaining).toBe(50);
+    expect(((await (await get(ACCOUNT_PATH, guesser)).json()) as AccountResponse).quota.remaining).toBe(100);
   });
 
   it('client 多送的欄位（網址、model）不轉給 Anthropic', async () => {

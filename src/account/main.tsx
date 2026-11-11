@@ -2,7 +2,9 @@
  * 帳號與訂閱頁（#213，prototype/account-status 的方案 B）：所有帳號狀態的家。圖示右鍵選單「帳號與訂閱」直接打開；
  * 額度用完時 Page 上的紅色小標籤與點圖示帶著漫畫分頁打開（?from=N，「回到漫畫」切回去）；side panel 設定頁的「管理帳號 →」也到這裡。
  *
- * 由上到下：狀態說明（需要時）、登入的帳號＋登出、目前方案（進度條畫剩下多少）、訂閱（只有免費方案）、刪除帳號。
+ * 由上到下：狀態說明（需要時）、付款中（需要時）、登入的帳號＋登出、目前方案（設計稿 B 版：狀態 Badge、扣款週期、下次續訂、本月額度的進度條，#259；
+ * 底部的退款區塊與確認對話框，#260）、
+ * 訂閱（只有免費方案；年繳、季繳兩張並排的卡片，#257）、刪除帳號。
  * 要顯示什麼由 view.ts 的 accountPageView 決定；這裡只接上 chrome、Worker 與畫面。
  */
 import { Fragment, render } from 'preact';
@@ -10,27 +12,29 @@ import { useEffect, useState } from 'preact/hooks';
 import { deleteAccount, signOut } from '../shared/account-exit.ts';
 import { accountRequest } from '../shared/account-page.ts';
 import { grantDataConsent } from '../shared/data-consent.ts';
-import { MONTHLY_PAGES } from '../shared/hosted-api.ts';
+import type { BillingPeriod } from '../shared/hosted-api.ts';
 import {
   accountExit,
   broadcastSessionChanged,
   hostedAccount,
   managePlan,
+  requestRefund,
   subscribe,
-  useHostedQuota,
+  useHostedAccount,
   useHostedSession,
   usePaymentAction,
   useTranslationMode,
 } from '../shared/hosted-account-hooks.ts';
 import { saveHostedSession, type HostedSession } from '../shared/hosted-session.ts';
 import type { Message } from '../shared/messages.ts';
-import { ownPaymentChange, watchPendingPayment } from '../shared/payment-return.ts';
+import { ownPaymentChange, watchPendingPayment, type PendingPayment } from '../shared/payment-return.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, Callout } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
 import { SignIn } from '../ui/sign-in.tsx';
-import { PaymentUnavailable, SubscribeButton, SubscriptionPrice } from '../ui/subscribe-button.tsx';
-import { accountPageView, accountPlanView, signedOutText } from '../ui/view.ts';
+import { RefundDialog } from '../ui/refund-dialog.tsx';
+import { OfferText, PaymentUnavailable } from '../ui/subscribe-button.tsx';
+import { accountPageView, refundDialogView, signedOutText } from '../ui/view.ts';
 
 const LOGO = 'icons/naruhodo-small.svg';
 
@@ -44,16 +48,19 @@ function backToManga(tabId: number) {
     .then(() => window.close());
 }
 
-/** 這一頁發起的付款：paying＝還在等付款分頁，settled＝SW 清掉了（確認了或放棄），由額度決定是不是「訂閱完成」。 */
-function useAccountPayment(): { paying: boolean; settled: boolean } {
-  const [state, setState] = useState({ paying: false, settled: false });
+/**
+ * 這一頁發起的付款：pending＝還在等的付款（SW 記的狀態），settled＝SW 清掉了（確認了或放棄）時那筆付款的扣款週期，
+ * 由額度決定是不是「訂閱完成」。
+ */
+function useAccountPayment(): { pending: PendingPayment | undefined; settled: BillingPeriod | undefined } {
+  const [state, setState] = useState<{ pending: PendingPayment | undefined; settled: BillingPeriod | undefined }>({ pending: undefined, settled: undefined });
   useEffect(() => {
-    let previous: Parameters<typeof ownPaymentChange>[1];
+    let previous: PendingPayment | undefined;
     return watchPendingPayment((next) => {
       const { mine, action } = ownPaymentChange('account', previous, next);
+      if (action === 'wait') setState({ pending: mine, settled: undefined });
+      if (action === 'settled') setState({ pending: undefined, settled: previous?.billingPeriod });
       previous = mine;
-      if (action === 'wait') setState({ paying: true, settled: false });
-      if (action === 'settled') setState({ paying: false, settled: true });
     });
   }, []);
   return state;
@@ -93,11 +100,15 @@ function SignedOut({ text, onSignedIn }: { text: string; onSignedIn: () => void 
 }
 
 function Account({ session, mode, justSignedIn }: { session: HostedSession; mode: TranslationMode; justSignedIn: boolean }) {
-  const quota = useHostedQuota(session);
+  const account = useHostedAccount(session);
+  const quota = account?.quota;
   const payment = useAccountPayment();
   const [paymentFailed, runPayment] = usePaymentAction();
   const [deleting, setDeleting] = useState<'confirm' | 'busy' | undefined>(undefined);
   const [deleteFailed, setDeleteFailed] = useState(false);
+  /** 確認退款的對話框：confirm＝打開著，busy＝送出中。 */
+  const [refunding, setRefunding] = useState<'confirm' | 'busy' | undefined>(undefined);
+  const [refundFailed, setRefundFailed] = useState(false);
 
   if (deleting)
     return (
@@ -123,11 +134,24 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
     mode,
     signedIn: true,
     quota,
-    justPaid: payment.settled && quota?.plan === 'subscribed',
+    payment: payment.pending && { billingPeriod: payment.pending.billingPeriod, checkoutClosed: payment.pending.checkoutTabId === null },
+    justPaid: quota?.plan === 'subscribed' ? payment.settled : undefined,
     justSignedIn,
     hasOrigin: from !== undefined,
+    refund: account?.refund,
+    now: Date.now(),
   });
-  const plan = quota && accountPlanView(quota);
+  const refundDialog = quota?.plan === 'subscribed' && account?.refund && view.plan?.refund?.kind === 'offer' ? refundDialogView(quota, account.refund) : undefined;
+  const confirmRefund = () => {
+    setRefunding('busy');
+    setRefundFailed(false);
+    void requestRefund(session).then((ok) => {
+      setRefunding(ok ? undefined : 'confirm');
+      setRefundFailed(!ok);
+    });
+  };
+  /** 打開這個扣款週期的付款頁：付款分頁還開著的話 SW 切過去，不開第二個。 */
+  const pay = (billingPeriod: BillingPeriod) => runPayment(() => subscribe(session, 'account', billingPeriod));
   return (
     <>
       {view.notice && (
@@ -145,9 +169,22 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
           )}
         </Callout>
       )}
-      {payment.paying && (
-        <Callout tone="info" role="status">
-          <p>付款頁已經在另一個分頁打開（由 Paddle 處理付款）。付款完成後，會自動帶你回到這裡。</p>
+      {view.payment && (
+        <Callout tone="info" class="naru-callout--stack" role="status" aria-label={view.payment.title}>
+          <p>
+            <strong>{view.payment.title}</strong>
+          </p>
+          <p>
+            {view.payment.chosen && (
+              <>
+                你選的是 <OfferText offer={view.payment.chosen} />。
+              </>
+            )}
+            {view.payment.body}
+          </p>
+          <div>
+            <Button onClick={() => pay(view.payment!.billingPeriod)}>{view.payment.button}</Button>
+          </div>
         </Callout>
       )}
       {view.ownKeyNote && (
@@ -162,45 +199,82 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
           <Button onClick={() => void signOut(accountExit, session.token)}>登出</Button>
         </div>
       </section>
-      {view.plan && plan && (
-        <section class="ac-sec" aria-label="目前方案">
-          <h2>目前方案</h2>
+      {view.plan && (
+        <section class="ac-sec ac-plan" aria-label="目前方案">
+          <div class="ac-split">
+            <h2>目前方案</h2>
+            {view.plan.manage && <Button onClick={() => runPayment(() => managePlan(session))}>管理訂閱（付款方式、取消）</Button>}
+          </div>
           <div class="ac-plan-head">
             <span class="ac-plan-name">{view.plan.name}</span>
-            {quota?.plan === 'subscribed' ? <Badge tone={plan.badge.tone}>{plan.badge.text}</Badge> : <span class="hint">{view.plan.note}</span>}
+            {view.plan.badge && <Badge tone={view.plan.badge.tone}>{view.plan.badge.text}</Badge>}
+            {view.plan.note && <span class="hint">{view.plan.note}</span>}
           </div>
-          <div class="ac-split ac-small">
-            <span class="ac-muted">{view.plan.quotaLabel}</span>
-            <span class={view.plan.warn ? 'ac-warn' : undefined}>{view.plan.left}</span>
-          </div>
-          <div class={view.plan.warn ? 'ac-meter ac-meter--warn' : 'ac-meter'} role="presentation">
-            <i style={{ width: `${Math.round(view.plan.fraction * 100)}%` }} />
-          </div>
-          {quota?.plan === 'subscribed' && (
-            <>
-              <p class="hint">
-                {plan.lines.map((line, i) => (
-                  <Fragment key={line}>
-                    {i > 0 && <br />}
-                    {line}
-                  </Fragment>
-                ))}
-              </p>
-              <div>
-                <Button onClick={() => runPayment(() => managePlan(session))}>管理訂閱（付款方式、取消）</Button>
+          <dl class="ac-plan-rows">
+            {view.plan.rows.map((row) => (
+              <Fragment key={row.label}>
+                <dt>{row.label}</dt>
+                <dd class={row.warn ? 'ac-warn' : undefined}>{row.value}</dd>
+              </Fragment>
+            ))}
+            <dt>{view.plan.quotaLabel}</dt>
+            <dd class="ac-plan-quota">
+              <span class="ac-split">
+                <span class={view.plan.warn ? 'ac-warn' : undefined}>{view.plan.left}</span>
+                {view.plan.reset && <span class="ac-muted">{view.plan.reset}</span>}
+              </span>
+              <span class={view.plan.warn ? 'ac-meter ac-meter--warn' : 'ac-meter'} role="presentation">
+                <i style={{ width: `${Math.round(view.plan.fraction * 100)}%` }} />
+              </span>
+            </dd>
+          </dl>
+          {view.plan.refund?.kind === 'offer' && (
+            <div class="ac-refund" role="group" aria-label="退款">
+              <div class="ac-refund__text">
+                <strong>{view.plan.refund.title}</strong>
+                <span class="ac-refund__detail">{view.plan.refund.detail}</span>
               </div>
-            </>
+              <Button
+                onClick={() => {
+                  setRefundFailed(false);
+                  setRefunding('confirm');
+                }}
+              >
+                申請退款
+              </Button>
+            </div>
+          )}
+          {(view.plan.refund?.kind === 'pending' || view.plan.refund?.kind === 'rejected') && (
+            <Callout tone={view.plan.refund.kind === 'pending' ? 'warn' : 'danger'} class="naru-callout--stack" role="status" aria-label={view.plan.refund.title}>
+              <p>
+                <strong>{view.plan.refund.title}</strong>
+              </p>
+              <p>{view.plan.refund.body}</p>
+            </Callout>
+          )}
+          {refunding && refundDialog && (
+            <RefundDialog view={refundDialog} sending={refunding === 'busy'} failed={refundFailed} onConfirm={confirmRefund} onCancel={() => setRefunding(undefined)} />
           )}
         </section>
       )}
       {view.subscribe && (
         <section class="ac-sec" aria-label="訂閱">
           <h2>訂閱</h2>
-          <p>每月可翻 {MONTHLY_PAGES} 頁，從訂閱那天起每月同一天重置。隨時取消，用到這一年結束。</p>
-          <SubscriptionPrice />
-          <div>
-            <SubscribeButton variant="primary" onSubscribe={() => runPayment(() => subscribe(session, 'account'))} />
+          <p>{view.subscribe.headline}</p>
+          <div class="ac-offers">
+            {view.subscribe.offers.map((offer) => (
+              <div key={offer.billingPeriod} class={offer.recommended ? 'ac-offer ac-offer--recommended' : 'ac-offer'}>
+                {offer.recommended ? <Badge tone="solid">推薦</Badge> : <span class="ac-offer__badge-space" aria-hidden="true" />}
+                <p class="ac-offer__price">
+                  <OfferText offer={offer} />
+                </p>
+                <Button variant={offer.recommended ? 'primary' : 'secondary'} class="ac-big ac-offer__button" onClick={() => pay(offer.billingPeriod)}>
+                  {offer.subscribe}
+                </Button>
+              </div>
+            ))}
           </div>
+          <p class="hint">{view.subscribe.note}</p>
         </section>
       )}
       {paymentFailed && <PaymentUnavailable />}

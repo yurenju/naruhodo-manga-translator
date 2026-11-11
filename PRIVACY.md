@@ -7,7 +7,7 @@ Naruhodo is a Chrome extension that translates Japanese manga on screen into Tra
 
 Naruhodo can translate in two ways. You choose one in the extension's settings, and you can switch at any time:
 
-- **Hosted Translation** (the default): you sign in with your email address. Text is sent to the Naruhodo service, which has it translated by Anthropic. New accounts get 50 free pages; after that, translation requires a yearly subscription, paid through Paddle.
+- **Hosted Translation** (the default): you sign in with your email address. Text is sent to the Naruhodo service, which has it translated by Anthropic. New accounts get 100 free pages; after that, translation requires a subscription (quarterly or yearly), paid through Paddle.
 - **Own API Key**: you enter your own Anthropic API key. Your browser sends text directly to Anthropic, and the Naruhodo service is not involved.
 
 The extension contains no analytics, advertising or tracking code.
@@ -64,7 +64,8 @@ Only Hosted Translation uses the Naruhodo service. It keeps:
 | Free pages remaining; for subscribers, the start of the current monthly period and pages used in it | Your page quota |
 | One usage record for each successful translation, Series Notes or series title guess request: the time, the kind of request, the AI model used, token counts (including tokens written to and read from Anthropic's prompt cache) and cost, whether it was the practice page on our website, and for a Series Notes request, which page's translation record it belongs to | Usage and cost accounting. Usage records contain no text, translations, series names, page titles or page addresses |
 | A SHA-256 hash of each email address that has received free pages, and when | Making sure free pages are given only once per email address |
-| Your Paddle subscription and customer identifiers, subscription status, start date, end of the paid period, whether cancellation is scheduled, and the time of the last update from Paddle | Your subscription |
+| Your Paddle subscription and customer identifiers, subscription status, billing period (quarterly or yearly), start date, end of the paid period, whether cancellation is scheduled, and the time of the last update from Paddle | Your subscription |
+| For each subscription payment: Paddle's transaction identifier, when it was paid, the amount, and the status of any refund request with Paddle's identifier for it | Showing the 14-day refund period and handling refund requests (see the [Refund Policy](/refund)). Deleted when you delete your account |
 | Identifiers of the payment notifications Paddle has sent, and when they arrived | Processing each notification only once. They contain no account or email information |
 
 When Anthropic charges for a request whose answer cannot be used (for example, an incomplete answer), the service creates no usage record. It writes only the kind of request, the AI model, token counts, cost and the reason to its service logs, which are kept for 7 days. These log lines contain no account information, text or translations.
@@ -93,8 +94,8 @@ Data on your computer stays until you delete it:
 
 **Deleting your account** (Settings → Delete account in the extension):
 
-- If you have a subscription, it is cancelled first: it stays usable until the end of the paid year and will not renew. If a renewal payment has failed and is still being retried, or the subscription is paused, it is cancelled immediately, so no further payment is attempted. **Payments already made are not refunded automatically.** If the cancellation fails, nothing is deleted and you can try again.
-- The service then deletes your account, all of your sign-in tokens (signing you out on every computer), your page quota, your subscription record, any sign-in code not yet used for your email address, and the count of sign-in codes tried for it. Your usage records are kept anonymously: the link to your account is removed, and only the numbers stay, so that our costs can be checked against Anthropic's bills.
+- If you have a subscription, it is cancelled first: it stays usable until the end of the paid quarter or year and will not renew. If a renewal payment has failed and is still being retried, or the subscription is paused, it is cancelled immediately, so no further payment is attempted. **Payments already made are not refunded automatically.** If the cancellation fails, nothing is deleted and you can try again.
+- The service then deletes your account, all of your sign-in tokens (signing you out on every computer), your page quota, your subscription record and payment records, any sign-in code not yet used for your email address, and the count of sign-in codes tried for it. Your usage records are kept anonymously: the link to your account is removed, and only the numbers stay, so that our costs can be checked against Anthropic's bills.
 - The service keeps only the SHA-256 hash of your email address and when it received free pages, so that registering again with the same email address does not give free pages again, plus the anonymous usage records and the payment notification identifiers described above. **After deletion, the service keeps no copy of your email address.**
 - Data held by third parties is not deleted by the Naruhodo service: Paddle keeps its customer, subscription and transaction records under its own policy and its legal record-keeping obligations, and Resend keeps its email delivery records under its own policy.
 - On your computer, deleting your account only signs you out. The translation cache, Series, Series Notes and settings stay.

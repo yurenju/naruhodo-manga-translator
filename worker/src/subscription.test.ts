@@ -7,6 +7,7 @@ import {
   ACCOUNT_PATH,
   CHECKOUT_PATH,
   DEV_FREE_PAGES_PATH,
+  LEGACY_CHECKOUT_PATH,
   PORTAL_PATH,
   TRANSLATE_PATH,
   type AccountResponse,
@@ -59,6 +60,9 @@ const subscribed = (fields: Partial<Extract<Quota, { plan: 'subscribed' }>> = {}
   status: 'active',
   cancelScheduled: false,
   periodEndsAt: Date.parse('2027-10-15T03:00:00Z'),
+  billingPeriod: 'yearly',
+  renewalPriceUsd: 48,
+  freePages: 100,
   ...fields,
 });
 
@@ -68,11 +72,11 @@ afterEach(() => {
 });
 
 describe('建立 checkout', () => {
-  it('用 Paddle API 建立年繳 price 的 transaction，回傳產品網站 checkout 頁的網址（不用 Paddle 的 checkout.url）', async () => {
+  it('年繳：用 Paddle API 建立年繳 price 的 transaction，回傳產品網站 checkout 頁的網址（不用 Paddle 的 checkout.url）', async () => {
     const token = await signIn();
     const paddle = fakePaddle([transactionCreated('txn_01abc')]);
 
-    const response = await post(CHECKOUT_PATH, { locale: 'en' }, { token });
+    const response = await post(CHECKOUT_PATH, { locale: 'en', billingPeriod: 'yearly' }, { token });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ url: 'http://localhost:4321/en/checkout?_ptxn=txn_01abc' });
@@ -80,14 +84,49 @@ describe('建立 checkout', () => {
     const [call] = paddle.calls;
     expect(call!.url).toBe('https://paddle.test/transactions');
     expect(new Headers(call!.init.headers).get('authorization')).toBe('Bearer pdl_sdbx_apikey_worker_test');
-    expect(call!.body).toMatchObject({ items: [{ price_id: 'pri_worker_test', quantity: 1 }], custom_data: { account_id: expect.any(String) } });
+    expect(call!.body).toMatchObject({ items: [{ price_id: 'pri_worker_test_yearly', quantity: 1 }], custom_data: { account_id: expect.any(String) } });
+  });
+
+  it('季繳：transaction 用季繳的 price', async () => {
+    const token = await signIn();
+    const paddle = fakePaddle([transactionCreated()]);
+
+    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'quarterly' }, { token });
+
+    expect(response.status).toBe(200);
+    expect(paddle.calls[0]!.body).toMatchObject({ items: [{ price_id: 'pri_worker_test_quarterly', quantity: 1 }] });
+  });
+
+  it.each([
+    ['沒給扣款週期', { locale: 'zh-tw' }],
+    ['不認得的扣款週期', { locale: 'zh-tw', billingPeriod: 'monthly' }],
+    ['扣款週期不是字串', { locale: 'zh-tw', billingPeriod: 12 }],
+  ])('%s：400，不呼叫 Paddle', async (_, body) => {
+    const token = await signIn();
+    const paddle = vi.spyOn(globalThis, 'fetch');
+
+    const response = await post(CHECKOUT_PATH, body, { token });
+
+    expect(response.status).toBe(400);
+    expect(paddle).not.toHaveBeenCalled();
+  });
+
+  it('舊版外掛的 checkout 路徑（沒有扣款週期）照樣能用：一律年繳', async () => {
+    const token = await signIn();
+    const paddle = fakePaddle([transactionCreated('txn_01old')]);
+
+    const response = await post(LEGACY_CHECKOUT_PATH, { locale: 'zh-tw' }, { token });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ url: 'http://localhost:4321/zh-tw/checkout?_ptxn=txn_01old' });
+    expect(paddle.calls[0]!.body).toMatchObject({ items: [{ price_id: 'pri_worker_test_yearly', quantity: 1 }] });
   });
 
   it('不認得的語言用 zh-tw', async () => {
     const token = await signIn();
     fakePaddle([transactionCreated('txn_01def')]);
 
-    const response = await post(CHECKOUT_PATH, { locale: 'fr' }, { token });
+    const response = await post(CHECKOUT_PATH, { locale: 'fr', billingPeriod: 'yearly' }, { token });
 
     expect(await response.json()).toEqual({ url: 'http://localhost:4321/zh-tw/checkout?_ptxn=txn_01def' });
   });
@@ -97,7 +136,7 @@ describe('建立 checkout', () => {
     const accountId = await checkoutAccountId(token);
     const paddle = fakePaddle([transactionCreated()]);
 
-    await post(CHECKOUT_PATH, { locale: 'zh-tw', account_id: 'someone-else', custom_data: { account_id: 'someone-else' } }, { token });
+    await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly', account_id: 'someone-else', custom_data: { account_id: 'someone-else' } }, { token });
 
     expect(paddle.calls[0]!.body).toMatchObject({ custom_data: { account_id: accountId } });
     expect(accountId).not.toBe('someone-else');
@@ -106,7 +145,7 @@ describe('建立 checkout', () => {
   it('沒登入回 401，不呼叫 Paddle', async () => {
     const paddle = vi.spyOn(globalThis, 'fetch');
 
-    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw' });
+    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly' });
 
     expect(response.status).toBe(401);
     expect(paddle).not.toHaveBeenCalled();
@@ -116,7 +155,7 @@ describe('建立 checkout', () => {
     const token = await signIn();
     fakePaddle([() => Response.json({ error: { code: 'forbidden' } }, { status: 403 })]);
 
-    expect((await post(CHECKOUT_PATH, { locale: 'zh-tw' }, { token })).status).toBe(502);
+    expect((await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly' }, { token })).status).toBe(502);
   });
 });
 
@@ -137,7 +176,7 @@ describe('Paddle webhook', () => {
     const response = await webhook(event, { signature: await paddleSignature(JSON.stringify(event), { secret: 'pdl_ntfset_wrong' }) });
 
     expect(response.status).toBe(401);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
   it('沒有簽章、或 body 被改過回 401', async () => {
@@ -147,7 +186,7 @@ describe('Paddle webhook', () => {
 
     expect((await webhook(event, { signature: '' })).status).toBe(401);
     expect((await webhook(event, { signature: signedForOther })).status).toBe(401);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
   it('簽章的時間差超過 5 分鐘回 401（擋重送舊的請求）', async () => {
@@ -159,7 +198,7 @@ describe('Paddle webhook', () => {
     const response = await webhook(event, { signature: await paddleSignature(JSON.stringify(event), { ts }) });
 
     expect(response.status).toBe(401);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 });
 
@@ -190,7 +229,7 @@ describe('Paddle webhook：重複與亂序', () => {
     const other = { event_id: 'evt_txn_1', event_type: 'transaction.completed', occurred_at: new Date().toISOString(), data: {} };
     expect((await webhook(other)).status).toBe(200);
     expect((await webhook(subscriptionEvent({ accountId: 'no-such-account' }))).status).toBe(200);
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 });
 
@@ -228,6 +267,63 @@ describe('Paddle webhook：重新訂閱（舊訂閱與新訂閱的事件交錯�
   });
 });
 
+describe('扣款週期與下次續訂金額（#259）', () => {
+  it('季繳的 price：扣款週期是季繳，下次續訂 US$15', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_worker_test_quarterly', endsAt: '2027-01-15T03:00:00Z' });
+
+    expect(await quota(token)).toEqual(subscribed({ billingPeriod: 'quarterly', renewalPriceUsd: 15, periodEndsAt: Date.parse('2027-01-15T03:00:00Z') }));
+  });
+
+  it('年繳的 price：扣款週期是年繳，下次續訂 US$48', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_worker_test_yearly' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 48 });
+  });
+
+  it('事件沒帶 unit_price（例如舊訂閱者不認得的 price）：當年繳，下次續訂退回定價常數 US$48', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_legacy_yearly_20' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 48 });
+  });
+
+  it('下次續訂金額取自事件裡 price 的 unit_price：Paddle 上換了價格，不用改程式碼就跟著變', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_worker_test_quarterly', unitPriceCents: '1800' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'quarterly', renewalPriceUsd: 18 });
+  });
+
+  it('舊訂閱者還沒換成新的年繳 price（事件帶 US$20 的 unit_price）：下次續訂照 Paddle 會扣的 US$20', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_legacy_yearly_20', unitPriceCents: '2000' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 20 });
+  });
+
+  it('從季繳換成年繳（之後的事件帶年繳的 price）：扣款週期跟著換', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+    await send({ accountId, priceId: 'pri_worker_test_quarterly', occurredAt: '2026-10-30T10:00:00Z' });
+
+    await send({ accountId, priceId: 'pri_worker_test_yearly', occurredAt: '2026-10-30T11:00:00Z' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 48 });
+  });
+});
+
 describe('訂閱狀態與權限', () => {
   it('排定取消：這一年結束前照常訂閱中（不會續訂）；subscription.canceled 之後才回到只剩 Free Pages', async () => {
     at('2026-10-30T12:00:00Z');
@@ -240,7 +336,7 @@ describe('訂閱狀態與權限', () => {
 
     // 這一年結束時 Paddle 送 subscription.canceled（session 閒置 180 天會失效，所以時間不真的往後跳一年）
     await send({ accountId, eventType: 'subscription.canceled', status: 'canceled', occurredAt: '2026-10-30T11:30:00Z' });
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
   it('past_due（扣款失敗重試中）仍然有權限、可以翻譯', async () => {
@@ -258,7 +354,7 @@ describe('訂閱狀態與權限', () => {
 
     await send({ accountId, eventType: 'subscription.paused', status: 'paused' });
 
-    expect(await quota(token)).toEqual({ plan: 'free', remaining: 50 });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 });
 
@@ -270,7 +366,7 @@ describe('Monthly Page Limit', () => {
     await send({ accountId, occurredAt: '2026-10-30T10:00:00Z' });
 
     expect(await translate(token, 2)).toEqual([200, 200]);
-    expect(await quota(token)).toEqual(subscribed({ remaining: 1 }));
+    expect(await quota(token)).toEqual(subscribed({ remaining: 1, freePages: 10 }));
 
     await send({ accountId, eventType: 'subscription.canceled', status: 'canceled', occurredAt: '2026-10-30T11:00:00Z' });
     expect(await quota(token)).toEqual({ plan: 'free', remaining: 10 });
@@ -330,7 +426,7 @@ describe('checkout 與管理訂閱', () => {
     await send({ accountId, occurredAt: '2026-10-30T10:00:00Z' });
     const paddle = vi.spyOn(globalThis, 'fetch');
 
-    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw' }, { token });
+    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly' }, { token });
 
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ reason: 'alreadySubscribed' });

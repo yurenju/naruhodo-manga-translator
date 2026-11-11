@@ -16,11 +16,12 @@ export default defineProject({
       miniflare: {
         bindings: {
           CLAUDE_API_KEY: 'sk-ant-worker-test',
-          // Monthly Page Limit 是設定值：測試設成 3 頁，「本月額度用完」不用翻 800 頁
+          // Monthly Page Limit 是設定值：測試設成 3 頁，「本月額度用完」不用翻 3,000 頁
           MONTHLY_PAGE_LIMIT: '3',
           PADDLE_API_KEY: 'pdl_sdbx_apikey_worker_test',
           PADDLE_API_BASE_URL: 'https://paddle.test',
-          PADDLE_PRICE_ID: 'pri_worker_test',
+          PADDLE_PRICE_ID_QUARTERLY: 'pri_worker_test_quarterly',
+          PADDLE_PRICE_ID_YEARLY: 'pri_worker_test_yearly',
           PADDLE_WEBHOOK_SECRET: 'pdl_ntfset_worker_test',
           TEST_MIGRATIONS: migrations,
         },

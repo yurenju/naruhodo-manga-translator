@@ -6,12 +6,14 @@ const free = (remaining: number): Quota => ({ plan: 'free', remaining });
 const subscribed = (remaining: number): Quota => ({
   plan: 'subscribed',
   remaining,
-  limit: 800,
+  limit: 3000,
   // 讀者時區的 12 月 3 日
   resetsAt: new Date(2026, 11, 3, 9).getTime(),
   status: 'active',
   cancelScheduled: false,
   periodEndsAt: new Date(2027, 10, 3).getTime(),
+  billingPeriod: 'yearly',
+  renewalPriceUsd: 48,
 });
 
 describe('圖示 hover 提示、右鍵選單與「快用完」（#237）', () => {
@@ -31,9 +33,14 @@ describe('圖示 hover 提示、右鍵選單與「快用完」（#237）', () =>
     expect(quotaIndicator(free(42)).title).toBe('Naruhodo 漫畫翻譯\n免費額度剩 42 頁');
   });
 
-  it('剩 25 頁以下是快用完：圓點變橘、選單帶上剩餘頁數', () => {
+  it('Free Pages 剩 25 頁以下是快用完：圓點變橘、選單帶上剩餘頁數', () => {
     expect(quotaIndicator(free(26))).toMatchObject({ menuTitle: '帳號與訂閱', lowQuota: false });
     expect(quotaIndicator(free(25))).toMatchObject({ menuTitle: '帳號與訂閱・剩 25 頁', lowQuota: true });
+  });
+
+  it('本月額度剩 300 頁以下是快用完（上限的 10%）', () => {
+    expect(quotaIndicator(subscribed(301))).toMatchObject({ menuTitle: '帳號與訂閱', lowQuota: false });
+    expect(quotaIndicator(subscribed(300))).toMatchObject({ menuTitle: '帳號與訂閱・剩 300 頁', lowQuota: true });
     expect(quotaIndicator(subscribed(18))).toMatchObject({ menuTitle: '帳號與訂閱・剩 18 頁', lowQuota: true });
   });
 

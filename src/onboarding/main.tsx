@@ -11,7 +11,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { indexedDbApiKeyStore } from '../shared/api-key-store.ts';
 import { grantDataConsent, hasDataConsent } from '../shared/data-consent.ts';
-import { FREE_PAGES, MONTHLY_AVERAGE_USD, MONTHLY_PAGES, YEARLY_PRICE_USD } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES, pageCount, type BillingPeriod } from '../shared/hosted-api.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { HOSTED_API_URL, loadHostedSession, saveHostedSession, type HostedSession } from '../shared/hosted-session.ts';
 import type { Message, ModelStatus, ModelStatusResponse } from '../shared/messages.ts';
@@ -24,7 +24,9 @@ import { Badge, Button, Callout } from '../ui/components.tsx';
 import { OwnKeyDataFlow, PolicyLinks } from '../ui/data-flow.tsx';
 import { PRACTICE_URL } from '../ui/links.ts';
 import { SignIn } from '../ui/sign-in.tsx';
-import { SubscribeButton, SubscriptionPrice } from '../ui/subscribe-button.tsx';
+import { billingPeriodOffer } from '../ui/pricing.ts';
+import { OfferText } from '../ui/subscribe-button.tsx';
+import { DEFAULT_PLAN_CHOICE, PLAN_CHOICES, planChoiceView, type PlanChoice } from './plan-choice.ts';
 
 const hostedAccount = createHostedAccountClient({ apiUrl: HOSTED_API_URL, fetch: (url, init) => fetch(url, init) });
 
@@ -63,10 +65,10 @@ function Intro({ downloadBytes, onNext }: { downloadBytes: number | undefined; o
       <div class="ob-price">
         <ul>
           <li>
-            用 email 註冊之後，有 <strong>{FREE_PAGES} 頁的免費額度</strong>（大約兩話），不用輸入付款資料。
+            用 email 註冊之後，有 <strong>{FREE_PAGES} 頁的免費額度</strong>（大約四話，不會過期），不用輸入付款資料。
           </li>
           <li>
-            試用滿意的話，可以訂閱：年繳 US${YEARLY_PRICE_USD}（平均每月 US${MONTHLY_AVERAGE_USD}），每月可翻 {MONTHLY_PAGES} 頁。
+            試用滿意的話，可以訂閱：<OfferText offer={billingPeriodOffer('yearly')} />，或 <OfferText offer={billingPeriodOffer('quarterly')} />，每月可翻 {pageCount(MONTHLY_PAGES)} 頁。
           </li>
           <li>回頭看已經翻過的頁面不會扣頁數；翻譯失敗也不扣。</li>
         </ul>
@@ -93,18 +95,19 @@ function DownloadPill({ status, started }: { status: ModelStatus; started: boole
 
 /**
  * 第 3 步的子畫面：向 Worker 讀方案 → 選方案 → 付款頁開在新分頁、等付款完成 → 訂閱中。
+ * waitingPayment：url 是付款頁（重新整理後沒有），billingPeriod 是付款的扣款週期。
  * justPaid：在這裡付完款的是「訂閱完成」，本來就訂閱的是「已訂閱」（#167）；limit：讀不到（只知道 Worker 回了 alreadySubscribed）就不顯示頁數。
  */
 type PlanState =
   | { kind: 'loading' }
   | { kind: 'choose' }
-  | { kind: 'waitingPayment'; url: string }
+  | { kind: 'waitingPayment'; url: string; billingPeriod: BillingPeriod }
   | { kind: 'subscribed'; limit: number | undefined; justPaid: boolean };
 
 /**
- * 第 3 步：選擇方案（#93、#94 畫面定案）。一進來先向 Worker 讀一次方案（#167）：已經訂閱中（剛登入，或已登入時重開 onboarding）
- * 就不顯示方案選擇，直接是「已訂閱」並呼叫 onSubscribed；讀不到就照常選方案。
- * 「訂閱」向 Worker 建立 checkout，請 SW 用新分頁打開產品網站的 checkout 頁（Paddle 處理付款）。
+ * 第 3 步：選擇方案（spec #254 設計稿 C 版：單選清單＋一顆按鈕，選項與按鈕文字在 plan-choice.ts）。一進來先向 Worker 讀一次方案（#167）：
+ * 已經訂閱中（剛登入，或已登入時重開 onboarding）就不顯示方案選擇，直接是「已訂閱」並呼叫 onSubscribed；讀不到就照常選方案。
+ * 選年繳或季繳按下主按鈕，向 Worker 建立那個扣款週期的 checkout，請 SW 用新分頁打開產品網站的 checkout 頁（Paddle 處理付款）。
  * SW 每隔幾秒查一次方案，確認了就關掉付款分頁、帶讀者回到這裡（#176）。這裡看 SW 記的付款狀態：付款分頁還開著是「在付款分頁完成付款」，
  * 被關掉了是「付款頁已經關閉」；SW 清掉付款狀態時（確認了、或關掉 10 分鐘後放棄）向 Worker 讀一次方案，
  * 訂閱中就換成「訂閱完成」並呼叫 onSubscribed（設定完成），「下一步」才到第 4 步；不是就回到選方案。
@@ -124,6 +127,7 @@ function Plan({
   onNext: () => void;
 }) {
   const [state, setState] = useState<PlanState>({ kind: 'loading' });
+  const [choice, setChoice] = useState<PlanChoice>(DEFAULT_PLAN_CHOICE);
   const [failure, setFailure] = useState<string | undefined>(undefined);
   /** SW 記的、從 onboarding 發起的付款；undefined＝沒有。 */
   const [pending, setPending] = useState<PendingPayment | undefined>(undefined);
@@ -144,13 +148,13 @@ function Plan({
     onSubscribed();
   };
 
-  async function subscribe() {
+  async function subscribe(billingPeriod: BillingPeriod) {
     onChoose();
     setFailure(undefined);
-    const result = await hostedAccount.checkout(session.token, 'zh-tw');
+    const result = await hostedAccount.checkout(session.token, 'zh-tw', billingPeriod);
     if (result.ok) {
-      setState({ kind: 'waitingPayment', url: result.url });
-      await openPayment(result.url, 'onboarding');
+      setState({ kind: 'waitingPayment', url: result.url, billingPeriod });
+      await openPayment(result.url, 'onboarding', billingPeriod);
     } else if (result.reason === 'alreadySubscribed') {
       // Worker 已經說訂閱中：讀不到頁數上限也照樣是「已訂閱」
       showSubscribed(await subscribedLimit(), false);
@@ -172,7 +176,7 @@ function Plan({
       const { mine, action } = ownPaymentChange('onboarding', previous, next);
       if (action === 'wait') {
         paying = true;
-        setState((s) => (s.kind === 'choose' || s.kind === 'loading' ? { kind: 'waitingPayment', url: '' } : s));
+        setState((s) => (s.kind === 'choose' || s.kind === 'loading' ? { kind: 'waitingPayment', url: '', billingPeriod: next!.billingPeriod } : s));
       }
       if (action === 'settled')
         void subscribedLimit().then((limit) => {
@@ -190,8 +194,10 @@ function Plan({
   }, []);
 
   if (state.kind === 'waitingPayment') {
+    // 扣款週期照 SW 記的付款分頁（付款頁開著時改選另一種，讀者付的還是那一頁的）
+    const billingPeriod = pending?.billingPeriod ?? state.billingPeriod;
     // 付款頁的網址（重新整理後沒有）：沒有的話重新向 Worker 建一個
-    const reopen = () => (state.url ? void openPayment(state.url, 'onboarding') : void subscribe());
+    const reopen = () => (state.url ? void openPayment(state.url, 'onboarding', billingPeriod) : void subscribe(billingPeriod));
     if (pending?.checkoutTabId === null)
       return (
         <>
@@ -211,7 +217,9 @@ function Plan({
     return (
       <>
         <h2 class="ob-h2">在付款分頁完成付款</h2>
-        <p>付款頁已經在另一個分頁打開（由 Paddle 處理付款）。付款完成後，會自動帶你回到這裡。</p>
+        <p>
+          你選的是 <OfferText offer={billingPeriodOffer(billingPeriod)} />。付款頁已經在另一個分頁打開（由 Paddle 處理付款）。付款完成後，會自動帶你回到這裡。
+        </p>
         <div class="naru-row">
           <Button onClick={reopen}>回到付款頁</Button>
           <Button variant="ghost" onClick={free}>
@@ -240,7 +248,7 @@ function Plan({
           <p>
             {state.limit === undefined
               ? '✓ 已訂閱。'
-              : `✓ 已訂閱：每月可翻 ${state.limit} 頁，${state.justPaid ? '每個月的今天重置' : '從訂閱那天起每月同一天重置'}。`}
+              : `✓ 已訂閱：每月可翻 ${pageCount(state.limit)} 頁，${state.justPaid ? '每個月的今天重置' : '從訂閱那天起每月同一天重置'}。`}
           </p>
         </Callout>
         <Button variant="primary" class="ob-big" onClick={onNext}>
@@ -248,27 +256,34 @@ function Plan({
         </Button>
       </>
     );
+  const view = planChoiceView(choice);
   return (
     <>
       <h2 class="ob-h2">選擇方案</h2>
       <p>
-        已登入 <strong>{session.email}</strong>。你可以現在訂閱，或先用免費額度試試看。
+        已登入 <strong>{session.email}</strong>。預設先用免費額度，之後隨時可以在「帳號與訂閱」訂閱。
       </p>
-      <div class="ob-plans">
-        <section class="ob-plan" aria-label="先用免費額度">
-          <p class="ob-plan__name">先用免費額度</p>
-          <p class="ob-plan__price">{FREE_PAGES} 頁</p>
-          <p class="hint">大約兩話，不會過期。用完再決定要不要訂閱。</p>
-          <Button onClick={free}>先用免費的 {FREE_PAGES} 頁</Button>
-        </section>
-        <section class="ob-plan ob-plan--hl" aria-label="訂閱（年繳）">
-          <p class="ob-plan__name">
-            訂閱 <Badge tone="solid">年繳</Badge>
-          </p>
-          <SubscriptionPrice />
-          <p class="hint">從訂閱那天起每月同一天重置。隨時取消，用到這一年結束。</p>
-          <SubscribeButton variant="primary" onSubscribe={() => void subscribe()} />
-        </section>
+      <fieldset class="ob-choices">
+        <legend class="ob-choices__legend">方案</legend>
+        {PLAN_CHOICES.map((option) => (
+          <label key={option.choice} class={option.choice === choice ? 'ob-choice ob-choice--on' : 'ob-choice'}>
+            <input type="radio" name="plan" checked={option.choice === choice} onChange={() => setChoice(option.choice)} />
+            <span class="ob-choice__text">
+              <span>
+                <strong>{option.title}</strong>
+                {option.detail}
+                {option.recommended && <Badge tone="solid">推薦</Badge>}
+              </span>
+              <span class="hint">{option.note}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      <div class="ob-choice-action">
+        <Button variant="primary" class="ob-big" onClick={() => (view.billingPeriod ? void subscribe(view.billingPeriod) : free())}>
+          {view.button}
+        </Button>
+        <p class="hint">{view.note}</p>
       </div>
       {failure && (
         <Callout tone="danger" role="alert">

@@ -10,7 +10,7 @@ import type { TranslateInput } from '../../src/shared/translator.ts';
 import { sha256 } from './hash.ts';
 import { fakeAnthropic, reply } from './test/anthropic.ts';
 import { del, freshEmail, get, post, signIn } from './test/http.ts';
-import { checkoutAccountId, fakePaddle, subscriptionEvent, webhook } from './test/paddle.ts';
+import { checkoutAccountId, fakePaddle, subscriptionEvent, transactionEvent, webhook } from './test/paddle.ts';
 
 const input: TranslateInput = { seriesNotes: [], priorPages: [], items: [{ id: 'b1', kind: 'balloon', 原文: 'おはよう', orientation: 'vertical' }] };
 const ok = reply({ items: [{ id: 'b1', zh: '早安', unreadable: false, sfx: false }] });
@@ -128,11 +128,12 @@ describe('刪除帳號', () => {
     expect(results).toEqual([]);
   });
 
-  it('D1 裡只剩這個 email 的 hash（Free Pages 領取紀錄）與匿名的用量紀錄，查不到 email、session、額度、訂閱', async () => {
+  it('D1 裡只剩這個 email 的 hash（Free Pages 領取紀錄）與匿名的用量紀錄，查不到 email、session、額度、訂閱、扣款', async () => {
     const email = freshEmail();
     const token = await signIn(email);
     const accountId = await checkoutAccountId(token);
     expect((await webhook(subscriptionEvent({ accountId }))).status).toBe(200);
+    expect((await webhook(transactionEvent({ accountId, subscriptionId: `sub_test_${accountId}` }))).status).toBe(200);
     fakeAnthropic([ok]);
     const translated = await post(TRANSLATE_PATH, input, { token });
     expect(translated.status).toBe(200);
@@ -147,6 +148,7 @@ describe('刪除帳號', () => {
       ['quotas', 'account_id'],
       ['usage_records', 'account_id'],
       ['subscriptions', 'account_id'],
+      ['charges', 'account_id'],
     ] as const) {
       const { results } = await env.DB.prepare(`SELECT * FROM ${table} WHERE ${column} = ?`).bind(accountId).all();
       expect(results, table).toEqual([]);

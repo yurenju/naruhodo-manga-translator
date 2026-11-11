@@ -5,7 +5,7 @@
  */
 import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useState } from 'preact/hooks';
-import { MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
+import { FREE_PAGES, type BillingPeriod, type Quota } from '../shared/hosted-api.ts';
 import type { LineRef, ModelStatus, PageView } from '../shared/messages.ts';
 import { megabytes } from '../shared/model-download.ts';
 import type { PageMode } from '../shared/page-mode.ts';
@@ -14,7 +14,7 @@ import type { StaleReason } from '../shared/series-notes.ts';
 import { Badge, Button, Callout, PageHeader, Progress, SegmentedControl, type SegmentOption } from './components.tsx';
 import { OwnKeyDataFlow } from './data-flow.tsx';
 import { PRIVACY_URL } from './links.ts';
-import { PaymentUnavailable, SubscribeButton, SubscriptionPrice } from './subscribe-button.tsx';
+import { SubscriptionPrice } from './subscribe-button.tsx';
 import { DEFAULT_LEVEL, DisplaySwitch, Transcript, type Display, type Level } from './transcript.tsx';
 import {
   canTranslate,
@@ -24,6 +24,7 @@ import {
   parentPage,
   sidePanelScreen,
   sidePanelView,
+  subscribedNoticeText,
   translateAction,
   type OverallStatus,
   type PanelPage,
@@ -180,7 +181,7 @@ function SetupNoticeCallout({
   if (notice === 'hostedHint')
     return (
       <Callout class="naru-callout--stack" role="group" aria-label="內建翻譯提示">
-        <p>現在也可以改用內建翻譯：用 email 登入就能翻，不用自備 API key。新帳號有 50 頁免費額度。</p>
+        <p>現在也可以改用內建翻譯：用 email 登入就能翻，不用自備 API key。新帳號有 {FREE_PAGES} 頁免費額度。</p>
         <div class="naru-row">
           {/* 按任何一個都算關掉，不再出現 */}
           <Button
@@ -215,17 +216,26 @@ function SetupNoticeCallout({
   );
 }
 
+/** 「查看方案」：打開帳號頁（跟 Page 上的紅色標籤一樣）。沒給 onViewPlans（網站上的展示）時停用。 */
+function ViewPlansButton({ variant, onViewPlans }: { variant: 'primary' | 'link'; onViewPlans: (() => void) | undefined }) {
+  return (
+    <Button variant={variant} disabled={!onViewPlans} onClick={onViewPlans}>
+      查看方案
+    </Button>
+  );
+}
+
 /**
  * 額度用完（#92、#94 畫面定案）：逐字稿上方的 warn Callout。已翻過的頁照常顯示快取的譯文，新的頁只有原文與讀音。
- * 免費額度用完有「訂閱」；本月額度用完只有「使用自備金鑰」（等重置）。
+ * 免費額度用完有年繳、季繳兩行價格與「查看方案」；本月額度用完只有「使用自備金鑰」（等重置）。
  */
 function QuotaExhaustedCallout({
   exhausted,
-  onSubscribe,
+  onViewPlans,
   onUseOwnKey,
 }: {
   exhausted: NonNullable<QuotaView['exhausted']>;
-  onSubscribe: (() => void) | undefined;
+  onViewPlans: (() => void) | undefined;
   onUseOwnKey: () => void;
 }) {
   return (
@@ -234,9 +244,9 @@ function QuotaExhaustedCallout({
         <strong>{exhausted.title}</strong>
       </p>
       <p>{exhausted.body}</p>
-      {exhausted.subscribe && <SubscriptionPrice />}
+      {exhausted.offers && <SubscriptionPrice offers={exhausted.offers} />}
       <div class="naru-row">
-        {exhausted.subscribe && <SubscribeButton variant="primary" onSubscribe={onSubscribe} />}
+        {exhausted.offers && <ViewPlansButton variant="primary" onViewPlans={onViewPlans} />}
         <Button variant="link" onClick={onUseOwnKey}>
           使用自備金鑰
         </Button>
@@ -245,12 +255,12 @@ function QuotaExhaustedCallout({
   );
 }
 
-/** 底部狀態列裡剩餘頁數那一行（系列與翻譯狀態之間）；剩 5 頁以下用警告色。 */
-function QuotaLine({ line, onSubscribe }: { line: NonNullable<QuotaView['line']>; onSubscribe: (() => void) | undefined }) {
+/** 底部狀態列裡剩餘頁數那一行（系列與翻譯狀態之間）；快用完時用警告色。 */
+function QuotaLine({ line, onViewPlans }: { line: NonNullable<QuotaView['line']>; onViewPlans: (() => void) | undefined }) {
   return (
     <div role="status" aria-label="剩餘額度" class={`status-row quota-row${line.warn ? ' quota-row--warn' : ''}`}>
       <span>{line.text}</span>
-      {line.subscribeLink && <SubscribeButton variant="link" onSubscribe={onSubscribe} />}
+      {line.plansLink && <ViewPlansButton variant="link" onViewPlans={onViewPlans} />}
     </div>
   );
 }
@@ -343,12 +353,10 @@ export interface SidePanelProps {
   onDismissHostedHint?: () => void;
   /** 內建翻譯的剩餘額度（Worker 的 GET /v1/account）；undefined＝還在讀、沒登入或自備金鑰。 */
   quota?: Quota;
-  /** 「訂閱」：外掛建立 Paddle checkout、用新分頁打開（#94）；沒給時（網站上的展示）訂閱按鈕停用。 */
-  onSubscribe?: () => void;
-  /** 上一次按「訂閱」沒能打開 checkout：顯示付款服務暫時無法使用（#156）。 */
-  paymentFailed?: boolean;
-  /** 從 side panel 發起的付款確認了，SW 把讀者帶回來（#176）：顯示一次「已訂閱」。 */
-  subscribedNotice?: boolean;
+  /** 「查看方案」：打開帳號與訂閱頁（spec #254）；沒給時（網站上的展示）按鈕停用。 */
+  onViewPlans?: () => void;
+  /** 帳號頁發起的付款確認了（#176）：顯示一次「已訂閱」，帶付款的扣款週期。 */
+  subscribedNotice?: BillingPeriod;
   onDismissSubscribedNotice?: () => void;
   /** 以下是只有外掛 container 才有的區塊（會讀寫 store、送 chrome 訊息）；沒給就不顯示（沒有設定頁就沒有 ⚙）。 */
   /** Transcript 上方的作品卡（#186）；open 打開作品頁或換一部作品（#191）。 */
@@ -453,7 +461,7 @@ export function SidePanel(props: SidePanelProps) {
   // 付款確認後讀者被帶回來時，side panel 不一定已經啟動，兩種畫面都顯示
   const subscribedNotice = props.subscribedNotice && (
     <Callout tone="info" class="naru-callout--stack" role="group" aria-label="已訂閱">
-      <p>✓ 已訂閱一年，每月可翻 {MONTHLY_PAGES} 頁。</p>
+      <p>{subscribedNoticeText(props.subscribedNotice)}</p>
       <div class="naru-row">
         <Button variant="ghost" onClick={() => props.onDismissSubscribedNotice?.()}>
           知道了
@@ -493,8 +501,7 @@ export function SidePanel(props: SidePanelProps) {
           onUseOwnKey={useOwnKey}
           onDismissHostedHint={() => props.onDismissHostedHint?.()}
         />
-        {quota.exhausted && <QuotaExhaustedCallout exhausted={quota.exhausted} onSubscribe={props.onSubscribe} onUseOwnKey={useOwnKey} />}
-        {props.paymentFailed && <PaymentUnavailable />}
+        {quota.exhausted && <QuotaExhaustedCallout exhausted={quota.exhausted} onViewPlans={props.onViewPlans} onUseOwnKey={useOwnKey} />}
         {subscribedNotice}
         {props.renderSeriesCard?.(setPage)}
         {done.length > 0 && <DisplaySwitch display={display} onLevel={setLevel} onFurigana={setFurigana} />}
@@ -515,11 +522,11 @@ export function SidePanel(props: SidePanelProps) {
       </main>
       {/* 底部固定列；放在 main 外面才是 contentinfo landmark。內建翻譯的剩餘頁數一行、整體翻譯狀態＋按鈕一行（#77、#92）；作品在 Transcript 上方的作品卡（#186） */}
       <footer aria-label="狀態列">
-        {quota.line && <QuotaLine line={quota.line} onSubscribe={props.onSubscribe} />}
+        {quota.line && <QuotaLine line={quota.line} onViewPlans={props.onViewPlans} />}
         <div class="status-row">
           <StatusText status={view.status} />
-          {quota.footerButton === 'subscribe' ? (
-            <SubscribeButton variant="primary" onSubscribe={props.onSubscribe} />
+          {quota.footerButton === 'plans' ? (
+            <ViewPlansButton variant="primary" onViewPlans={props.onViewPlans} />
           ) : (
             quota.footerButton === 'translate' &&
             // 有頁還沒翻譯時只翻那些頁；全部翻好了才是整個畫面重來的「重新翻譯」（規則在 translateAction）

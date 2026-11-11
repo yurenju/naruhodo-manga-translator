@@ -61,7 +61,7 @@ describe('Daily Free Pages Cap', () => {
     fakeAnthropic([ok]);
 
     expect((await post(TRANSLATE_PATH, input, { token: first })).status).toBe(200);
-    expect(await quota(first)).toEqual({ plan: 'free', remaining: 49 });
+    expect(await quota(first)).toEqual({ plan: 'free', remaining: 99 });
     const response = await post(TRANSLATE_PATH, input, { token: second });
 
     expect(response.status).toBe(402);

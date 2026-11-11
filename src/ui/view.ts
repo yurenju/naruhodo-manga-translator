@@ -1,8 +1,10 @@
-import { FREE_PAGES, LOW_QUOTA, MONTHLY_PAGES, type Quota } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES, REFUND_WINDOW_DAYS, lowQuota, pageCount, type BillingPeriod, type Quota, type RefundInfo } from '../shared/hosted-api.ts';
 import type { PageView } from '../shared/messages.ts';
 import type { SeriesOption } from '../shared/series.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { BadgeTone } from './components.tsx';
+import { CONTACT_EMAIL } from './links.ts';
+import { billingPeriodOffer, SUBSCRIPTION_OFFERS, subscriptionHeadline, usd, type BillingPeriodOffer } from './pricing.ts';
 
 /** Page 在 Spread 裡的哪一邊；undefined＝不是 Spread。 */
 export type SpreadSide = 'right' | 'left';
@@ -212,14 +214,20 @@ const monthDay = (ms: number) => {
 /** 「2027 年 10 月 15 日」：續訂日與訂閱結束日。 */
 const fullDate = (ms: number) => `${new Date(ms).getFullYear()} 年 ${monthDay(ms)}`;
 
-/** 內建翻譯的額度在 side panel 上怎麼顯示（#92、#94 畫面定案）。 */
+/**
+ * 內建翻譯的額度在 side panel 上怎麼顯示（#92、#94 畫面定案；spec #254 的購買流程設計稿）。
+ * 購買入口都叫「查看方案」、打開帳號頁（跟 Page 上的紅色標籤一致），side panel 自己不建立 checkout。
+ */
 export interface QuotaView {
-  /** 底部狀態列（系列與翻譯狀態之間）多的那一行；subscribeLink＝右邊的「訂閱」小字連結。undefined＝不顯示。 */
-  line: { text: string; warn: boolean; subscribeLink: boolean } | undefined;
-  /** 額度用完：逐字稿上方的 warn Callout（粗體標題、說明、subscribe＝有沒有「訂閱」，「使用自備金鑰」一定有）。undefined＝還能翻。 */
-  exhausted: { title: string; body: string; subscribe: boolean } | undefined;
-  /** 底部狀態列右邊的按鈕：translate＝「翻譯此頁」（還要有沒翻譯的頁、送得出翻譯才出現），subscribe＝primary「訂閱」，none＝不放（本月額度用完，等重置）。 */
-  footerButton: 'translate' | 'subscribe' | 'none';
+  /** 底部狀態列（系列與翻譯狀態之間）多的那一行；plansLink＝右邊的「查看方案」小字連結。undefined＝不顯示。 */
+  line: { text: string; warn: boolean; plansLink: boolean } | undefined;
+  /**
+   * 額度用完：逐字稿上方的 warn Callout（粗體標題、說明，「使用自備金鑰」一定有）。offers＝年繳、季繳兩行價格與「查看方案」，
+   * undefined＝沒有（本月額度用完，等重置）。exhausted 是 undefined＝還能翻。
+   */
+  exhausted: { title: string; body: string; offers: readonly BillingPeriodOffer[] | undefined } | undefined;
+  /** 底部狀態列右邊的按鈕：translate＝「翻譯此頁」（還要有沒翻譯的頁、送得出翻譯才出現），plans＝primary「查看方案」，none＝不放（本月額度用完，等重置）。 */
+  footerButton: 'translate' | 'plans' | 'none';
 }
 
 /**
@@ -233,13 +241,13 @@ export function quotaView(access: TranslationAccess, quota: Quota | undefined): 
     if (quota.remaining === 0) {
       const title = `本月額度已用完，${reset}重置`;
       return {
-        line: { text: title, warn: true, subscribeLink: false },
-        exhausted: { title, body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音，重置後就能繼續翻。', subscribe: false },
+        line: { text: title, warn: true, plansLink: false },
+        exhausted: { title, body: '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音，重置後就能繼續翻。', offers: undefined },
         footerButton: 'none',
       };
     }
     return {
-      line: { text: `本月剩 ${quota.remaining} 頁・${reset}重置`, warn: quota.remaining <= LOW_QUOTA, subscribeLink: false },
+      line: { text: `本月剩 ${pageCount(quota.remaining)} 頁・${reset}重置`, warn: lowQuota(quota), plansLink: false },
       exhausted: undefined,
       footerButton: 'translate',
     };
@@ -247,16 +255,24 @@ export function quotaView(access: TranslationAccess, quota: Quota | undefined): 
   // 沒有訂閱、免費額度是 0（包含訂閱結束後也用完的讀者）就是用完
   if (quota.remaining === 0)
     return {
-      line: { text: '免費額度已用完', warn: true, subscribeLink: false },
-      exhausted: { title: '免費額度已用完', body: `已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 ${MONTHLY_PAGES} 頁。`, subscribe: true },
-      footerButton: 'subscribe',
+      line: { text: '免費額度已用完', warn: true, plansLink: false },
+      exhausted: {
+        title: '免費額度已用完',
+        body: `已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音。訂閱後每月可翻 ${pageCount(MONTHLY_PAGES)} 頁。`,
+        offers: SUBSCRIPTION_OFFERS,
+      },
+      footerButton: 'plans',
     };
   return {
-    line: { text: `免費額度剩 ${quota.remaining} 頁`, warn: quota.remaining <= LOW_QUOTA, subscribeLink: true },
+    line: { text: `免費額度剩 ${quota.remaining} 頁`, warn: lowQuota(quota), plansLink: true },
     exhausted: undefined,
     footerButton: 'translate',
   };
 }
+
+/** 付款確認後 side panel 顯示一次的「已訂閱」，帶讀者付的扣款週期。 */
+export const subscribedNoticeText = (billingPeriod: BillingPeriod): string =>
+  `✓ 已訂閱（${billingPeriodOffer(billingPeriod).name}），每月可翻 ${pageCount(MONTHLY_PAGES)} 頁。`;
 
 /** 設定頁「內建翻譯」卡片裡的方案：email 旁的 Badge、剩餘說明（一行一個），subscribed＝動作是「管理訂閱」而不是「訂閱」。 */
 export interface AccountPlanView {
@@ -265,47 +281,170 @@ export interface AccountPlanView {
   subscribed: boolean;
 }
 
+export type SubscribedQuota = Extract<Quota, { plan: 'subscribed' }>;
+
+/** 訂閱的狀態：扣款失敗重試中（照常可以用）、排定取消、訂閱中。設定頁與帳號頁的方案卡片共用。 */
+type SubscriptionState = 'pastDue' | 'cancelScheduled' | 'active';
+
+const subscriptionState = (quota: SubscribedQuota): SubscriptionState =>
+  quota.status === 'pastDue' ? 'pastDue' : quota.cancelScheduled ? 'cancelScheduled' : 'active';
+
+const SUBSCRIPTION_BADGE: Record<SubscriptionState, { text: string; tone: BadgeTone }> = {
+  pastDue: { text: '扣款失敗，重試中', tone: 'warn' },
+  cancelScheduled: { text: '訂閱中・不會續訂', tone: 'warn' },
+  active: { text: '訂閱中', tone: 'ok' },
+};
+
+const PAST_DUE_TEXT = 'Paddle 會再嘗試扣款，這段期間照常可以使用；請到「管理訂閱」更新付款方式';
+
 /** 設定頁的方案（#94 畫面定案）：免費、訂閱中、排定取消、扣款失敗重試中。 */
 export function accountPlanView(quota: Quota): AccountPlanView {
   if (quota.plan === 'free') return { badge: { text: '免費', tone: 'neutral' }, lines: [`免費額度剩 ${quota.remaining} / ${FREE_PAGES} 頁`], subscribed: false };
-  const month = `本月剩 ${quota.remaining} / ${quota.limit} 頁，${monthDay(quota.resetsAt)}重置`;
-  if (quota.status === 'pastDue')
-    return {
-      badge: { text: '扣款失敗，重試中', tone: 'warn' },
-      lines: [month, 'Paddle 會再嘗試扣款，這段期間照常可以使用；請到「管理訂閱」更新付款方式'],
-      subscribed: true,
-    };
-  if (quota.cancelScheduled)
-    return { badge: { text: '訂閱中・不會續訂', tone: 'warn' }, lines: [month, `訂閱在 ${fullDate(quota.periodEndsAt)}結束`], subscribed: true };
-  return { badge: { text: '訂閱中', tone: 'ok' }, lines: [month, `下次續訂：${fullDate(quota.periodEndsAt)}`], subscribed: true };
+  const month = `本月剩 ${pageCount(quota.remaining)} / ${pageCount(quota.limit)} 頁，${monthDay(quota.resetsAt)}重置`;
+  const state = subscriptionState(quota);
+  const line = { pastDue: PAST_DUE_TEXT, cancelScheduled: `訂閱在 ${fullDate(quota.periodEndsAt)}結束`, active: `下次續訂：${fullDate(quota.periodEndsAt)}` }[state];
+  return { badge: SUBSCRIPTION_BADGE[state], lines: [month, line], subscribed: true };
+}
+
+/** 帳號頁方案卡片裡額度上面的一列（設計稿 B 版）：左邊是 label，warn＝值用警告色。 */
+export interface PlanRow {
+  label: string;
+  value: string;
+  warn: boolean;
+}
+
+/**
+ * 訂閱者的方案卡片的列（設計稿 B 版）：扣款週期，再來看狀態：
+ * 訂閱中是「下次續訂」的日期與金額、排定取消是「訂閱結束」的日期（不會再扣款）、扣款失敗重試中是「扣款」的說明。
+ */
+function subscriptionRows(quota: SubscribedQuota): PlanRow[] {
+  const period: PlanRow = { label: '扣款週期', value: billingPeriodOffer(quota.billingPeriod).name, warn: false };
+  const next: Record<SubscriptionState, PlanRow> = {
+    pastDue: { label: '扣款', value: PAST_DUE_TEXT, warn: true },
+    cancelScheduled: { label: '訂閱結束', value: fullDate(quota.periodEndsAt), warn: false },
+    active: { label: '下次續訂', value: `${fullDate(quota.periodEndsAt)}・${usd(quota.renewalPriceUsd)}`, warn: false },
+  };
+  return [period, next[subscriptionState(quota)]];
 }
 
 /**
  * 帳號與訂閱頁（#213）的輸入：翻譯模式、有沒有登入、Worker 給的額度（讀不到是 undefined）；
- * justPaid＝在這頁付完款，justSignedIn＝在這頁登入，hasOrigin＝從漫畫分頁卡住來的（才有「回到漫畫」）。
+ * payment＝這一頁發起、還在等的付款（SW 記的付款狀態；checkoutClosed＝付款分頁被關掉了），
+ * justPaid＝在這頁付完款的扣款週期，justSignedIn＝在這頁登入，hasOrigin＝從漫畫分頁卡住來的（才有「回到漫畫」）。
  */
 export interface AccountPageInput {
   mode: TranslationMode;
   signedIn: boolean;
   quota: Quota | undefined;
-  justPaid: boolean;
+  payment: { billingPeriod: BillingPeriod; checkoutClosed: boolean } | undefined;
+  justPaid: BillingPeriod | undefined;
   justSignedIn: boolean;
   hasOrigin: boolean;
+  /** Worker 給的最近一次扣款的退款資訊（GET /v1/account 的 refund）；沒有扣款紀錄是 undefined。 */
+  refund?: RefundInfo;
+  /** 現在時間（算退款期還剩幾天）。 */
+  now: number;
+}
+
+/**
+ * 方案卡片底部的退款區塊（#260，設計稿 B 版）：offer＝在 Refund Window 內可以申請（右邊是「申請退款」），
+ * pending＝已經申請、等 Paddle 核准，rejected＝Paddle 沒有核准（#261；都在同一個位置，沒有按鈕）。
+ */
+export type RefundBlock =
+  | { kind: 'offer'; title: string; detail: string }
+  | { kind: 'pending'; title: string; body: string }
+  | { kind: 'rejected'; title: string; body: string };
+
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * 訂閱者的退款區塊：能不能申請一律看 Worker 的 eligible（Refund Window、US$0、扣款失敗重試中、申請過都由 Worker 判斷），
+ * 這裡只算「還剩幾天」：不到一天也算 1 天。處理中不看退款期，到 Paddle 有結果前都顯示；被拒只在那次扣款的退款期內顯示。
+ */
+function refundBlock(refund: RefundInfo | undefined, now: number): RefundBlock | undefined {
+  if (!refund) return undefined;
+  const charge = `${monthDay(refund.billedAt)}扣款的 ${usd(refund.amountUsd)}`;
+  if (refund.status === 'pending') return { kind: 'pending', title: '退款處理中', body: `已向 Paddle 申請退回 ${charge}。核准前照常可以翻譯；核准後訂閱就會結束。` };
+  if (refund.status === 'rejected') {
+    if (!refund.inWindow) return undefined;
+    return {
+      kind: 'rejected',
+      title: '退款申請沒有通過',
+      body: `Paddle 沒有核准 ${monthDay(refund.billedAt)}這筆 ${usd(refund.amountUsd)} 的退款，訂閱照常繼續。請寫信到 ${CONTACT_EMAIL}，我們會協助處理。`,
+    };
+  }
+  if (!refund.eligible) return undefined;
+  const days = Math.max(1, Math.ceil((refund.windowEndsAt - now) / DAY_MS));
+  return {
+    kind: 'offer',
+    title: `扣款後 ${REFUND_WINDOW_DAYS} 天內可以申請全額退款`,
+    detail: `${monthDay(refund.billedAt)}已扣款 ${usd(refund.amountUsd)}・還剩 ${days} 天（到 ${monthDay(refund.windowEndsAt)}）`,
+  };
+}
+
+/** 按「申請退款」後的確認對話框（設計稿 B 版）：確定退款是 danger 按鈕。 */
+export interface RefundDialogView {
+  title: string;
+  points: string[];
+  cancel: string;
+  confirm: string;
+}
+
+export function refundDialogView(quota: SubscribedQuota, refund: RefundInfo): RefundDialogView {
+  const amount = usd(refund.amountUsd);
+  const freePages = quota.freePages ?? 0;
+  return {
+    title: `退款 ${amount}，並結束訂閱？`,
+    points: [
+      `${monthDay(refund.billedAt)}扣款的 ${amount} 會全額退回原本的付款方式，由 Paddle 處理。`,
+      `Paddle 核准退款後，訂閱就會結束，不再有每月 ${pageCount(quota.limit)} 頁。`,
+      freePages > 0 ? `訂閱前剩下的 ${freePages} 頁免費額度會恢復可用。` : '訂閱前的免費額度已經用完，訂閱結束後就不能再翻新的頁。',
+      '核准之前照常可以翻譯。',
+    ],
+    cancel: '先不要',
+    confirm: '確定退款',
+  };
 }
 
 /** 帳號與訂閱頁要顯示什麼（#213，prototype/account-status 的方案 B）。 */
 export interface AccountPageView {
   /** 頂部的說明；backToManga＝有「回到漫畫」。 */
   notice: { tone: 'info' | 'warn'; title: string; body: string; backToManga: boolean } | undefined;
-  /** 「目前方案」：left＝額度的剩餘文字，fraction＝進度條畫的剩餘比例（用完是 0）。讀不到額度時 undefined。 */
-  plan: { name: string; note: string | undefined; quotaLabel: string; left: string; fraction: number; warn: boolean } | undefined;
-  /** 有沒有「訂閱」那一段（只有免費方案）。 */
-  subscribe: boolean;
+  /**
+   * 「目前方案」（設計稿 B 版）：方案名旁邊是訂閱的狀態 Badge（免費方案是 note），manage＝標題右邊有「管理訂閱」；
+   * rows＝額度上面的幾列；額度那一列：left＝剩餘文字、reset＝重置日（只有訂閱）、fraction＝進度條畫的剩餘比例（用完是 0）。
+   * 讀不到額度時 undefined。
+   */
+  plan:
+    | {
+        name: string;
+        badge: { text: string; tone: BadgeTone } | undefined;
+        note: string | undefined;
+        manage: boolean;
+        rows: PlanRow[];
+        quotaLabel: string;
+        left: string;
+        reset: string | undefined;
+        fraction: number;
+        warn: boolean;
+        /** 方案卡片底部的退款區塊（只有訂閱者）；undefined＝不顯示。 */
+        refund: RefundBlock | undefined;
+      }
+    | undefined;
+  /**
+   * 付款中的說明（設計稿「付款中」）：chosen＝「你選的是 …」（付款分頁還開著時），button 打開 billingPeriod 的付款頁
+   * （還開著就切過去，關掉了就重新建一個）。
+   */
+  payment: { title: string; chosen: BillingPeriodOffer | undefined; body: string; button: string; billingPeriod: BillingPeriod } | undefined;
+  /** 「訂閱」那一段（只有免費方案；付款分頁開著時收起，免得付兩次）：設計稿 A 版的兩張並排卡片。 */
+  subscribe: { headline: string; offers: readonly BillingPeriodOffer[]; note: string } | undefined;
   /** 自備金鑰模式但帳號還登入著：說明不會用到這個帳號的頁數。 */
   ownKeyNote: boolean;
   /** 沒登入：「登入」上面的說明。 */
   signedOut: string | undefined;
 }
+
+const REFUNDED = '訂閱已經結束，訂閱前剩下的免費額度可以繼續用。退款會回到原本的付款方式，入帳時間依發卡銀行而定。';
 
 const UNTRANSLATED_PAGES_KEEP_ORIGINAL = '已翻過的頁面照常顯示譯文；新的頁面先顯示原文與讀音';
 
@@ -315,37 +454,95 @@ export const signedOutText = (mode: TranslationMode): string =>
     ? `目前用自備金鑰翻譯，不需要登入。想改用內建翻譯的話可以登入，新帳號有 ${FREE_PAGES} 頁免費額度。`
     : `尚未登入。登入後就能用內建翻譯，新帳號有 ${FREE_PAGES} 頁免費額度。`;
 
-export function accountPageView({ mode, signedIn, quota, justPaid, justSignedIn, hasOrigin }: AccountPageInput): AccountPageView {
-  const empty = { notice: undefined, plan: undefined, subscribe: false, ownKeyNote: false, signedOut: undefined };
+/** 付款中（付款分頁開著）或付款頁已經關閉（SW 還在查有沒有付款）。 */
+function paymentView({ billingPeriod, checkoutClosed }: NonNullable<AccountPageInput['payment']>): NonNullable<AccountPageView['payment']> {
+  const offer = billingPeriodOffer(billingPeriod);
+  return checkoutClosed
+    ? {
+        title: '付款頁已經關閉',
+        chosen: undefined,
+        body: '還沒付款的話，可以重新打開付款頁，或在下面改選另一種扣款週期。如果你已經付款，確認後這裡會自動更新。',
+        button: `重新打開付款頁（${offer.name}）`,
+        billingPeriod,
+      }
+    : {
+        title: '在付款分頁完成付款',
+        chosen: offer,
+        body: '付款頁已經在另一個分頁打開（由 Paddle 處理付款）。付款完成後，會自動帶你回到這裡。',
+        button: '回到付款頁',
+        billingPeriod,
+      };
+}
+
+const SUBSCRIBE_SECTION: NonNullable<AccountPageView['subscribe']> = {
+  headline: subscriptionHeadline(),
+  offers: SUBSCRIPTION_OFFERS,
+  note: '從訂閱那天起每月同一天重置，隨時可以取消。付款頁會在新分頁打開（由 Paddle 處理付款）。',
+};
+
+export function accountPageView({ mode, signedIn, quota, payment, justPaid, justSignedIn, hasOrigin, refund, now }: AccountPageInput): AccountPageView {
+  const empty = { notice: undefined, plan: undefined, payment: undefined, subscribe: undefined, ownKeyNote: false, signedOut: undefined };
   if (!signedIn) return { ...empty, signedOut: signedOutText(mode) };
-  if (!quota) return { ...empty, ownKeyNote: mode === 'ownKey' };
+  if (!quota) return { ...empty, payment: payment && paymentView(payment), ownKeyNote: mode === 'ownKey' };
   const usedUp = quota.remaining === 0;
   // 自備金鑰不會用到帳號的頁數：用完了也不必說明
   const usesAccount = mode === 'hosted';
   const meter = (total: number, usedUpText: string) => ({
-    left: usedUp ? usedUpText : `剩 ${quota.remaining} / ${total} 頁`,
+    left: usedUp ? usedUpText : `剩 ${pageCount(quota.remaining)} / ${pageCount(total)} 頁`,
     fraction: quota.remaining / total,
-    warn: quota.remaining <= LOW_QUOTA,
+    warn: lowQuota(quota),
   });
   const signedInNotice: AccountPageView['notice'] =
     justSignedIn && hasOrigin && !usedUp ? { tone: 'info', title: '✓ 已登入', body: '回到漫畫後會接著翻譯。', backToManga: true } : undefined;
-  if (quota.plan === 'free')
+  if (quota.plan === 'free') {
+    // 付款中只說付款的事：免費額度用完的說明等付款有了結果再說。
+    // 退款核准、訂閱結束（#261）：在那次扣款的退款期內說明已退款，之後就是一般的免費方案
+    const notice: AccountPageView['notice'] = payment
+      ? undefined
+      : usesAccount && usedUp
+        ? { tone: 'warn', title: '免費額度已用完', body: `${UNTRANSLATED_PAGES_KEEP_ORIGINAL}。`, backToManga: false }
+        : refund?.status === 'refunded' && refund.inWindow
+          ? { tone: 'info', title: `✓ 已退款 ${usd(refund.amountUsd)}`, body: REFUNDED, backToManga: false }
+          : signedInNotice;
     return {
       ...empty,
-      notice: usesAccount && usedUp ? { tone: 'warn', title: '免費額度已用完', body: `${UNTRANSLATED_PAGES_KEEP_ORIGINAL}。`, backToManga: false } : signedInNotice,
-      plan: { name: '免費', note: `新帳號一次 ${FREE_PAGES} 頁，不會過期`, quotaLabel: '免費額度', ...meter(FREE_PAGES, '已用完') },
-      subscribe: true,
+      notice,
+      plan: {
+        name: '免費',
+        badge: undefined,
+        note: `新帳號一次 ${FREE_PAGES} 頁，不會過期`,
+        manage: false,
+        rows: [],
+        quotaLabel: '免費額度',
+        ...meter(FREE_PAGES, '已用完'),
+        reset: undefined,
+        refund: undefined,
+      },
+      payment: payment && paymentView(payment),
+      subscribe: payment && !payment.checkoutClosed ? undefined : SUBSCRIBE_SECTION,
       ownKeyNote: !usesAccount,
     };
+  }
+  const resumes = hasOrigin ? '回到漫畫後會自動接著翻還沒翻的頁。' : '';
   const notice: AccountPageView['notice'] = justPaid
-    ? { tone: 'info', title: '✓ 訂閱完成', body: `每月可翻 ${quota.limit} 頁。`, backToManga: hasOrigin }
+    ? { tone: 'info', title: '✓ 訂閱完成', body: `${billingPeriodOffer(justPaid).name}，每月可翻 ${pageCount(quota.limit)} 頁。${resumes}`, backToManga: hasOrigin }
     : usesAccount && usedUp
       ? { tone: 'warn', title: `本月額度已用完，${monthDay(quota.resetsAt)}重置`, body: `${UNTRANSLATED_PAGES_KEEP_ORIGINAL}，重置後就會繼續翻。`, backToManga: hasOrigin }
       : signedInNotice;
   return {
     ...empty,
     notice,
-    plan: { name: '訂閱（年繳）', note: undefined, quotaLabel: '本月額度', ...meter(quota.limit, '本月已用完') },
+    plan: {
+      name: '訂閱',
+      badge: SUBSCRIPTION_BADGE[subscriptionState(quota)],
+      note: undefined,
+      manage: true,
+      rows: subscriptionRows(quota),
+      quotaLabel: '本月額度',
+      ...meter(quota.limit, '本月已用完'),
+      reset: `${monthDay(quota.resetsAt)}重置`,
+      refund: refundBlock(refund, now),
+    },
     ownKeyNote: !usesAccount,
   };
 }

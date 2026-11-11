@@ -222,8 +222,8 @@ PADDLE_API_BASE_URL='https://api.paddle.com'
 PADDLE_DASHBOARD='https://vendors.paddle.com'
 # Worker 需要的 API key 權限；第 10 步照這份清單請使用者勾選，再用 GET / 核對。
 PADDLE_PERMISSIONS=(transaction.write product.write price.write customer.write subscription.write
-  notification_setting.write notification.read customer_portal_session.write)
-WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.updated"]'
+  notification_setting.write notification.read customer_portal_session.write adjustment.write)
+WEBHOOK_EVENTS='["subscription.created","subscription.updated","subscription.activated","subscription.canceled","subscription.past_due","subscription.paused","subscription.resumed","transaction.completed","adjustment.created","adjustment.updated"]'
 
 CF_SECRETS=() # 這次設定到 Cloudflare 的 Worker secrets
 
@@ -490,9 +490,10 @@ pause
 stage "Paddle live 的 API key"
 say "這把 key 只留在記憶體：接下來用它建立 price 與 webhook，最後存成 Worker 的 PADDLE_API_KEY。"
 PADDLE_API_KEY=""
-PADDLE_PRICE_ID=$(_existing PADDLE_PRICE_ID || true)
+PADDLE_PRICE_ID_QUARTERLY=$(_existing PADDLE_PRICE_ID_QUARTERLY || true)
+PADDLE_PRICE_ID_YEARLY=$(_existing PADDLE_PRICE_ID_YEARLY || true)
 PADDLE_NOTIFICATION_SETTING_ID=$(_existing PADDLE_NOTIFICATION_SETTING_ID || true)
-if [[ -n "$PADDLE_PRICE_ID" && -n "$PADDLE_NOTIFICATION_SETTING_ID" ]] \
+if [[ -n "$PADDLE_PRICE_ID_QUARTERLY" && -n "$PADDLE_PRICE_ID_YEARLY" && -n "$PADDLE_NOTIFICATION_SETTING_ID" ]] \
   && ! confirm "Paddle 已經設定過，要換一把新的 API key 嗎？"; then
   note "沿用 Cloudflare 上現有的 PADDLE_API_KEY（wizard 讀不到 secrets：不確定的話到後台 Variables and Secrets 看）。"
 else
@@ -502,7 +503,8 @@ else
   note "    transaction.write、product.write、price.write、customer.write、"
   note "    subscription.write、notification_setting.write、notification.read、"
   note "    customer_portal_session.write（畫面上是 Customer portal sessions → Write；"
-  note "    旁邊的 Customer authentication tokens 不用勾）"
+  note "    旁邊的 Customer authentication tokens 不用勾）、"
+  note "    adjustment.write（讀者在外掛申請退款，#260）"
   step "Expiry date 設最長；Save 後複製 key（只會顯示一次，開頭是 pdl_live_apikey_）。"
   while :; do
     ask_secret PADDLE_API_KEY "貼上 API key（輸入不會顯示）："
@@ -548,29 +550,46 @@ step "Checkout → Checkout settings → Default payment link 填 $SITE_ORIGIN/z
 pause "確認有值後按 Enter"
 
 # ── 13 ───────────────────────────────────────────────────────────────────
-stage "產品與年繳 price（自動）"
-say "建立產品「Naruhodo Hosted Translation」與 USD 20／年的 price（草案價格，上線後可以再調）。"
-say "之後改價格：新增一個 price，再更新 Worker 的 PADDLE_PRICE_ID；不要改已經有人訂閱的 price。"
-if [[ -n "$PADDLE_PRICE_ID" ]]; then
-  note "已經建立過：$(_existing PADDLE_PRODUCT_ID || true) / $PADDLE_PRICE_ID，略過。"
-elif [[ -z "$PADDLE_API_KEY" ]]; then
+stage "產品與季繳、年繳兩個 price（自動）"
+say "建立產品「Naruhodo Hosted Translation」（已經有就沿用），以及季繳 USD 15／3 個月、年繳 USD 48／年兩個 price（ADR 0012）。"
+say "之後改價格：新增一個 price，再更新 Worker 的 PADDLE_PRICE_ID_QUARTERLY 或 PADDLE_PRICE_ID_YEARLY；不要改已經有人訂閱的 price。"
+PADDLE_PRODUCT_ID=$(_existing PADDLE_PRODUCT_ID || true)
+if [[ ( -z "$PADDLE_PRODUCT_ID" || -z "$PADDLE_PRICE_ID_QUARTERLY" || -z "$PADDLE_PRICE_ID_YEARLY" ) && -z "$PADDLE_API_KEY" ]]; then
   warn "這次沒有輸入 Paddle API key，無法建立；重跑並在第 10 步換 key。"; exit 1
-elif confirm "要建立產品與 price 嗎？"; then
-  paddle_api POST /products '{"name":"Naruhodo Hosted Translation","tax_category":"standard","description":"Hosted translation for the Naruhodo Chrome extension (annual subscription)."}'
-  api_ok || paddle_fail "create product"
-  write_env PADDLE_PRODUCT_ID "$(json_get 'data.id')"
-  paddle_api POST /prices "{\"product_id\":\"$PADDLE_PRODUCT_ID\",\"description\":\"Annual\",\"name\":\"Annual\",\"unit_price\":{\"amount\":\"2000\",\"currency_code\":\"USD\"},\"billing_cycle\":{\"interval\":\"year\",\"frequency\":1}}"
-  api_ok || paddle_fail "create price"
-  write_env PADDLE_PRICE_ID "$(json_get 'data.id')"
-else
-  warn "沒有 price 就不能訂閱；之後重跑。"; exit 1
 fi
-if need_secret PADDLE_PRICE_ID; then dashboard_secret PADDLE_PRICE_ID "$PADDLE_PRICE_ID"; fi
+if [[ -n "$PADDLE_PRODUCT_ID" ]]; then
+  note "產品已經建立過：$PADDLE_PRODUCT_ID，略過。"
+elif confirm "要建立產品嗎？"; then
+  paddle_api POST /products '{"name":"Naruhodo Hosted Translation","tax_category":"standard","description":"Hosted translation for the Naruhodo Chrome extension (quarterly or yearly subscription)."}'
+  api_ok || paddle_fail "create product"
+  PADDLE_PRODUCT_ID=$(json_get 'data.id')
+  write_env PADDLE_PRODUCT_ID "$PADDLE_PRODUCT_ID"
+else
+  warn "沒有產品就不能建立 price；之後重跑。"; exit 1
+fi
+# create_price <變數名稱> <名稱> <美分> <interval> <frequency>：已經建立過就略過，再存成 Worker 的 secret
+# tax_mode internal：標價含稅（ADR 0012），稅由 Paddle 從標價裡扣，買家付的就是標價
+create_price() {
+  if [[ -n "${!1}" ]]; then
+    note "$2 price 已經建立過：${!1}，略過。"
+  elif confirm "要建立 $2 price 嗎？"; then
+    paddle_api POST /prices "{\"product_id\":\"$PADDLE_PRODUCT_ID\",\"description\":\"$2\",\"name\":\"$2\",\"unit_price\":{\"amount\":\"$3\",\"currency_code\":\"USD\"},\"tax_mode\":\"internal\",\"billing_cycle\":{\"interval\":\"$4\",\"frequency\":$5}}"
+    api_ok || paddle_fail "create $2 price"
+    printf -v "$1" '%s' "$(json_get 'data.id')"
+    write_env "$1" "${!1}"
+  else
+    warn "沒有 $2 price 就不能用這個扣款週期訂閱；之後重跑。"; exit 1
+  fi
+  if need_secret "$1"; then dashboard_secret "$1" "${!1}"; fi
+}
+create_price PADDLE_PRICE_ID_QUARTERLY Quarterly 1500 month 3
+create_price PADDLE_PRICE_ID_YEARLY Yearly 4800 year 1
+note "舊的 PADDLE_PRICE_ID（年繳 US\$20）Worker 已經不讀了；舊訂閱者換到新年繳 price 之後（npm run paddle:renewal-price -- --production，步驟寫在 scripts/paddle-renewal-price.ts 開頭），可以到 Cloudflare 後台刪掉這個 secret。"
 pause
 
 # ── 14 ───────────────────────────────────────────────────────────────────
 stage "webhook destination 與 secret（自動）"
-say "建立 notification destination $API_ORIGIN/webhooks/paddle，訂閱訂閱相關事件與 adjustment.updated"
+say "建立 notification destination $API_ORIGIN/webhooks/paddle，訂閱訂閱相關事件與 adjustment.created、adjustment.updated"
 say "（全額退款時 Worker 立即取消訂閱，#97）。Paddle 回傳的簽章 secret 經剪貼簿交給你存成 PADDLE_WEBHOOK_SECRET，不顯示。"
 if [[ -n "$PADDLE_NOTIFICATION_SETTING_ID" ]]; then
   note "已經建立過：$PADDLE_NOTIFICATION_SETTING_ID，略過。"

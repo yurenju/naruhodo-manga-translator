@@ -1,12 +1,11 @@
 import type { Locale } from './locale.ts';
 import type { LegalDoc } from './links.ts';
-import { FREE_PAGES, MONTHLY_AVERAGE_USD, MONTHLY_PAGES, YEARLY_PRICE_USD } from '../../src/shared/hosted-api.ts';
-import type { PriceSide } from '../../src/ui/components.tsx';
+import { type BillingPeriod, FREE_PAGES, MONTHLY_PAGES, pageCount, PERIOD_MONTHS, PRICE_USD, REFUND_WINDOW_DAYS } from '../../src/shared/hosted-api.ts';
+import { FREE_PAGES_EPISODES, monthlyPriceUsd, SUBSCRIPTION_OFFERS, subscriptionHeadline, usd, yearlySavingPercent } from '../../src/ui/pricing.ts';
 
 /**
- * 網站文案（#89 A 版定稿）。`[TBD]` 會畫成明顯的 TBD 標記（Copy.astro），標在還沒定案的文字旁。
- * 年費、Monthly Page Limit 800 與由它推算的「大約 4 本」在上線時（#97）拿掉了標記：Paddle 審核網站時看到 TBD
- * 會當成還沒完成。數字仍是草案，量完真實成本再調。
+ * 網站文案（#89 A 版定稿，價格區塊是 spec #254 的新方案）。`[TBD]` 會畫成明顯的 TBD 標記（Copy.astro），
+ * 標在還沒定案的文字旁；Paddle 審核網站時看到 TBD 會當成還沒完成，所以上線的文案不放。
  */
 export interface SiteCopy {
   /** 頁面 <title> 開頭的產品全名（跟外掛的 manifest name 一致）；頁首與內文仍寫 Naruhodo */
@@ -23,14 +22,20 @@ export interface SiteCopy {
    */
   try: { title: string; lead: string; free: string; steps: readonly { title: string; body: string }[]; notInstalled: string; install: string; spreadAlt: string; puzzleLabel: string };
   /**
-   * 價格區（價格呈現定案）：免費卡、訂閱卡（雙價並列）兩張卡片裡都不放按鈕，下面一張白卡是三步驟＋唯一的按鈕。
-   * 付款只能在外掛裡（要先有帳號），所以按鈕一律是安裝。
+   * 價格區（spec #254 設計稿「購買流程」的網站定價區塊）：免費、年繳（推薦）、季繳三張卡片並排，卡片裡都不放按鈕；
+   * 下面一張白卡是三步驟＋唯一的按鈕。付款只能在外掛裡（要先有帳號），所以按鈕一律是安裝，
+   * 已經安裝的人看按鈕旁邊那一行（`installed`）去外掛裡選方案。
    */
   pricing: {
     title: string;
+    lead: string;
+    /** 第一個重點是「{grant.lead} <strong>{grant.pages}</strong>{grant.note}」，接著是 `items` */
     free: { title: string; tag: string; price: string; grant: { lead: string; pages: string; note: string }; items: readonly string[] };
-    sub: { title: string; tag: string; pay: PriceSide; average: PriceSide; items: readonly string[] };
-    start: { steps: readonly { title: string; body: string }[]; cta: string };
+    /** 年繳在前（推薦、加粗框）。價格那一行是「<strong>{name}</strong>・{detail}」 */
+    plans: readonly PlanCard[];
+    /** 卡片下面的小字：兩種 Billing Period 內容一樣 */
+    note: string;
+    start: { steps: readonly { title: string; body: string }[]; cta: string; installed: string };
     ownKey: string;
   };
   /** `a` 裡的 `{link}` 換成 `link` 那份法律文件的連結；`discussions` 換成討論區連結，文字是 `discussions` */
@@ -51,18 +56,62 @@ export interface SiteCopy {
     failed: string;
     retry: string;
     missing: string;
+    /**
+     * 方案摘要。付款頁不知道讀者選了哪一種 Billing Period（外掛建立 transaction 時選的），
+     * 金額看 Paddle 的付款畫面，這裡只寫兩種共通的內容。
+     */
     plan: string;
     pagesPerMonth: string;
     pagesValue: string;
+    refundLabel: string;
+    refund: string;
     agree: string;
   };
 }
 
-// 價格與頁數跟外掛共用同一份常數（src/shared/hosted-api.ts），不在這裡另外寫數字
-const ZH_YEARLY = `US$${YEARLY_PRICE_USD}`;
-const ZH_MONTHLY = `US$${MONTHLY_AVERAGE_USD}`;
-const EN_YEARLY = `$${YEARLY_PRICE_USD}`;
-const EN_MONTHLY = `$${MONTHLY_AVERAGE_USD}`;
+export interface PlanCard {
+  title: string;
+  tag?: string;
+  featured: boolean;
+  name: string;
+  detail: string;
+  items: readonly string[];
+}
+
+// 價格與頁數跟外掛共用同一份常數（src/shared/hosted-api.ts），繁中的價格文案直接用外掛那幾句（src/ui/pricing.ts）
+const ZH_ITEMS: Record<BillingPeriod, readonly string[]> = {
+  yearly: [subscriptionHeadline(), '一年扣款一次，自動續訂', '隨時可以取消'],
+  quarterly: [subscriptionHeadline(), '先付少一點試試，自動續訂', '隨時可以取消'],
+};
+const ZH_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map((offer) => ({
+  title: '訂閱',
+  ...(offer.recommended && { tag: '推薦' }),
+  featured: offer.recommended,
+  name: `${offer.name} ${offer.price}`,
+  detail: offer.detail,
+  items: ZH_ITEMS[offer.billingPeriod],
+}));
+
+const enUsd = (amount: number) => usd(amount).replace('US$', '$');
+const EN_HEADLINE = `${pageCount(MONTHLY_PAGES)} pages a month · full refund within ${REFUND_WINDOW_DAYS} days`;
+// 英文版跟繁中一樣由 SUBSCRIPTION_OFFERS 決定順序與推薦，只換掉文字
+const EN_NAME: Record<BillingPeriod, string> = { quarterly: 'Quarterly', yearly: 'Yearly' };
+const EN_DETAIL: Record<BillingPeriod, string> = {
+  quarterly: `Billed every ${PERIOD_MONTHS.quarterly} months`,
+  yearly: `About ${enUsd(monthlyPriceUsd('yearly'))} a month · save ${yearlySavingPercent()}%`,
+};
+const EN_ITEMS: Record<BillingPeriod, readonly string[]> = {
+  yearly: [EN_HEADLINE, 'Billed once a year, renews automatically', 'Cancel anytime'],
+  quarterly: [EN_HEADLINE, 'Pay less up front to try it, renews automatically', 'Cancel anytime'],
+};
+const EN_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map(({ billingPeriod, recommended }) => ({
+  title: 'Subscription',
+  ...(recommended && { tag: 'Recommended' }),
+  featured: recommended,
+  name: `${EN_NAME[billingPeriod]} ${enUsd(PRICE_USD[billingPeriod])}`,
+  detail: EN_DETAIL[billingPeriod],
+  items: EN_ITEMS[billingPeriod],
+}));
 
 export const copy: Record<Locale, SiteCopy> = {
   'zh-tw': {
@@ -102,27 +151,24 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     pricing: {
       title: '價格',
+      lead: '先用免費額度試試看。想繼續的話，訂閱只有一個方案，選季繳或年繳。',
       free: {
         title: '免費額度',
         tag: '不需信用卡',
         price: 'US$0',
-        grant: { lead: '註冊就送', pages: `${FREE_PAGES} 頁`, note: '大約兩話，不會過期' },
-        items: ['用 email 註冊就能翻譯', '不需要信用卡'],
+        grant: { lead: '註冊就送', pages: `${pageCount(FREE_PAGES)} 頁`, note: `，${FREE_PAGES_EPISODES}` },
+        items: ['不會過期', '用 email 註冊就能翻譯'],
       },
-      sub: {
-        title: '訂閱',
-        tag: '年繳',
-        pay: { label: '你付', price: ZH_YEARLY, unit: '／年', note: '一年扣款一次' },
-        average: { label: '平均', price: ZH_MONTHLY, unit: '／月', note: '比一杯咖啡還少' },
-        items: [`每月 ${MONTHLY_PAGES} 頁翻譯，大約 4 本單行本`, '每月在你訂閱的那天重置', '一年後自動續訂，隨時可以取消'],
-      },
+      plans: ZH_PLANS,
+      note: '年繳和季繳的內容完全一樣，只差扣款週期。每月在你訂閱的那天重置；以美元計價，標價就是刷卡金額。',
       start: {
         steps: [
           { title: '加到 Chrome', body: '從 Chrome 線上應用程式商店安裝' },
-          { title: '用 email 註冊', body: `馬上拿到 ${FREE_PAGES} 頁免費額度` },
-          { title: '想繼續再訂閱', body: `在外掛裡付款，${ZH_YEARLY} 用一年` },
+          { title: '用 email 註冊', body: `馬上拿到 ${pageCount(FREE_PAGES)} 頁免費額度` },
+          { title: '想繼續再訂閱', body: '在外掛裡選季繳或年繳，然後付款' },
         ],
         cta: '加到 Chrome，免費開始',
+        installed: '已經安裝了？點工具列上的 Naruhodo 圖示，右鍵選「帳號與訂閱」。',
       },
       ownKey: '已經有 Anthropic API key？也可以改用自備金鑰，不需要帳號、沒有頁數限制。',
     },
@@ -168,9 +214,11 @@ export const copy: Record<Locale, SiteCopy> = {
       failed: '付款畫面沒有成功載入。請檢查網路連線後再試一次。',
       retry: '重新載入',
       missing: '這個付款連結不完整。請回到外掛，重新打開付款頁。',
-      plan: 'Naruhodo 年繳訂閱',
+      plan: 'Naruhodo 訂閱',
       pagesPerMonth: '每月頁數',
-      pagesValue: String(MONTHLY_PAGES),
+      pagesValue: `${pageCount(MONTHLY_PAGES)} 頁`,
+      refundLabel: '退款',
+      refund: `扣款後 ${REFUND_WINDOW_DAYS} 天內可全額退款`,
       agree: '付款即表示同意',
     },
   },
@@ -211,27 +259,24 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     pricing: {
       title: 'Pricing',
+      lead: 'Start with the free pages. If you want more, there is one subscription: pay quarterly or yearly.',
       free: {
         title: 'Free pages',
         tag: 'No credit card',
         price: '$0',
-        grant: { lead: 'Sign up and get', pages: `${FREE_PAGES} pages`, note: "About two episodes, and they don't expire" },
-        items: ['Sign up with your email and start translating', 'No credit card needed'],
+        grant: { lead: 'Sign up and get', pages: `${pageCount(FREE_PAGES)} pages`, note: ', about four episodes' },
+        items: ["They don't expire", 'Sign up with your email and start translating'],
       },
-      sub: {
-        title: 'Subscription',
-        tag: 'Yearly',
-        pay: { label: 'You pay', price: EN_YEARLY, unit: '/year', note: 'Billed once a year' },
-        average: { label: 'About', price: EN_MONTHLY, unit: '/month', note: 'Less than a cup of coffee' },
-        items: [`${MONTHLY_PAGES} translated pages a month, about 4 volumes`, 'Resets each month on the day you subscribed', 'Renews automatically after a year; cancel anytime'],
-      },
+      plans: EN_PLANS,
+      note: 'Yearly and quarterly include exactly the same; only the billing period differs. Pages reset each month on the day you subscribed. Prices are in US dollars and are what your card is charged.',
       start: {
         steps: [
           { title: 'Add to Chrome', body: 'Install it from the Chrome Web Store' },
-          { title: 'Sign up with email', body: `Get ${FREE_PAGES} free pages right away` },
-          { title: 'Subscribe if you want more', body: `Pay in the extension: ${EN_YEARLY} for a year` },
+          { title: 'Sign up with email', body: `Get ${pageCount(FREE_PAGES)} free pages right away` },
+          { title: 'Subscribe if you want more', body: 'Choose quarterly or yearly in the extension, then pay' },
         ],
         cta: 'Add to Chrome, start free',
+        installed: 'Already installed? Right-click the Naruhodo icon on the toolbar and choose 帳號與訂閱 (Account and subscription).',
       },
       ownKey: 'Already have an Anthropic API key? You can use your own key instead: no account, no page limit.',
     },
@@ -277,9 +322,11 @@ export const copy: Record<Locale, SiteCopy> = {
       failed: 'Checkout failed to load. Check your connection and try again.',
       retry: 'Try again',
       missing: 'This checkout link is incomplete. Go back to the extension and open the checkout again.',
-      plan: 'Naruhodo yearly subscription',
+      plan: 'Naruhodo subscription',
       pagesPerMonth: 'Pages per month',
-      pagesValue: String(MONTHLY_PAGES),
+      pagesValue: `${pageCount(MONTHLY_PAGES)} pages`,
+      refundLabel: 'Refunds',
+      refund: `Full refund within ${REFUND_WINDOW_DAYS} days of each payment`,
       agree: 'By paying you agree to the',
     },
   },

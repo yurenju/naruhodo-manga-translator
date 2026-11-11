@@ -56,6 +56,6 @@ export async function finishOnboarding(onboarding: Page): Promise<void> {
 export async function signInFromPanel(context: BrowserContext, open: () => Promise<void>, email: string): Promise<void> {
   const onboarding = await onboardingPage(context, open);
   await signInWithEmail(onboarding, email);
-  await onboarding.getByRole('button', { name: '先用免費的 50 頁' }).click();
+  await onboarding.getByRole('button', { name: '免費開始（100 頁）' }).click();
   await finishOnboarding(onboarding);
 }
