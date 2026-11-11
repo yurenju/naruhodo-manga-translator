@@ -124,7 +124,7 @@ export const copy: Record<Locale, SiteCopy> = {
       pricing: '看價格',
     },
     demo: {
-      caption: '實際操作看看：點右上角的 Naruhodo 圖示，切到「學習」後把滑鼠移到對話框上；再點一次圖示就關掉。',
+      caption: '實際操作看看：點右上角的 Naruhodo 圖示，對話框馬上變中文，側邊欄還有原文和讀音。',
       hint: '點這裡開始翻譯',
     },
     how: {
