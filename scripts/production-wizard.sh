@@ -583,7 +583,7 @@ create_price() {
 }
 create_price PADDLE_PRICE_ID_QUARTERLY Quarterly 1500 month 3
 create_price PADDLE_PRICE_ID_YEARLY Yearly 4800 year 1
-note "舊的 PADDLE_PRICE_ID（年繳 US\$20）Worker 已經不讀了；舊訂閱者換到新年繳 price 之後，可以到 Cloudflare 後台刪掉這個 secret。"
+note "舊的 PADDLE_PRICE_ID（年繳 US\$20）Worker 已經不讀了；舊訂閱者換到新年繳 price 之後（npm run paddle:renewal-price -- --production，步驟寫在 scripts/paddle-renewal-price.ts 開頭），可以到 Cloudflare 後台刪掉這個 secret。"
 pause
 
 # ── 14 ───────────────────────────────────────────────────────────────────
