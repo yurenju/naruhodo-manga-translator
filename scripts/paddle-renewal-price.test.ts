@@ -36,8 +36,8 @@ function fakePaddle(subscriptions: FakeSubscription[], { pageSize = 50 } = {}) {
     immediate_transaction: s.previewChargesNow ? { details: { totals: { total: '2800', currency_code: 'USD' } } } : null,
     next_transaction: { details: { totals: { total: priceId === NEW ? '4800' : '2000', currency_code: 'USD' } } },
   });
-  const fetch = async (input: string | URL, init?: RequestInit): Promise<Response> => {
-    const url = new URL(String(input));
+  const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = new URL(input instanceof Request ? input.url : input);
     const method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     requests.push({ method, path: url.pathname + url.search, body });
