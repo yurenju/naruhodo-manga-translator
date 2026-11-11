@@ -55,7 +55,7 @@ import {
 import { parseNotesInput, parseTitleSignals, parseTranslateInput } from './input.ts';
 import { applyChargeEvent, claimRefund, recordRefundAdjustment, recordRefundOutcome, refundInfo, refundOutcome, releaseRefund } from './charges.ts';
 import { lastSentCode, mailer } from './mailer.ts';
-import { paddle, PaddleError, verifyWebhook } from './paddle.ts';
+import { paddle, PaddleError, priceIds, verifyWebhook } from './paddle.ts';
 import { activeSubscription, applyPaddleEvent, cancellationOnDelete, paddleIds } from './subscription.ts';
 
 type Env = Cloudflare.Env;
@@ -353,7 +353,7 @@ const ROUTES: Record<string, Handler> = {
         return new Response(null, { status: 200 });
       });
     }
-    await applyPaddleEvent(env.DB, event, now, env.PADDLE_PRICE_ID_QUARTERLY);
+    await applyPaddleEvent(env.DB, event, now, priceIds(env));
     await applyChargeEvent(env.DB, event, now);
     return new Response(null, { status: 200 });
   },

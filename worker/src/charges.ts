@@ -4,7 +4,8 @@
  * 與退款 API 都從最近一次扣款算。Paddle 核准或拒絕退款（adjustment 的 webhook）也記在 charges：refundOutcome（#261）。
  */
 import { REFUND_WINDOW_DAYS, type RefundInfo, type RefundRefusal, type RefundStatus } from '../../src/shared/hosted-api.ts';
-import { activeSubscription, object, text, time, type Subscription } from './subscription.ts';
+import { eventHandled, eventOwner, markEventHandled, object, text, time } from './paddle-event.ts';
+import { activeSubscription, type Subscription } from './subscription.ts';
 
 const REFUND_WINDOW_MS = REFUND_WINDOW_DAYS * 24 * 60 * 60_000;
 
@@ -16,6 +17,7 @@ interface Row {
   refund_status: 'pending' | 'approved' | 'rejected' | null;
 }
 
+/** D1 存的是 Paddle adjustment 的字（approved），API 用讀者看得懂的 refunded；D1 已存的值不改，在這裡轉。 */
 const STATUS: Record<NonNullable<Row['refund_status']> | 'none', RefundStatus> = { none: 'none', pending: 'pending', approved: 'refunded', rejected: 'rejected' };
 
 /**
@@ -27,7 +29,7 @@ export async function applyChargeEvent(db: D1Database, event: unknown, now: numb
   const e = object(event);
   const eventId = text(e.event_id);
   if (!eventId || text(e.event_type) !== 'transaction.completed') return;
-  if (await db.prepare('SELECT 1 FROM paddle_events WHERE event_id = ?').bind(eventId).first()) return;
+  if (await eventHandled(db, eventId)) return;
   const data = object(e.data);
   const transactionId = text(data.id);
   const subscriptionId = text(data.subscription_id);
@@ -35,24 +37,14 @@ export async function applyChargeEvent(db: D1Database, event: unknown, now: numb
   const totals = object(object(data.details).totals);
   const amountCents = Number(text(totals.grand_total) ?? text(totals.total));
   if (!transactionId || !subscriptionId || billedAt === undefined || !Number.isInteger(amountCents)) return;
-  const accountId = await chargeOwner(db, text(object(data.custom_data).account_id), subscriptionId);
+  const accountId = await eventOwner(db, text(object(data.custom_data).account_id), subscriptionId);
   if (!accountId) return;
   await db.batch([
     db
       .prepare('INSERT INTO charges (transaction_id, account_id, paddle_subscription_id, billed_at, amount_cents) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING')
       .bind(transactionId, accountId, subscriptionId, billedAt, amountCents),
-    db.prepare('INSERT INTO paddle_events (event_id, received_at) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(eventId, now),
+    markEventHandled(db, eventId, now),
   ]);
-}
-
-/** 扣款屬於哪個 Account：custom_data 的 id 要是存在的 Account；沒有就用 subscription id 找。 */
-async function chargeOwner(db: D1Database, fromCustomData: string | undefined, subscriptionId: string): Promise<string | undefined> {
-  if (fromCustomData) {
-    const account = await db.prepare('SELECT id FROM accounts WHERE id = ?').bind(fromCustomData).first<{ id: string }>();
-    if (account) return account.id;
-  }
-  const row = await db.prepare('SELECT account_id FROM subscriptions WHERE paddle_subscription_id = ?').bind(subscriptionId).first<{ account_id: string }>();
-  return row?.account_id;
 }
 
 const latestCharge = (db: D1Database, accountId: string) =>
@@ -68,7 +60,7 @@ const latestCharge = (db: D1Database, accountId: string) =>
 function refusal(charge: Row, subscription: Subscription | undefined, now: number): RefundRefusal | undefined {
   if (charge.refund_status === 'pending') return 'refundPending';
   if (charge.refund_status === 'rejected') return 'refundRejected';
-  if (charge.refund_status === 'approved') return 'refundCompleted';
+  if (charge.refund_status === 'approved') return 'refundRefunded';
   if (subscription?.paddleSubscriptionId !== charge.paddle_subscription_id) return 'refundNoCharge';
   if (subscription.status === 'past_due') return 'refundPastDue';
   if (charge.amount_cents <= 0) return 'refundZeroAmount';
@@ -152,7 +144,7 @@ export async function refundOutcome(db: D1Database, event: unknown): Promise<Ref
   if (text(data.action) !== 'refund' || (status !== 'approved' && status !== 'rejected')) return undefined;
   const items = Array.isArray(data.items) ? data.items.map((item) => text(object(item).type)) : [];
   if (text(data.type) !== 'full' && (items.length === 0 || items.some((type) => type !== 'full'))) return undefined;
-  if (await db.prepare('SELECT 1 FROM paddle_events WHERE event_id = ?').bind(eventId).first()) return undefined;
+  if (await eventHandled(db, eventId)) return undefined;
   const [subscription, charge] = await Promise.all([
     db.prepare('SELECT status FROM subscriptions WHERE paddle_subscription_id = ?').bind(subscriptionId).first<{ status: string }>(),
     db.prepare('SELECT refund_status FROM charges WHERE transaction_id = ?').bind(transactionId).first<Pick<Row, 'refund_status'>>(),
@@ -175,5 +167,5 @@ export async function recordRefundOutcome(db: D1Database, outcome: RefundOutcome
              WHERE transaction_id = ? AND (refund_status IS NULL OR refund_status = 'pending') AND (refund_adjustment_id IS NULL OR refund_adjustment_id = ?)`,
           )
           .bind(outcome.adjustmentId, outcome.transactionId, outcome.adjustmentId);
-  await db.batch([update, db.prepare('INSERT INTO paddle_events (event_id, received_at) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(outcome.eventId, now)]);
+  await db.batch([update, markEventHandled(db, outcome.eventId, now)]);
 }

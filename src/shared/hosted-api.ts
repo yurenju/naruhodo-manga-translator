@@ -65,7 +65,7 @@ export const PORTAL_PATH = '/v1/subscription/portal';
  * Paddle 核准後 Worker 收到 adjustment 的 webhook 才取消。之後 GET /v1/account 的 refund.status 是 pending。
  * 不能退時回 409 與原因：refundNoCharge（沒有成功扣款，或那筆扣款的訂閱已經結束）、refundWindowClosed（扣款超過 14 天）、
  * refundZeroAmount（實付 US$0）、refundPastDue（扣款失敗重試中）、refundPending（已經申請過、處理中）、
- * refundRejected（Paddle 拒絕過這筆）、refundCompleted（這筆已經退款）。Paddle API 失敗回 502，什麼都不記。
+ * refundRejected（Paddle 拒絕過這筆）、refundRefunded（這筆已經退款）。Paddle API 失敗回 502，什麼都不記。
  */
 export const REFUND_PATH = '/v1/subscription/refund';
 /** Paddle 送 webhook 的路徑（不帶 token，驗 Paddle-Signature）。 */
@@ -142,13 +142,16 @@ export type Quota =
       periodEndsAt: number;
       /** 扣款週期（#259）。改版前的訂閱（年繳 US$20）是 yearly。 */
       billingPeriod: BillingPeriod;
-      /** 下次續訂要扣的金額（美元、含稅）：這個 Billing Period 現在的標價，所以改版前的訂閱也是新的年繳價。 */
+      /** 下次續訂要扣的金額（美元、含稅）：Paddle 訂閱事件裡 price 的 unit_price；這個欄位上線前寫入的訂閱退回 PRICE_USD 的標價。 */
       renewalPriceUsd: number;
       /** 訂閱前剩下的 Free Pages（訂閱中不扣也不能用，訂閱結束後恢復可用）；舊版 Worker 沒有這個欄位。 */
       freePages?: number;
     };
 
-/** 最近一次成功扣款的退款狀態：none＝沒申請過、pending＝已向 Paddle 申請、等核准，refunded＝已退款，rejected＝Paddle 拒絕。 */
+/**
+ * 最近一次成功扣款的退款狀態：none＝沒申請過、pending＝已向 Paddle 申請、等核准，refunded＝已退款，rejected＝Paddle 拒絕。
+ * D1 的 charges.refund_status 存的是 Paddle adjustment 的字（approved＝Paddle 核准了退款＝這裡的 refunded），轉換表在 worker/src/charges.ts。
+ */
 export type RefundStatus = 'none' | 'pending' | 'refunded' | 'rejected';
 
 /**
@@ -205,7 +208,7 @@ export type HostedErrorReason =
   | 'alreadySubscribed'
   | RefundRefusal;
 
-/** 退款 API 拒絕的原因（409）。 */
+/** 退款 API 拒絕的原因（409）。refundPending／refundRejected／refundRefunded 對應 RefundStatus 的 pending／rejected／refunded。 */
 export type RefundRefusal =
   | 'refundNoCharge'
   | 'refundWindowClosed'
@@ -213,7 +216,7 @@ export type RefundRefusal =
   | 'refundPastDue'
   | 'refundPending'
   | 'refundRejected'
-  | 'refundCompleted';
+  | 'refundRefunded';
 
 export interface HostedError {
   error: string;
