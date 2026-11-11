@@ -29,6 +29,16 @@ html, body { margin: 0; background: var(--naru-surface-2); }
 .ac-warn { color: var(--naru-warn); }
 .ac-plan-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--naru-space-1) var(--naru-space-3); }
 .ac-plan-name { font-size: 18px; font-weight: 700; }
+/* 方案卡片（#259，設計稿 B 版）：扣款週期／下次續訂／本月額度三列，label 欄寬固定讓值對齊 */
+.ac-plan { gap: var(--naru-space-3); }
+.ac-plan-rows {
+  display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: var(--naru-space-2) var(--naru-space-4); margin: 0;
+  font-size: var(--naru-text-small);
+}
+.ac-plan-rows dt { color: var(--naru-ink-3); }
+.ac-plan-rows dd { margin: 0; }
+.ac-plan-quota { display: grid; gap: 6px; }
+.ac-plan-quota .ac-meter { display: block; }
 
 /* 訂閱：年繳、季繳兩張並排的卡片（#257，設計稿 A 版）。年繳加粗框、標「推薦」；窄的時候上下排 */
 .ac-offers { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--naru-space-3); }

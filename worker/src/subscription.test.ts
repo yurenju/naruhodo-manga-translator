@@ -60,6 +60,8 @@ const subscribed = (fields: Partial<Extract<Quota, { plan: 'subscribed' }>> = {}
   status: 'active',
   cancelScheduled: false,
   periodEndsAt: Date.parse('2027-10-15T03:00:00Z'),
+  billingPeriod: 'yearly',
+  renewalPriceUsd: 48,
   ...fields,
 });
 
@@ -261,6 +263,45 @@ describe('Paddle webhook：重新訂閱（舊訂閱與新訂閱的事件交錯�
     await send({ accountId, subscriptionId: 'sub_other', cancelScheduled: true, occurredAt: '2026-10-30T11:00:00Z' });
 
     expect(await quota(token)).toEqual(subscribed());
+  });
+});
+
+describe('扣款週期與下次續訂金額（#259）', () => {
+  it('季繳的 price：扣款週期是季繳，下次續訂 US$15', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_worker_test_quarterly', endsAt: '2027-01-15T03:00:00Z' });
+
+    expect(await quota(token)).toEqual(subscribed({ billingPeriod: 'quarterly', renewalPriceUsd: 15, periodEndsAt: Date.parse('2027-01-15T03:00:00Z') }));
+  });
+
+  it('年繳的 price：扣款週期是年繳，下次續訂 US$48', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_worker_test_yearly' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 48 });
+  });
+
+  it('舊訂閱者（不認得的 price，例如原本年繳 US$20 的那個）當年繳，下次續訂是新的年繳價 US$48', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+
+    await send({ accountId, priceId: 'pri_legacy_yearly_20' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 48 });
+  });
+
+  it('從季繳換成年繳（之後的事件帶年繳的 price）：扣款週期跟著換', async () => {
+    at('2026-10-30T12:00:00Z');
+    const { token, accountId } = await subscriber();
+    await send({ accountId, priceId: 'pri_worker_test_quarterly', occurredAt: '2026-10-30T10:00:00Z' });
+
+    await send({ accountId, priceId: 'pri_worker_test_yearly', occurredAt: '2026-10-30T11:00:00Z' });
+
+    expect(await quota(token)).toMatchObject({ billingPeriod: 'yearly', renewalPriceUsd: 48 });
   });
 });
 

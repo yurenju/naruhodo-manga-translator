@@ -44,6 +44,8 @@ export interface SubscriptionFields {
   eventId?: string;
   eventType?: string;
   subscriptionId?: string;
+  /** 訂閱的 item 的 Paddle price（預設是測試的年繳 price，vitest.config.ts）。 */
+  priceId?: string;
 }
 
 /** Paddle 的 subscription.* 事件（只放 Worker 會讀的欄位）。custom_data 的 account_id 是 transaction 帶過來的。 */
@@ -57,6 +59,7 @@ export function subscriptionEvent({
   eventId = `evt_test_${++events}_${crypto.randomUUID().slice(0, 8)}`,
   eventType = 'subscription.updated',
   subscriptionId = `sub_test_${accountId}`,
+  priceId = 'pri_worker_test_yearly',
 }: SubscriptionFields) {
   return {
     event_id: eventId,
@@ -71,6 +74,7 @@ export function subscriptionEvent({
       first_billed_at: startedAt,
       current_billing_period: { starts_at: startedAt, ends_at: endsAt },
       scheduled_change: cancelScheduled ? { action: 'cancel', effective_at: endsAt, resume_at: null } : null,
+      items: [{ status: 'active', quantity: 1, price: { id: priceId } }],
       custom_data: { account_id: accountId },
     },
   };
