@@ -55,6 +55,8 @@ const t = copy[locale];
       <div class="plans">
         <div class="card plan">
           <div class="plan-head"><h3>{t.pricing.free.title}</h3><span class="plan-tag plan-tag--soft">{t.pricing.free.tag}</span></div>
+          {/* 跟訂閱卡的實際扣款那一行同高，三張卡的價格大字對齊 */}
+          <p class="charge" aria-hidden="true"></p>
           <p class="price"><strong>{t.pricing.free.price}</strong></p>
           <ul>
             <li>{t.pricing.free.grant.lead} <strong>{t.pricing.free.grant.pages}</strong>{t.pricing.free.grant.note}</li>
@@ -64,7 +66,8 @@ const t = copy[locale];
         {t.pricing.plans.map((plan) => (
           <div class:list={['card plan', { featured: plan.featured }]}>
             <div class="plan-head"><h3>{plan.title}</h3>{plan.tag && <span class="plan-tag">{plan.tag}</span>}</div>
-            <p class="price"><strong>{plan.name}</strong>・{plan.detail}</p>
+            <p class="charge">{plan.charge}{plan.saving && <span class="saving">{plan.saving}</span>}</p>
+            <p class="price"><small>{plan.averageLabel}</small><strong>{plan.average}</strong>{plan.per}</p>
             <ul>{plan.items.map((item) => <li><Copy text={item} /></li>)}</ul>
           </div>
         ))}

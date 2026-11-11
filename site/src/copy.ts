@@ -31,7 +31,7 @@ export interface SiteCopy {
     lead: string;
     /** 第一個重點是「{grant.lead} <strong>{grant.pages}</strong>{grant.note}」，接著是 `items` */
     free: { title: string; tag: string; price: string; grant: { lead: string; pages: string; note: string }; items: readonly string[] };
-    /** 年繳在前（推薦、加粗框）。價格那一行是「<strong>{name}</strong>・{detail}」 */
+    /** 年繳在前（推薦、加粗框） */
     plans: readonly PlanCard[];
     /** 卡片下面的小字：兩種 Billing Period 內容一樣 */
     note: string;
@@ -69,12 +69,22 @@ export interface SiteCopy {
   };
 }
 
+/**
+ * 一張訂閱卡。價格分兩行：上面是實際扣款（粗體，不藏起來），下面是平均月費大字（「{averageLabel} <strong>{average}</strong>{per}」）。
+ * 月費大字方便跟同類外掛的月費比較；實際扣款緊貼在上面，讀者不會以為是月繳。
+ */
 export interface PlanCard {
+  /** Billing Period 名稱（年繳／季繳） */
   title: string;
   tag?: string;
   featured: boolean;
-  name: string;
-  detail: string;
+  /** 實際扣款：「每年扣款 US$48」 */
+  charge: string;
+  /** 實際扣款旁的小標籤（年繳的「省 20%」） */
+  saving?: string;
+  averageLabel: string;
+  average: string;
+  per: string;
   items: readonly string[];
 }
 
@@ -83,12 +93,18 @@ const ZH_ITEMS: Record<BillingPeriod, readonly string[]> = {
   yearly: [subscriptionHeadline(), '不受免費名額影響，隨時都能翻', '一年扣款一次，自動續訂', '隨時可以取消'],
   quarterly: [subscriptionHeadline(), '不受免費名額影響，隨時都能翻', '先付少一點試試，自動續訂', '隨時可以取消'],
 };
+const ZH_CHARGE: Record<BillingPeriod, string> = {
+  yearly: `每年扣款 ${usd(PRICE_USD.yearly)}`,
+  quarterly: `每 ${PERIOD_MONTHS.quarterly} 個月扣款 ${usd(PRICE_USD.quarterly)}`,
+};
 const ZH_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map((offer) => ({
-  title: '訂閱',
-  ...(offer.recommended && { tag: '推薦' }),
+  title: offer.name,
+  ...(offer.recommended && { tag: '推薦', saving: `省 ${yearlySavingPercent()}%` }),
   featured: offer.recommended,
-  name: `${offer.name} ${offer.price}`,
-  detail: offer.detail,
+  charge: ZH_CHARGE[offer.billingPeriod],
+  averageLabel: '平均',
+  average: usd(monthlyPriceUsd(offer.billingPeriod)),
+  per: '/ 月',
   items: ZH_ITEMS[offer.billingPeriod],
 }));
 
@@ -96,20 +112,22 @@ const enUsd = (amount: number) => usd(amount).replace('US$', '$');
 const EN_HEADLINE = `${pageCount(MONTHLY_PAGES)} pages a month · full refund within ${REFUND_WINDOW_DAYS} days`;
 // 英文版跟繁中一樣由 SUBSCRIPTION_OFFERS 決定順序與推薦，只換掉文字
 const EN_NAME: Record<BillingPeriod, string> = { quarterly: 'Quarterly', yearly: 'Yearly' };
-const EN_DETAIL: Record<BillingPeriod, string> = {
-  quarterly: `Billed every ${PERIOD_MONTHS.quarterly} months`,
-  yearly: `About ${enUsd(monthlyPriceUsd('yearly'))} a month · save ${yearlySavingPercent()}%`,
+const EN_CHARGE: Record<BillingPeriod, string> = {
+  yearly: `${enUsd(PRICE_USD.yearly)} billed yearly`,
+  quarterly: `${enUsd(PRICE_USD.quarterly)} billed every ${PERIOD_MONTHS.quarterly} months`,
 };
 const EN_ITEMS: Record<BillingPeriod, readonly string[]> = {
   yearly: [EN_HEADLINE, 'Not affected by the shared free limit', 'Billed once a year, renews automatically', 'Cancel anytime'],
   quarterly: [EN_HEADLINE, 'Not affected by the shared free limit', 'Pay less up front to try it, renews automatically', 'Cancel anytime'],
 };
 const EN_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map(({ billingPeriod, recommended }) => ({
-  title: 'Subscription',
-  ...(recommended && { tag: 'Recommended' }),
+  title: EN_NAME[billingPeriod],
+  ...(recommended && { tag: 'Recommended', saving: `Save ${yearlySavingPercent()}%` }),
   featured: recommended,
-  name: `${EN_NAME[billingPeriod]} ${enUsd(PRICE_USD[billingPeriod])}`,
-  detail: EN_DETAIL[billingPeriod],
+  charge: EN_CHARGE[billingPeriod],
+  averageLabel: 'avg.',
+  average: enUsd(monthlyPriceUsd(billingPeriod)),
+  per: '/ month',
   items: EN_ITEMS[billingPeriod],
 }));
 
@@ -230,13 +248,13 @@ export const copy: Record<Locale, SiteCopy> = {
     brand: 'Naruhodo: Japanese Manga Translator',
     nav: { pricing: 'Pricing', faq: 'FAQ', install: 'Install', languageLabel: 'Language' },
     hero: {
-      title: 'Read Japanese manga with Chinese right where the words are',
-      lead: 'Naruhodo is a Chrome extension. Click its icon and it finds the manga page on your screen, reads the Japanese in each speech balloon, and places a Traditional Chinese translation right back where the text was, with furigana so you learn Japanese as you read.',
+      title: 'New Japanese manga, no more waiting for translations!',
+      lead: 'Naruhodo is a Chrome extension. Click its icon and the Japanese in each speech balloon turns into Traditional Chinese, with furigana so you learn Japanese as you read.',
       install: 'Add to Chrome',
       pricing: 'See pricing',
     },
     demo: {
-      caption: 'Try it: click the Naruhodo icon at the top right, then switch to 學習 (Study) and hover a balloon. Click the icon again to turn it off.',
+      caption: 'Try it: click the Naruhodo icon at the top right. The balloons turn into Chinese right away, and the side panel shows the original text and readings.',
       hint: 'Click to translate',
     },
     how: {
@@ -263,7 +281,7 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     pricing: {
       title: 'Pricing',
-      lead: 'Start with the free pages. If you want more, there is one subscription: pay quarterly or yearly.',
+      lead: `Sign up and get ${pageCount(FREE_PAGES)} free pages. If you like it, subscribe for more pages.`,
       free: {
         title: 'Free pages',
         tag: 'No credit card',
