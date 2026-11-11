@@ -34,7 +34,7 @@ import { onboardingUrl, saveInstallState, saveOnboarding } from '../shared/onboa
 import type { ActionBadge, StatusAction } from '../shared/page-status.ts';
 import { quotaIndicator } from '../shared/quota-indicator.ts';
 import { createQuotaIndicatorSync, type QuotaLookup } from './quota-indicator-sync.ts';
-import { saveSidePanelOnActivation, watchSidePanelOnActivation } from '../shared/side-panel-setting.ts';
+import { loadSidePanelOnActivation, watchSidePanelOnActivation } from '../shared/side-panel-setting.ts';
 import { loadPendingPayment, savePendingPayment, showSubscribedNotice } from '../shared/payment-return.ts';
 import { createTrace } from '../shared/trace.ts';
 import { isTranslationModeSet, loadTranslationMode, saveTranslationMode, watchTranslationMode } from '../shared/translation-mode.ts';
@@ -534,22 +534,26 @@ async function deleteSeries(tabId: number): Promise<void> {
 }
 
 /** 這個 tab 專屬的 side panel：帶 tabId，知道自己跟著哪個分頁。 */
-const panelPath = (tabId: number) => `sidepanel.html?tabId=${tabId}`;
+/** 沒開著會 reject：不要緊。 */
+const closeSidePanel = (tabId: number) => chrome.sidePanel.close({ tabId }).catch(() => {});
 
-const MENU_PANEL_ON_ACTIVATION = 'sidePanelOnActivation';
-const MENU_OPEN_PANEL = 'openSidePanel';
+const tabPanelOptions = (tabId: number) => ({ tabId, path: `sidepanel.html?tabId=${tabId}`, enabled: true });
+
 const MENU_ACCOUNT = 'account';
 
 /**
+ * 全域 side panel（沒有 tabId）永遠關著（#269）：Chrome 圖示右鍵的「開啟側邊面板」只在 side panel 是 enabled 又有 path 的 tab 出現，
+ * 所以只出現在翻譯中的 tab（activation.ts）。沒翻譯的 tab 打開也沒有 activeTab、不會翻譯，乾脆藏起來。
+ */
+chrome.sidePanel.setOptions({ enabled: false }).catch((e: unknown) => console.warn('sidePanel.setOptions failed', e));
+
+/**
  * Side Panel on Activation（#185）：點圖示時要同步知道（sidePanel.open 要在第一個 await 之前），所以記在記憶體裡。
- * SW 剛醒來還沒讀到時是 undefined；這時交給 Chrome：設定同步成全域 side panel 的 enabled，open 照它決定開不開。
+ * SW 剛醒來還沒讀到時是 undefined；這時 activation 一律先打開，讀到是關的再關掉。
  */
 let sidePanelOnActivation: boolean | undefined;
 watchSidePanelOnActivation((open) => {
   sidePanelOnActivation = open;
-  chrome.sidePanel.setOptions({ enabled: open }).catch((e: unknown) => console.warn('sidePanel.setOptions failed', e));
-  // 選單還沒建（安裝中）時會失敗：建立時就用這個值
-  chrome.contextMenus.update(MENU_PANEL_ON_ACTIVATION, { checked: open }, () => void chrome.runtime.lastError);
 });
 
 /**
@@ -586,21 +590,18 @@ const activation = createActivation({
   },
   getTabUrl: async (tabId) => (await chrome.tabs.get(tabId)).url,
   sidePanelOnActivation: () => sidePanelOnActivation,
-  openSidePanel(tabId, { onlyIfEnabled } = {}) {
-    const options = { tabId, path: panelPath(tabId), enabled: true };
-    // SW 剛醒來、還沒讀到設定：只呼叫 open，Chrome 照 SW 同步過去的全域 enabled（或這個 tab 自己的）決定開不開；
-    // 打開了才補上這個 tab 專屬的路徑（帶 tabId 的 side panel）
-    if (onlyIfEnabled) return chrome.sidePanel.open({ tabId }).then(() => chrome.sidePanel.setOptions(options));
+  loadSidePanelOnActivation,
+  openSidePanel(tabId) {
     // 不 await setOptions：await 會讓 open() 離開 user gesture。兩個呼叫會依序送到瀏覽器。
-    // 用 tab 專屬的路徑帶上 tabId；從 Chrome 內建選單打開的是沒有 tabId 的全域 side panel。
-    chrome.sidePanel.setOptions(options).catch((e: unknown) => console.warn('sidePanel.setOptions failed', e));
+    // 用 tab 專屬的路徑帶上 tabId，side panel 才知道自己跟著哪個分頁。
+    chrome.sidePanel.setOptions(tabPanelOptions(tabId)).catch((e: unknown) => console.warn('sidePanel.setOptions failed', e));
     return chrome.sidePanel.open({ tabId });
   },
-  async closeSidePanel(tabId) {
-    // 沒開著會 reject：不要緊
-    await chrome.sidePanel.close({ tabId }).catch(() => {});
-    // 這個 tab 的 enabled 跟著設定：SW 剛醒來時點圖示，Chrome 才會照設定決定開不開（見 openSidePanel）
-    await chrome.sidePanel.setOptions({ tabId, enabled: sidePanelOnActivation ?? true });
+  enableSidePanel: (tabId) => chrome.sidePanel.setOptions(tabPanelOptions(tabId)),
+  closeSidePanel,
+  async disableSidePanel(tabId) {
+    await closeSidePanel(tabId);
+    await chrome.sidePanel.setOptions({ tabId, enabled: false });
   },
   blockedStep,
   async openBlockedPage(tabId, step) {
@@ -646,19 +647,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 /**
- * 圖示的右鍵選單（#185）：勾選「啟動時打開側邊欄」、臨時「打開側邊欄」，以及「帳號與訂閱」（#213）。
+ * 圖示的右鍵選單：只有「帳號與訂閱」（#213）。側邊欄用 Chrome 自己的「開啟側邊面板」（只在翻譯中的 tab 出現，#269），
+ * Side Panel on Activation 在側邊欄的 ⚙ 設定改。
  * SW 每次啟動都重建，不只在 onInstalled：開發時重新載入 unpacked 外掛、或 Chrome 開機時載入改過的外掛，不一定有安裝事件。
  */
 const createMenus = () =>
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({
-      id: MENU_PANEL_ON_ACTIVATION,
-      title: '啟動時打開側邊欄',
-      type: 'checkbox',
-      checked: sidePanelOnActivation ?? true,
-      contexts: ['action'],
-    });
-    chrome.contextMenus.create({ id: MENU_OPEN_PANEL, title: '打開側邊欄', contexts: ['action'] });
     // 不管有沒有登入、用哪一種翻譯方式都在：帳號的事都到這一頁（#213）
     chrome.contextMenus.create({ id: MENU_ACCOUNT, title: quotaIndicator(undefined).menuTitle, contexts: ['action'] });
     // 快用完時改成「帳號與訂閱・剩 N 頁」（#237）；hover 提示也在這時第一次設定
@@ -667,10 +661,7 @@ const createMenus = () =>
 createMenus();
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === MENU_PANEL_ON_ACTIVATION) void saveSidePanelOnActivation(info.checked === true);
-  // 在 user gesture 裡：openPanel 同步打開 side panel
-  else if (info.menuItemId === MENU_OPEN_PANEL && tab?.id !== undefined) void activation.openPanel(tab.id);
-  else if (info.menuItemId === MENU_ACCOUNT) void chrome.tabs.create({ url: accountUrl() });
+  if (info.menuItemId === MENU_ACCOUNT) void chrome.tabs.create({ url: accountUrl() });
 });
 
 /**

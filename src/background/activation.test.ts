@@ -10,15 +10,23 @@ function fakeChrome(urls: Record<number, string>) {
   const states = new Map<number, TabState>();
   const calls = {
     openedPanels: [] as number[],
-    /** 設定還沒讀到時：只呼叫 open，讓 Chrome 依同步過去的 enabled 決定開不開。 */
-    openedIfEnabled: [] as number[],
+    /** 設定關著：這個 tab 的 side panel 設成 enabled 但不打開（Chrome 的「開啟側邊面板」才會出現）。 */
+    enabledPanels: [] as number[],
+    /** 只關掉、仍是 enabled（SW 剛醒來先打開，讀到設定是關的）。 */
     closedPanels: [] as number[],
+    /** 停止翻譯：關掉並設回 enabled: false。 */
+    disabledPanels: [] as number[],
     injected: [] as number[],
     stopped: [] as number[],
     onboardings: [] as [number, BlockedStep][],
   };
   /** Side Panel on Activation；undefined＝SW 剛醒來還沒讀到。 */
-  const settings: { panelOnActivation: boolean | undefined; blocked: BlockedStep | undefined } = { panelOnActivation: true, blocked: undefined };
+  const settings: { panelOnActivation: boolean | undefined; stored: boolean; blocked: BlockedStep | undefined } = {
+    panelOnActivation: true,
+    /** chrome.storage 裡的值（SW 剛醒來時 loadSidePanelOnActivation 讀到的）。 */
+    stored: true,
+    blocked: undefined,
+  };
   const statusEvents: [number, boolean][] = [];
   const failInjectionFor = new Set<number>();
   const createdSeries: string[] = [];
@@ -42,8 +50,11 @@ function fakeChrome(urls: Record<number, string>) {
     },
     getTabUrl: async (tabId) => urls[tabId],
     sidePanelOnActivation: () => settings.panelOnActivation,
-    openSidePanel: async (tabId, { onlyIfEnabled } = {}) => void (onlyIfEnabled ? calls.openedIfEnabled : calls.openedPanels).push(tabId),
+    loadSidePanelOnActivation: async () => settings.stored,
+    openSidePanel: async (tabId) => void calls.openedPanels.push(tabId),
+    enableSidePanel: async (tabId) => void calls.enabledPanels.push(tabId),
     closeSidePanel: async (tabId) => void calls.closedPanels.push(tabId),
+    disableSidePanel: async (tabId) => void calls.disabledPanels.push(tabId),
     blockedStep: async () => settings.blocked,
     openBlockedPage: async (tabId, step) => void calls.onboardings.push([tabId, step]),
     injectContentScript: async (tabId) => {
@@ -163,10 +174,10 @@ describe('toggle（點圖示、快捷鍵）', () => {
 
     expect(await activation.isActive(1)).toBe(false);
     expect(chrome.calls.stopped).toEqual([1]);
-    expect(chrome.calls.closedPanels).toEqual([1]);
+    expect(chrome.calls.disabledPanels).toEqual([1]);
   });
 
-  it('Side Panel on Activation 關著：啟動但不打開側邊欄', async () => {
+  it('Side Panel on Activation 關著：啟動但不打開側邊欄，只讓這個分頁能從 Chrome 的「開啟側邊面板」打開', async () => {
     const chrome = fakeChrome({ 1: EPISODE });
     chrome.settings.panelOnActivation = false;
     const activation = createActivation(chrome.deps);
@@ -175,7 +186,7 @@ describe('toggle（點圖示、快捷鍵）', () => {
 
     expect(await activation.isActive(1)).toBe(true);
     expect(chrome.calls.openedPanels).toEqual([]);
-    expect(chrome.calls.openedIfEnabled).toEqual([]);
+    expect(chrome.calls.enabledPanels).toEqual([1]);
   });
 
   it('設定開著：在任何 await 之前就同步打開側邊欄', () => {
@@ -187,15 +198,41 @@ describe('toggle（點圖示、快捷鍵）', () => {
     expect(chrome.calls.openedPanels).toEqual([1]);
   });
 
-  it('SW 剛醒來還沒讀到設定：只同步呼叫 open，交給 Chrome 照同步過去的 enabled 決定', () => {
+  it('SW 剛醒來還沒讀到設定：一律先同步打開', () => {
     const chrome = fakeChrome({ 1: EPISODE });
     chrome.settings.panelOnActivation = undefined;
     const activation = createActivation(chrome.deps);
 
     void activation.toggle(1);
 
-    expect(chrome.calls.openedIfEnabled).toEqual([1]);
-    expect(chrome.calls.openedPanels).toEqual([]);
+    expect(chrome.calls.openedPanels).toEqual([1]);
+  });
+
+  it('SW 剛醒來、讀到設定是關的：打開後馬上關掉，仍留著讓 Chrome 的項目能打開', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.settings.panelOnActivation = undefined;
+    chrome.settings.stored = false;
+    const activation = createActivation(chrome.deps);
+
+    await activation.toggle(1);
+    await settle();
+
+    expect(chrome.calls.openedPanels).toEqual([1]);
+    expect(chrome.calls.closedPanels).toEqual([1]);
+    expect(chrome.calls.disabledPanels).toEqual([]);
+    expect(await activation.isActive(1)).toBe(true);
+  });
+
+  it('SW 剛醒來、讀到設定是開的：不關', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.settings.panelOnActivation = undefined;
+    chrome.settings.stored = true;
+    const activation = createActivation(chrome.deps);
+
+    await activation.toggle(1);
+    await settle();
+
+    expect(chrome.calls.closedPanels).toEqual([]);
   });
 
   it('知道已啟動的 tab 再點一下：不先打開側邊欄', async () => {
@@ -248,31 +285,50 @@ describe('toggle（點圖示、快捷鍵）', () => {
     await activation.stop(1);
 
     expect(chrome.calls.closedPanels).toEqual([]);
-  });
-});
-
-describe('openPanel（圖示右鍵的「打開側邊欄」）', () => {
-  it('設定關著也打開側邊欄；還沒啟動就順便啟動', async () => {
-    const chrome = fakeChrome({ 1: EPISODE });
-    chrome.settings.panelOnActivation = false;
-    const activation = createActivation(chrome.deps);
-
-    await activation.openPanel(1);
-
-    expect(chrome.calls.openedPanels).toEqual([1]);
-    expect(await activation.isActive(1)).toBe(true);
+    expect(chrome.calls.disabledPanels).toEqual([]);
   });
 
-  it('已啟動就只打開側邊欄，不停止', async () => {
+  it('換到別的網站（翻譯因此停止）：這個分頁的側邊欄設回 disabled，Chrome 的項目跟著消失', async () => {
     const chrome = fakeChrome({ 1: EPISODE });
-    chrome.settings.panelOnActivation = false;
     const activation = createActivation(chrome.deps);
     await activation.toggle(1);
 
-    await activation.openPanel(1);
+    await activation.handleTabUpdated(1, { url: 'https://other.example/', status: 'loading' });
 
-    expect(await activation.isActive(1)).toBe(true);
-    expect(chrome.calls.stopped).toEqual([]);
+    expect(await activation.isActive(1)).toBe(false);
+    expect(chrome.calls.disabledPanels).toEqual([1]);
+  });
+
+  it('注入失敗（例如 chrome:// 頁面）：側邊欄設回 disabled', async () => {
+    const chrome = fakeChrome({ 1: 'chrome://settings/' });
+    chrome.failInjectionFor.add(1);
+    const activation = createActivation(chrome.deps);
+
+    await activation.toggle(1);
+
+    expect(chrome.calls.disabledPanels).toEqual([1]);
+  });
+
+  it('決定 Series 失敗（不算啟動）：側邊欄也設回 disabled', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    chrome.deps.seriesForUrl = () => Promise.reject(new Error('IndexedDB failed'));
+    const activation = createActivation(chrome.deps);
+
+    await activation.toggle(1);
+
+    expect(await activation.isActive(1)).toBe(false);
+    expect(chrome.calls.disabledPanels).toEqual([1]);
+  });
+
+  it('重新整理後注入失敗（activeTab 失效）：側邊欄也設回 disabled', async () => {
+    const chrome = fakeChrome({ 1: EPISODE });
+    const activation = createActivation(chrome.deps);
+    await activation.toggle(1);
+    chrome.failInjectionFor.add(1);
+
+    await activation.handleTabUpdated(1, { status: 'complete' });
+
+    expect(chrome.calls.disabledPanels).toEqual([1]);
   });
 });
 

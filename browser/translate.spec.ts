@@ -140,7 +140,7 @@ test('設定 API key、同意資料使用後，已啟動的分頁直接翻譯：
   await expect(settings).not.toContainText('末四碼');
 });
 
-test('從 Chrome 內建 side panel 選單打開（沒有啟動 tab）也能設定 API key', async ({ context, extensionId }) => {
+test('沒有啟動 tab 的 side panel 也能設定 API key', async ({ context, extensionId }) => {
   const panel = await openSidePanel(context, extensionId);
 
   await expect(panel.getByText('請點外掛圖示啟動')).toBeVisible();

@@ -1,7 +1,6 @@
 /**
- * Side Panel on Activation（#185）：全域設定，啟動外掛時要不要一起打開 side panel。跟 Page Mode 一樣存在 chrome.storage.local。
- * 走完 onboarding 的新讀者一律設成關（看漫畫）；之後在圖示的右鍵選單改。
- * 沒有值＝沒經過新 onboarding 的既有讀者：開著，行為跟以前一樣。
+ * Side Panel on Activation（#185）：全域設定，點圖示啟動時要不要一起打開 side panel。跟 Page Mode 一樣存在 chrome.storage.local。
+ * 在側邊欄的 ⚙ 設定「點圖示時也打開側邊欄」改（#269）。沒存過值一律是開的；已存的值照舊。
  */
 import { watchLocal } from './watch-local.ts';
 
@@ -13,6 +12,10 @@ const parse = (value: unknown): boolean => (typeof value === 'boolean' ? value :
 
 export function saveSidePanelOnActivation(open: boolean): Promise<void> {
   return chrome.storage.local.set({ [KEY]: open });
+}
+
+export async function loadSidePanelOnActivation(): Promise<boolean> {
+  return parse((await chrome.storage.local.get(KEY))[KEY]);
 }
 
 /** 先讀一次目前的值，之後每次變更都呼叫 onChange；回傳取消監聽。 */
