@@ -281,6 +281,12 @@ export type CropResponse = { pages: PageThumb[] } | { error: string };
  */
 export type TranslationInfo = Pick<TranslateOutput, 'model' | 'latencyMs' | 'usage'> & { source: 'translated' | 'cache' };
 
+/**
+ * 哪一種額度用完：free＝自己的 Free Pages、monthly＝本月額度；
+ * pausedToday＝自己還有免費額度，但今天全站的 Free Pages 已經發完（Daily Free Pages Cap，#241），明天再試。
+ */
+export type QuotaExhausted = 'free' | 'monthly' | 'pausedToday';
+
 /** side panel 顯示的一個 Page：縮圖＋逐字稿的狀態。 */
 export interface PageView extends PageThumb {
   transcript:
@@ -298,7 +304,7 @@ export interface PageView extends PageThumb {
         translation?: TranslationInfo;
         translateError?: string;
         /** 內建翻譯的額度用完了（不算失敗，#185 的 Page 紅標籤分免費額度與本月額度）。 */
-        quotaExhausted?: 'free' | 'monthly';
+        quotaExhausted?: QuotaExhausted;
         /** 快取的這頁過時了（#38）：只提示，按「重新翻譯」才重翻。 */
         stale?: StaleReason;
       }

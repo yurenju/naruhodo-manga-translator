@@ -3,7 +3,7 @@
  * SW 依每個 tab 的 PageView 算出來，content script 畫在每個 Page 的 anchor 上、SW 設成圖示的 badge。
  * 翻好的 Page 不留狀態（只有覆蓋層）。
  */
-import type { ModelStatus, PageView } from './messages.ts';
+import type { ModelStatus, PageView, QuotaExhausted } from './messages.ts';
 import type { RequestedStep } from './onboarding-step.ts';
 
 /** 紅色小標籤點了做什麼：plan＝打開帳號頁（#213）；signIn＝登入、ownKey＝設定 API key 打開 onboarding 的那一步；retry＝重試這一頁。 */
@@ -50,6 +50,13 @@ const PROBLEMS: Record<RequestedStep, string> = {
   ownKey: '還沒設定 API key・設定',
 };
 
+/** 額度用完的紅標籤：今天全站的免費額度發完了（#241）不是讀者自己的額度用完，不能說成「免費額度用完了」。 */
+const QUOTA_EXHAUSTED: Record<QuotaExhausted, string> = {
+  free: '免費額度用完了',
+  monthly: '本月額度用完了',
+  pausedToday: '今天的免費額度已經發完，明天再試',
+};
+
 function working(page: PageView, { model, translating }: PageStatusInput): Status['working'] {
   const { transcript } = page;
   if (transcript.state === 'done') return transcript.translating ? { text: '翻譯中…' } : undefined;
@@ -68,8 +75,7 @@ function problem(page: PageView, { access }: PageStatusInput): Status['problem']
   if (transcript.state === 'error') return { text: RETRY, action: 'retry', pageHash };
   if (transcript.state !== 'done' || transcript.translated || transcript.translating) return undefined;
   if (transcript.translateError) return { text: RETRY, action: 'retry', pageHash };
-  if (transcript.quotaExhausted)
-    return { text: `${transcript.quotaExhausted === 'monthly' ? '本月額度用完了' : '免費額度用完了'}・${PROBLEMS.plan}`, action: 'plan', pageHash };
+  if (transcript.quotaExhausted) return { text: `${QUOTA_EXHAUSTED[transcript.quotaExhausted]}・${PROBLEMS.plan}`, action: 'plan', pageHash };
   // 沒翻譯、也沒有錯：能翻的話是沒有字的頁（長 Page 還沒收到字），不算問題
   if (access) return { text: PROBLEMS[access], action: access, pageHash };
   return undefined;

@@ -6,7 +6,8 @@
  * 查快取時判斷過時（#38）。排程、每個 tab 的畫面狀態與 Prior Pages 在 transcribe.ts。
  */
 import { matchingStripe, type Stripe } from '../shared/long-page.ts';
-import type { PageView } from '../shared/messages.ts';
+import type { HostedErrorReason } from '../shared/hosted-api.ts';
+import type { PageView, QuotaExhausted } from '../shared/messages.ts';
 import { pageLines, type PageCharge, type PageText, type PageTranslation } from '../shared/page-text.ts';
 import { staleReason, usedNotes, type StaleReason, type TranslatorVersion } from '../shared/series-notes.ts';
 import { seriesNameForLlm, seriesZhTitleForLlm, type Series } from '../shared/series.ts';
@@ -65,6 +66,13 @@ export interface LongPageRequest {
 }
 
 const trace = createTrace('sw');
+
+/** Worker 402 的 reason → Page 紅標籤要說的是哪一種額度；不認得的當成免費額度用完。 */
+const QUOTA_EXHAUSTED_BY_REASON: Partial<Record<HostedErrorReason, QuotaExhausted>> = {
+  freePagesExhausted: 'free',
+  freePagesPausedToday: 'pausedToday',
+  monthlyLimitReached: 'monthly',
+};
 
 /**
  * 作品名送原名（#186），沒有就送讀者取的名稱；未命名的 Provisional Series 的名稱是自動產生的（網站＋日期），不送。
@@ -164,8 +172,7 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
     } catch (e) {
       trace('translate:error', { pageHash, ms: Date.now() - startedAt, error: e });
       // 額度用完不是失敗：跟沒有 Translator 一樣只顯示原文與讀音，用完的提示在 side panel 頂端與 Page 右上角（#185）
-      if (e instanceof QuotaExhaustedError)
-        return { state: 'done', text: whole(text), translated: false, quotaExhausted: e.reason === 'monthlyLimitReached' ? 'monthly' : 'free' };
+      if (e instanceof QuotaExhaustedError) return { state: 'done', text: whole(text), translated: false, quotaExhausted: QUOTA_EXHAUSTED_BY_REASON[e.reason] ?? 'free' };
       // 429／5xx 的重試在 Translator 裡（claude-translator.ts）；這裡是重試後仍失敗
       console.warn('translate failed', e);
       return { state: 'done', text: whole(text), translated: false, translateError: e instanceof Error ? e.message : String(e) };

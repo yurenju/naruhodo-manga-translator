@@ -6,6 +6,8 @@
 // define 與 vars、d1_databases、ratelimits 都不會從最上層繼承，每個 env 各寫一次。
 // 寄送驗證碼的頻率限制：同一個 IP 每分鐘 10 次、同一個 email 每分鐘 3 次（畫面上 30 秒後才能重新寄送）。
 // 驗證的頻率限制：同一個 IP 每分鐘 30 次、同一個 email 每分鐘 20 次；同一個 email 一小時內最多驗證 10 次另外記在 D1（auth.ts）。
+// Daily Free Pages Cap（#241）：DAILY_FREE_PAGES_CAP 是全站每天（UTC）最多送出的 Free Pages；最壞一天約 $2.2。到了上限只擋只靠 Free Pages 的 Account，
+//   不像 Anthropic Console 的支出上限會連訂閱者一起停。
 // Paddle（#94）：MONTHLY_PAGE_LIMIT 是訂閱者每月可翻的頁數。SITE_ORIGIN 是 checkout 頁所在的產品網站（Worker 自己組 checkout 網址）。
 //   env.dev 打 Paddle sandbox；env.test 的 __FAKE_PADDLE__ 換成假的 Paddle，webhook secret 是測試用的假值。
 // env.dev 的 secrets.required（#175）：有這個欄位，wrangler dev 會把 process env 一起讀進來，只綁定列出的名稱。
@@ -37,6 +39,7 @@
   ],
   "vars": {
     "MONTHLY_PAGE_LIMIT": "800",
+    "DAILY_FREE_PAGES_CAP": "2000",
     "SITE_ORIGIN": "https://naruhodo.page",
     "PADDLE_API_BASE_URL": "https://api.paddle.com",
     // 寄件網域用子網域：寄信的信譽跟主網域分開（Resend 的建議）
@@ -49,6 +52,7 @@
         "FAKE_MAIL": "true",
         "DEV_ENDPOINTS": "true",
         "MONTHLY_PAGE_LIMIT": "800",
+        "DAILY_FREE_PAGES_CAP": "2000",
         "SITE_ORIGIN": "http://localhost:4321",
         "PADDLE_API_BASE_URL": "https://sandbox-api.paddle.com"
       },
@@ -68,6 +72,7 @@
         "FAKE_MAIL": "true",
         "DEV_ENDPOINTS": "true",
         "MONTHLY_PAGE_LIMIT": "800",
+        "DAILY_FREE_PAGES_CAP": "2000",
         "SITE_ORIGIN": "http://localhost:4321",
         "PADDLE_WEBHOOK_SECRET": "pdl_ntfset_browser_test"
       },

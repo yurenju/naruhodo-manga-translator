@@ -13,7 +13,10 @@ import type { NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, Translat
 
 const MAX_RETRIES = 3;
 
-/** Worker 說額度用完（402）；reason 是 freePagesExhausted（免費額度用完）或 monthlyLimitReached（本月額度用完）。 */
+/**
+ * Worker 說額度用完（402）；reason 是 freePagesExhausted（免費額度用完）、freePagesPausedToday（今天全站的免費額度發完了，#241）
+ * 或 monthlyLimitReached（本月額度用完）。
+ */
 export class QuotaExhaustedError extends Error {
   readonly reason: HostedErrorReason;
 

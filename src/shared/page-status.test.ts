@@ -71,6 +71,12 @@ describe('出問題：可以點的紅色小標籤，圖示是 !', () => {
     });
   });
 
+  it('今天全站的免費額度發完了：明天再試，跟「免費額度用完了」分開', () => {
+    const status = pageStatus(input([page('a1', 'h1', { state: 'done', text, translated: false, quotaExhausted: 'pausedToday' })]));
+
+    expect(status.anchors[0]!.problem).toEqual({ text: '今天的免費額度已經發完，明天再試・查看方案', action: 'plan', pageHash: 'h1' });
+  });
+
   it('本月額度用完：「本月額度用完了・查看方案」', () => {
     const status = pageStatus(input([page('a1', 'h1', { state: 'done', text, translated: false, quotaExhausted: 'monthly' })]));
 
