@@ -39,10 +39,10 @@ describe('展示的進度', () => {
     expect(page!.transcript.text.balloons[0]).toMatchObject({ 原文: 'おはよう', 譯文: '' });
   });
 
-  it('翻完：頁面蓋上譯文，剩餘頁數少一頁（50 → 49）', () => {
+  it('翻完：頁面蓋上譯文，剩餘頁數少一頁（100 → 99）', () => {
     const view = demoView('done', text);
     expect(view.overlay).toBe(true);
-    expect(view.remaining).toBe(49);
+    expect(view.remaining).toBe(99);
     expect(view.pages[0]!.pageHash).toBe(DEMO_PAGE_HASH);
     expect(view.pages[0]!.transcript).toMatchObject({ state: 'done', translated: true, text });
   });

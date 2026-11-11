@@ -21,17 +21,19 @@ const NAME: Record<BillingPeriod, string> = { quarterly: '季繳', yearly: '年�
 /** 美元金額：整數不帶小數，其他兩位小數。 */
 export const usd = (amount: number) => `US$${Number.isInteger(amount) ? amount : amount.toFixed(2)}`;
 
-const monthly = (period: BillingPeriod) => PRICE_USD[period] / PERIOD_MONTHS[period];
+/** 平均每月多少美元。 */
+export const monthlyPriceUsd = (period: BillingPeriod) => PRICE_USD[period] / PERIOD_MONTHS[period];
+
+/** 年繳比季繳每月便宜幾 %（以季繳的每月價格為準）。 */
+export const yearlySavingPercent = () => Math.round((1 - monthlyPriceUsd('yearly') / monthlyPriceUsd('quarterly')) * 100);
 
 export function billingPeriodOffer(billingPeriod: BillingPeriod): BillingPeriodOffer {
   const name = NAME[billingPeriod];
-  // 年繳比季繳每月便宜多少（以季繳的每月價格為準）
-  const saving = Math.round((1 - monthly('yearly') / monthly('quarterly')) * 100);
   return {
     billingPeriod,
     name,
     price: usd(PRICE_USD[billingPeriod]),
-    detail: billingPeriod === 'yearly' ? `平均每月 ${usd(monthly('yearly'))}・省 ${saving}%` : `每 ${PERIOD_MONTHS.quarterly} 個月扣款`,
+    detail: billingPeriod === 'yearly' ? `平均每月 ${usd(monthlyPriceUsd('yearly'))}・省 ${yearlySavingPercent()}%` : `每 ${PERIOD_MONTHS.quarterly} 個月扣款`,
     recommended: billingPeriod === 'yearly',
     subscribe: `訂閱${name}`,
   };

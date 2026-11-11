@@ -148,66 +148,6 @@ a.naru-btn { text-decoration: none; }
 .naru-page-header__order { font-size: var(--naru-text-caption); font-weight: 400; color: var(--naru-ink-3); }
 .naru-page-header__status { margin-left: auto; min-width: 0; color: var(--naru-ink-3); font-size: var(--naru-text-caption); }
 
-/*
- * PricePair（雙價並列）：左半「你付 US$20／年」、右半「平均 US$1.67／月」，交界壓一個箭頭圓章。
- * 外掛（components.tsx）與網站（site/src/components/PricePair.astro）輸出同一份 DOM，共用這段樣式。
- * 外層是 container：放得下兩半時左右排（→），放不下就上下排（↓），每列左邊小標、右邊大字，小字在大字下一行。
- * 大字不換行，「／年」「／月」不會掉到第二行；切換寬度要讓大字永遠放得下（--lg 的字比較大，門檻也比較寬）。
- */
-/*
- * container-type 讓它沒有內容寬度：寬度要明確給 100%。只靠 align-self: stretch 的話，放在直向、flex-wrap 的 flex 裡
- * （side panel 的 Callout）時，瀏覽器用寬度 0 算高度，框會被撐得很高。
- */
 /* 年繳、季繳兩行價格（SubscriptionPrice）：「<strong>年繳 US$48</strong>・平均每月 US$4・省 20%」 */
 .naru-offer-lines { display: grid; gap: var(--naru-space-1); margin: 0; padding: 0; list-style: none; }
 
-.naru-price-pair { container-type: inline-size; box-sizing: border-box; width: 100%; }
-.naru-price-pair__box {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: 1px solid var(--naru-line-strong); border-radius: var(--naru-radius-md); overflow: hidden;
-  background: var(--naru-surface); color: var(--naru-ink); line-height: 1.5;
-}
-.naru-price-pair__side { position: relative; display: flex; flex-direction: column; min-width: 0; padding: var(--naru-space-2) var(--naru-space-3); }
-.naru-price-pair__side--avg { padding-left: var(--naru-space-4); background: var(--naru-surface-2); }
-.naru-price-pair__k { font-size: var(--naru-text-caption); font-weight: 700; color: var(--naru-ink-2); }
-.naru-price-pair__v { font-size: 20px; font-weight: 800; line-height: 1.25; white-space: nowrap; }
-.naru-price-pair__v small { margin-left: 2px; font-size: var(--naru-text-small); font-weight: 500; color: var(--naru-ink-2); }
-.naru-price-pair__s { font-size: var(--naru-text-caption); color: var(--naru-ink-2); }
-/* 箭頭圓章在右半（下列）裡，壓在交界線正中 */
-.naru-price-pair__arrow {
-  position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%);
-  display: flex; align-items: center; justify-content: center; width: 24px; height: 24px;
-  border: 1px solid var(--naru-line-strong); border-radius: var(--naru-radius-pill); background: var(--naru-surface); color: var(--naru-ink);
-}
-.naru-price-pair__down { display: none; }
-
-.naru-price-pair--lg .naru-price-pair__side { padding: var(--naru-space-3) var(--naru-space-4); }
-.naru-price-pair--lg .naru-price-pair__side--avg { padding-left: var(--naru-space-5); }
-.naru-price-pair--lg .naru-price-pair__k,
-.naru-price-pair--lg .naru-price-pair__s { font-size: var(--naru-text-small); }
-.naru-price-pair--lg .naru-price-pair__v { font-size: 30px; line-height: 1.15; }
-.naru-price-pair--lg .naru-price-pair__v small { margin-left: var(--naru-space-1); font-size: var(--naru-text-body); }
-.naru-price-pair--lg .naru-price-pair__arrow { width: 30px; height: 30px; }
-
-/* 上下排：外框是兩欄（小標、大字），每列用 subgrid 對齊同一條欄線 */
-@container (max-width: 299px) {
-  .naru-price-pair:not(.naru-price-pair--lg) .naru-price-pair__box { grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; }
-  .naru-price-pair:not(.naru-price-pair--lg) .naru-price-pair__side {
-    display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; padding: var(--naru-space-3);
-  }
-  .naru-price-pair:not(.naru-price-pair--lg) .naru-price-pair__s { grid-column: 2; }
-  .naru-price-pair:not(.naru-price-pair--lg) .naru-price-pair__arrow { left: 50%; top: 0; width: 22px; height: 22px; }
-  .naru-price-pair:not(.naru-price-pair--lg) .naru-price-pair__right { display: none; }
-  .naru-price-pair:not(.naru-price-pair--lg) .naru-price-pair__down { display: block; }
-}
-@container (max-width: 399px) {
-  .naru-price-pair--lg .naru-price-pair__box { grid-template-columns: auto minmax(0, 1fr); column-gap: var(--naru-space-3); }
-  .naru-price-pair--lg .naru-price-pair__side {
-    display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; padding: var(--naru-space-3) var(--naru-space-4);
-  }
-  .naru-price-pair--lg .naru-price-pair__s { grid-column: 2; }
-  .naru-price-pair--lg .naru-price-pair__v { font-size: 28px; }
-  .naru-price-pair--lg .naru-price-pair__arrow { left: 50%; top: 0; width: 24px; height: 24px; }
-  .naru-price-pair--lg .naru-price-pair__right { display: none; }
-  .naru-price-pair--lg .naru-price-pair__down { display: block; }
-}

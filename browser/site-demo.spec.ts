@@ -25,7 +25,7 @@ test('首頁展示：點圖示 → 翻譯完成 → 切到學習 → 滑過對�
   await demo.getByRole('button', { name: 'Naruhodo', exact: true }).click();
   // Playwright 的 locator 會穿進 open shadow root
   const panel = demo.locator('.naru-side-panel');
-  await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/免費額度剩 49 頁/);
+  await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/免費額度剩 99 頁/);
 
   const balloons = demoPage.text.balloons;
   const translations = demo.locator('[data-naruhodo-overlay] [data-balloon-id]');
@@ -59,7 +59,7 @@ test('首頁展示：點圖示 → 翻譯完成 → 切到學習 → 滑過對�
   await expect(panel).toHaveCount(0);
   await expect(translations).toHaveCount(0);
   await icon.click();
-  await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/免費額度剩 49 頁/);
+  await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/免費額度剩 99 頁/);
 
   expect(requests.filter((url) => !url.startsWith(`${siteOrigin}/`))).toEqual([]);
 });
