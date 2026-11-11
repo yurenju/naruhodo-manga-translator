@@ -6,7 +6,7 @@ describe('網站定價區塊', () => {
   it('繁中：免費、年繳（推薦）、季繳三張卡片', () => {
     const t = copy['zh-tw'].pricing;
     expect(t.free).toMatchObject({ title: '免費額度', tag: '不需信用卡', price: 'US$0', grant: { lead: '註冊就送', pages: '100 頁', note: '，大約四話' } });
-    expect(t.free.items).toEqual(['不會過期', '用 email 註冊就能翻譯']);
+    expect(t.free.items).toEqual(['不會過期', '免費翻譯量全站共用，每天有上限', '用 email 註冊就能翻譯']);
     expect(t.plans).toEqual([
       {
         title: '訂閱',
@@ -14,14 +14,14 @@ describe('網站定價區塊', () => {
         featured: true,
         name: '年繳 US$48',
         detail: '平均每月 US$4・省 20%',
-        items: ['每月 3,000 頁・14 天內可全額退款', '一年扣款一次，自動續訂', '隨時可以取消'],
+        items: ['每月 3,000 頁・14 天內可全額退款', '不受免費名額影響，隨時都能翻', '一年扣款一次，自動續訂', '隨時可以取消'],
       },
       {
         title: '訂閱',
         featured: false,
         name: '季繳 US$15',
         detail: '每 3 個月扣款',
-        items: ['每月 3,000 頁・14 天內可全額退款', '先付少一點試試，自動續訂', '隨時可以取消'],
+        items: ['每月 3,000 頁・14 天內可全額退款', '不受免費名額影響，隨時都能翻', '先付少一點試試，自動續訂', '隨時可以取消'],
       },
     ]);
     expect(t.note).toBe('年繳和季繳的內容完全一樣，只差扣款週期。每月在你訂閱的那天重置；以美元計價，標價就是刷卡金額。');

@@ -80,8 +80,8 @@ export interface PlanCard {
 
 // 價格與頁數跟外掛共用同一份常數（src/shared/hosted-api.ts），繁中的價格文案直接用外掛那幾句（src/ui/pricing.ts）
 const ZH_ITEMS: Record<BillingPeriod, readonly string[]> = {
-  yearly: [subscriptionHeadline(), '一年扣款一次，自動續訂', '隨時可以取消'],
-  quarterly: [subscriptionHeadline(), '先付少一點試試，自動續訂', '隨時可以取消'],
+  yearly: [subscriptionHeadline(), '不受免費名額影響，隨時都能翻', '一年扣款一次，自動續訂', '隨時可以取消'],
+  quarterly: [subscriptionHeadline(), '不受免費名額影響，隨時都能翻', '先付少一點試試，自動續訂', '隨時可以取消'],
 };
 const ZH_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map((offer) => ({
   title: '訂閱',
@@ -101,8 +101,8 @@ const EN_DETAIL: Record<BillingPeriod, string> = {
   yearly: `About ${enUsd(monthlyPriceUsd('yearly'))} a month · save ${yearlySavingPercent()}%`,
 };
 const EN_ITEMS: Record<BillingPeriod, readonly string[]> = {
-  yearly: [EN_HEADLINE, 'Billed once a year, renews automatically', 'Cancel anytime'],
-  quarterly: [EN_HEADLINE, 'Pay less up front to try it, renews automatically', 'Cancel anytime'],
+  yearly: [EN_HEADLINE, 'Not affected by the shared free limit', 'Billed once a year, renews automatically', 'Cancel anytime'],
+  quarterly: [EN_HEADLINE, 'Not affected by the shared free limit', 'Pay less up front to try it, renews automatically', 'Cancel anytime'],
 };
 const EN_PLANS: readonly PlanCard[] = SUBSCRIPTION_OFFERS.map(({ billingPeriod, recommended }) => ({
   title: 'Subscription',
@@ -151,13 +151,13 @@ export const copy: Record<Locale, SiteCopy> = {
     },
     pricing: {
       title: '價格',
-      lead: '先用免費額度試試看。想繼續的話，訂閱只有一個方案，選季繳或年繳。',
+      lead: `註冊即有 ${pageCount(FREE_PAGES)} 頁額度可免費使用，試用滿意的話可以訂閱獲取更多翻譯頁數。`,
       free: {
         title: '免費額度',
         tag: '不需信用卡',
         price: 'US$0',
         grant: { lead: '註冊就送', pages: `${pageCount(FREE_PAGES)} 頁`, note: `，${FREE_PAGES_EPISODES}` },
-        items: ['不會過期', '用 email 註冊就能翻譯'],
+        items: ['不會過期', '免費翻譯量全站共用，每天有上限', '用 email 註冊就能翻譯'],
       },
       plans: ZH_PLANS,
       note: '年繳和季繳的內容完全一樣，只差扣款週期。每月在你訂閱的那天重置；以美元計價，標價就是刷卡金額。',
@@ -186,6 +186,10 @@ export const copy: Record<Locale, SiteCopy> = {
           a: '不會。漫畫圖片不會離開你的電腦，送去翻譯的只有辨識出來的日文文字。翻好的內容只存在你自己的瀏覽器裡，方便你下次翻回這一頁時不用重新翻譯。',
         },
         { q: '一頁怎麼算？', a: '成功翻譯一頁算一頁，要求重新翻譯也算；跨頁算兩頁。再看已經翻過的頁面、或翻譯失敗，都不算。' },
+        {
+          q: '為什麼我還有免費額度，今天卻不能翻？',
+          a: '免費翻譯量是全站共用的，每天有上限。今天的量發完後，只用免費額度的人要等到隔天（台灣時間早上 8 點）才能繼續翻，你自己剩下的頁數不會減少。訂閱不受這個上限影響。',
+        },
         { q: '可以退款嗎？', a: '詳見{link}。', link: 'refund' },
         {
           q: '可以在哪些網站上用？',
@@ -265,7 +269,7 @@ export const copy: Record<Locale, SiteCopy> = {
         tag: 'No credit card',
         price: '$0',
         grant: { lead: 'Sign up and get', pages: `${pageCount(FREE_PAGES)} pages`, note: ', about four episodes' },
-        items: ["They don't expire", 'Sign up with your email and start translating'],
+        items: ["They don't expire", 'Free translation is shared by everyone, with a daily limit', 'Sign up with your email and start translating'],
       },
       plans: EN_PLANS,
       note: 'Yearly and quarterly include exactly the same; only the billing period differs. Pages reset each month on the day you subscribed. Prices are in US dollars and are what your card is charged.',
@@ -294,6 +298,10 @@ export const copy: Record<Locale, SiteCopy> = {
           a: "No. Manga images never leave your computer; only the recognized Japanese text is sent for translation. Translations are kept in your own browser, so a page you come back to doesn't need translating again.",
         },
         { q: 'What counts as a page?', a: 'Each page translated successfully counts once, including one you ask to translate again; a two-page spread counts as two. Revisiting a translated page or a failed translation does not count.' },
+        {
+          q: "I still have free pages. Why can't I translate today?",
+          a: "Free translation is shared by everyone, with a daily limit. Once today's share is given out, accounts on free pages wait until the next day (00:00 UTC); your own free pages are not used up. Subscriptions are not affected by this limit.",
+        },
         { q: 'Can I get a refund?', a: 'See the {link}.', link: 'refund' },
         {
           q: 'Where does it work?',
