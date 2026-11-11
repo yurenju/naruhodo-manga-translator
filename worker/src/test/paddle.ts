@@ -135,7 +135,7 @@ export const transactionCreated = (id = `txn_test_${crypto.randomUUID().slice(0,
  */
 export async function checkoutAccountId(token: string): Promise<string> {
   const paddle = fakePaddle([transactionCreated()]);
-  const response = await post(CHECKOUT_PATH, { locale: 'zh-tw' }, { token });
+  const response = await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly' }, { token });
   if (response.status !== 200) throw new Error(`checkout 失敗：${response.status} ${await response.text()}`);
   vi.restoreAllMocks();
   return (paddle.calls[0]!.body as { custom_data: { account_id: string } }).custom_data.account_id;

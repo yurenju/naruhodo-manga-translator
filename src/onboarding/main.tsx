@@ -11,7 +11,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { indexedDbApiKeyStore } from '../shared/api-key-store.ts';
 import { grantDataConsent, hasDataConsent } from '../shared/data-consent.ts';
-import { FREE_PAGES, MONTHLY_AVERAGE_USD, MONTHLY_PAGES, YEARLY_PRICE_USD } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES } from '../shared/hosted-api.ts';
 import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { HOSTED_API_URL, loadHostedSession, saveHostedSession, type HostedSession } from '../shared/hosted-session.ts';
 import type { Message, ModelStatus, ModelStatusResponse } from '../shared/messages.ts';
@@ -24,7 +24,8 @@ import { Badge, Button, Callout } from '../ui/components.tsx';
 import { OwnKeyDataFlow, PolicyLinks } from '../ui/data-flow.tsx';
 import { PRACTICE_URL } from '../ui/links.ts';
 import { SignIn } from '../ui/sign-in.tsx';
-import { SubscribeButton, SubscriptionPrice } from '../ui/subscribe-button.tsx';
+import { billingPeriodOffer, pages } from '../ui/pricing.ts';
+import { OfferText, SubscribeButton, SubscriptionPrice } from '../ui/subscribe-button.tsx';
 
 const hostedAccount = createHostedAccountClient({ apiUrl: HOSTED_API_URL, fetch: (url, init) => fetch(url, init) });
 
@@ -66,7 +67,7 @@ function Intro({ downloadBytes, onNext }: { downloadBytes: number | undefined; o
             用 email 註冊之後，有 <strong>{FREE_PAGES} 頁的免費額度</strong>（大約兩話），不用輸入付款資料。
           </li>
           <li>
-            試用滿意的話，可以訂閱：年繳 US${YEARLY_PRICE_USD}（平均每月 US${MONTHLY_AVERAGE_USD}），每月可翻 {MONTHLY_PAGES} 頁。
+            試用滿意的話，可以訂閱：<OfferText offer={billingPeriodOffer('yearly')} />，或 <OfferText offer={billingPeriodOffer('quarterly')} />，每月可翻 {pages(MONTHLY_PAGES)} 頁。
           </li>
           <li>回頭看已經翻過的頁面不會扣頁數；翻譯失敗也不扣。</li>
         </ul>
@@ -147,10 +148,11 @@ function Plan({
   async function subscribe() {
     onChoose();
     setFailure(undefined);
-    const result = await hostedAccount.checkout(session.token, 'zh-tw');
+    // 第 3 步現在只有年繳的卡片（#258 改成單選清單，選季繳或年繳）
+    const result = await hostedAccount.checkout(session.token, 'zh-tw', 'yearly');
     if (result.ok) {
       setState({ kind: 'waitingPayment', url: result.url });
-      await openPayment(result.url, 'onboarding');
+      await openPayment(result.url, 'onboarding', 'yearly');
     } else if (result.reason === 'alreadySubscribed') {
       // Worker 已經說訂閱中：讀不到頁數上限也照樣是「已訂閱」
       showSubscribed(await subscribedLimit(), false);
@@ -191,7 +193,7 @@ function Plan({
 
   if (state.kind === 'waitingPayment') {
     // 付款頁的網址（重新整理後沒有）：沒有的話重新向 Worker 建一個
-    const reopen = () => (state.url ? void openPayment(state.url, 'onboarding') : void subscribe());
+    const reopen = () => (state.url ? void openPayment(state.url, 'onboarding', 'yearly') : void subscribe());
     if (pending?.checkoutTabId === null)
       return (
         <>

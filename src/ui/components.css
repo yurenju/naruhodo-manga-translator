@@ -158,6 +158,9 @@ a.naru-btn { text-decoration: none; }
  * container-type 讓它沒有內容寬度：寬度要明確給 100%。只靠 align-self: stretch 的話，放在直向、flex-wrap 的 flex 裡
  * （side panel 的 Callout）時，瀏覽器用寬度 0 算高度，框會被撐得很高。
  */
+/* 年繳、季繳兩行價格（SubscriptionPrice）：「<strong>年繳 US$48</strong>・平均每月 US$4・省 20%」 */
+.naru-offer-lines { display: grid; gap: var(--naru-space-1); margin: 0; padding: 0; list-style: none; }
+
 .naru-price-pair { container-type: inline-size; box-sizing: border-box; width: 100%; }
 .naru-price-pair__box {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));

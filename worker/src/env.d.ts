@@ -29,10 +29,11 @@ declare namespace Cloudflare {
     DAILY_FREE_PAGES_CAP: string;
     /** checkout 頁所在的產品網站 origin（Worker 組 `<origin>/<locale>/checkout?_ptxn=…`）。 */
     SITE_ORIGIN?: string;
-    /** Paddle API：網址是 vars；key、年繳 price 與 webhook secret 用 wrangler secret，本機從 ~/.config/naruhodo/paddle-sandbox.env 讀。 */
+    /** Paddle API：網址是 vars；key、季繳與年繳的 price、webhook secret 用 wrangler secret，本機從 ~/.config/naruhodo/paddle-sandbox.env 讀。 */
     PADDLE_API_BASE_URL: string;
     PADDLE_API_KEY?: string;
-    PADDLE_PRICE_ID?: string;
+    PADDLE_PRICE_ID_QUARTERLY?: string;
+    PADDLE_PRICE_ID_YEARLY?: string;
     /** webhook 的 HMAC key（`pdl_ntfset_…`，原樣使用）。 */
     PADDLE_WEBHOOK_SECRET?: string;
   }

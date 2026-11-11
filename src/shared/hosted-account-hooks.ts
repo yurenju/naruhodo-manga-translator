@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { AccountExitDeps } from './account-exit.ts';
 import { createHostedAccountClient } from './hosted-account-client.ts';
-import type { Quota } from './hosted-api.ts';
+import type { BillingPeriod, Quota } from './hosted-api.ts';
 import { clearHostedSession, HOSTED_API_URL, loadHostedSession, type HostedSession } from './hosted-session.ts';
 import type { Message } from './messages.ts';
 import { openPayment, type PaymentFrom } from './payment-return.ts';
@@ -96,12 +96,13 @@ export function useHostedQuota(session: HostedSession | null | undefined): Quota
 }
 
 /**
- * 「訂閱」：向 Worker 建立 checkout，請 SW 用新分頁打開產品網站的 checkout 頁（#94），付款後 SW 帶讀者回到發起的分頁（#176）。
- * 已經訂閱中就重讀額度。失敗回 false。tabId＝side panel 跟著的分頁；沒給時用這個分頁或這個視窗正在看的分頁（openPayment）。
+ * 「訂閱」：向 Worker 建立這個 Billing Period 的 checkout，請 SW 用新分頁打開產品網站的 checkout 頁（#94），付款後 SW 帶讀者回到發起的分頁（#176）。
+ * 付款分頁還開著的話 SW 切過去，不開第二個。已經訂閱中就重讀額度。失敗回 false。
+ * tabId＝side panel 跟著的分頁；沒給時用這個分頁或這個視窗正在看的分頁（openPayment）。
  */
-export async function subscribe(session: HostedSession, from: PaymentFrom, tabId?: number): Promise<boolean> {
-  const result = await hostedAccount.checkout(session.token, 'zh-tw');
-  if (result.ok) void openPayment(result.url, from, tabId);
+export async function subscribe(session: HostedSession, from: PaymentFrom, billingPeriod: BillingPeriod, tabId?: number): Promise<boolean> {
+  const result = await hostedAccount.checkout(session.token, 'zh-tw', billingPeriod);
+  if (result.ok) void openPayment(result.url, from, billingPeriod, tabId);
   else if (result.reason === 'alreadySubscribed') void chrome.runtime.sendMessage({ type: 'quota:changed' } satisfies Message).catch(() => {});
   else {
     console.error('建立 checkout 失敗', result.message);

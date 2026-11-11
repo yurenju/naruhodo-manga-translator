@@ -7,6 +7,7 @@ import {
   ACCOUNT_PATH,
   CHECKOUT_PATH,
   DEV_FREE_PAGES_PATH,
+  LEGACY_CHECKOUT_PATH,
   PORTAL_PATH,
   TRANSLATE_PATH,
   type AccountResponse,
@@ -68,11 +69,11 @@ afterEach(() => {
 });
 
 describe('建立 checkout', () => {
-  it('用 Paddle API 建立年繳 price 的 transaction，回傳產品網站 checkout 頁的網址（不用 Paddle 的 checkout.url）', async () => {
+  it('年繳：用 Paddle API 建立年繳 price 的 transaction，回傳產品網站 checkout 頁的網址（不用 Paddle 的 checkout.url）', async () => {
     const token = await signIn();
     const paddle = fakePaddle([transactionCreated('txn_01abc')]);
 
-    const response = await post(CHECKOUT_PATH, { locale: 'en' }, { token });
+    const response = await post(CHECKOUT_PATH, { locale: 'en', billingPeriod: 'yearly' }, { token });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ url: 'http://localhost:4321/en/checkout?_ptxn=txn_01abc' });
@@ -80,14 +81,49 @@ describe('建立 checkout', () => {
     const [call] = paddle.calls;
     expect(call!.url).toBe('https://paddle.test/transactions');
     expect(new Headers(call!.init.headers).get('authorization')).toBe('Bearer pdl_sdbx_apikey_worker_test');
-    expect(call!.body).toMatchObject({ items: [{ price_id: 'pri_worker_test', quantity: 1 }], custom_data: { account_id: expect.any(String) } });
+    expect(call!.body).toMatchObject({ items: [{ price_id: 'pri_worker_test_yearly', quantity: 1 }], custom_data: { account_id: expect.any(String) } });
+  });
+
+  it('季繳：transaction 用季繳的 price', async () => {
+    const token = await signIn();
+    const paddle = fakePaddle([transactionCreated()]);
+
+    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'quarterly' }, { token });
+
+    expect(response.status).toBe(200);
+    expect(paddle.calls[0]!.body).toMatchObject({ items: [{ price_id: 'pri_worker_test_quarterly', quantity: 1 }] });
+  });
+
+  it.each([
+    ['沒給扣款週期', { locale: 'zh-tw' }],
+    ['不認得的扣款週期', { locale: 'zh-tw', billingPeriod: 'monthly' }],
+    ['扣款週期不是字串', { locale: 'zh-tw', billingPeriod: 12 }],
+  ])('%s：400，不呼叫 Paddle', async (_, body) => {
+    const token = await signIn();
+    const paddle = vi.spyOn(globalThis, 'fetch');
+
+    const response = await post(CHECKOUT_PATH, body, { token });
+
+    expect(response.status).toBe(400);
+    expect(paddle).not.toHaveBeenCalled();
+  });
+
+  it('舊版外掛的 checkout 路徑（沒有扣款週期）照樣能用：一律年繳', async () => {
+    const token = await signIn();
+    const paddle = fakePaddle([transactionCreated('txn_01old')]);
+
+    const response = await post(LEGACY_CHECKOUT_PATH, { locale: 'zh-tw' }, { token });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ url: 'http://localhost:4321/zh-tw/checkout?_ptxn=txn_01old' });
+    expect(paddle.calls[0]!.body).toMatchObject({ items: [{ price_id: 'pri_worker_test_yearly', quantity: 1 }] });
   });
 
   it('不認得的語言用 zh-tw', async () => {
     const token = await signIn();
     fakePaddle([transactionCreated('txn_01def')]);
 
-    const response = await post(CHECKOUT_PATH, { locale: 'fr' }, { token });
+    const response = await post(CHECKOUT_PATH, { locale: 'fr', billingPeriod: 'yearly' }, { token });
 
     expect(await response.json()).toEqual({ url: 'http://localhost:4321/zh-tw/checkout?_ptxn=txn_01def' });
   });
@@ -97,7 +133,7 @@ describe('建立 checkout', () => {
     const accountId = await checkoutAccountId(token);
     const paddle = fakePaddle([transactionCreated()]);
 
-    await post(CHECKOUT_PATH, { locale: 'zh-tw', account_id: 'someone-else', custom_data: { account_id: 'someone-else' } }, { token });
+    await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly', account_id: 'someone-else', custom_data: { account_id: 'someone-else' } }, { token });
 
     expect(paddle.calls[0]!.body).toMatchObject({ custom_data: { account_id: accountId } });
     expect(accountId).not.toBe('someone-else');
@@ -106,7 +142,7 @@ describe('建立 checkout', () => {
   it('沒登入回 401，不呼叫 Paddle', async () => {
     const paddle = vi.spyOn(globalThis, 'fetch');
 
-    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw' });
+    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly' });
 
     expect(response.status).toBe(401);
     expect(paddle).not.toHaveBeenCalled();
@@ -116,7 +152,7 @@ describe('建立 checkout', () => {
     const token = await signIn();
     fakePaddle([() => Response.json({ error: { code: 'forbidden' } }, { status: 403 })]);
 
-    expect((await post(CHECKOUT_PATH, { locale: 'zh-tw' }, { token })).status).toBe(502);
+    expect((await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly' }, { token })).status).toBe(502);
   });
 });
 
@@ -330,7 +366,7 @@ describe('checkout 與管理訂閱', () => {
     await send({ accountId, occurredAt: '2026-10-30T10:00:00Z' });
     const paddle = vi.spyOn(globalThis, 'fetch');
 
-    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw' }, { token });
+    const response = await post(CHECKOUT_PATH, { locale: 'zh-tw', billingPeriod: 'yearly' }, { token });
 
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ reason: 'alreadySubscribed' });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ownPaymentChange, type PendingPayment } from './payment-return.ts';
 
-const fromOnboarding: PendingPayment = { checkoutTabId: 3, originTabId: 1, from: 'onboarding' };
-const fromPanel: PendingPayment = { checkoutTabId: 3, originTabId: 2, from: 'panel' };
+const fromOnboarding: PendingPayment = { checkoutTabId: 3, originTabId: 1, from: 'onboarding', billingPeriod: 'yearly' };
+const fromPanel: PendingPayment = { checkoutTabId: 3, originTabId: 2, from: 'panel', billingPeriod: 'yearly' };
 
 describe('ownPaymentChange', () => {
   it('onboarding 發起的付款還在：等付款（付款分頁被關掉了也一樣）', () => {
@@ -25,7 +25,7 @@ describe('ownPaymentChange', () => {
   });
 
   it('帳號頁只看帳號頁發起的付款（#213）', () => {
-    const fromAccount: PendingPayment = { checkoutTabId: 3, originTabId: 4, from: 'account' };
+    const fromAccount: PendingPayment = { checkoutTabId: 3, originTabId: 4, from: 'account', billingPeriod: 'yearly' };
     expect(ownPaymentChange('account', undefined, fromAccount)).toEqual({ mine: fromAccount, action: 'wait' });
     expect(ownPaymentChange('account', fromAccount, undefined)).toEqual({ mine: undefined, action: 'settled' });
     expect(ownPaymentChange('account', undefined, fromOnboarding)).toEqual({ mine: undefined, action: 'none' });

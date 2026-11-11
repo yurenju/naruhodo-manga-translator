@@ -3,6 +3,7 @@
  * SW 記住「付款分頁 → 發起付款的分頁」，付款確認或付款分頁被關掉時把讀者帶回發起的分頁。
  * Chrome API 都從 deps 注入，SW 的 index.ts 負責接上真的 chrome.*。用到的 chrome.tabs 都不需要 tabs 權限。
  */
+import type { BillingPeriod } from '../shared/hosted-api.ts';
 import type { PaymentFrom, PendingPayment } from '../shared/payment-return.ts';
 
 export interface PaymentReturnDeps {
@@ -36,16 +37,17 @@ export function createPaymentReturn(deps: PaymentReturnDeps) {
     return run;
   }
 
-  function open({ url, originTabId, from }: { url: string; originTabId: number; from: PaymentFrom }): Promise<void> {
+  function open({ url, originTabId, from, billingPeriod }: { url: string; originTabId: number; from: PaymentFrom; billingPeriod: BillingPeriod }): Promise<void> {
     return serial(async () => {
       const pending = await deps.load();
-      // 重複按「訂閱」：Worker 給的是新的 transaction，但已經開著的付款頁一樣能付，不開第二個；付完帶回最後按的那一邊
+      // 重複按「訂閱」：Worker 給的是新的 transaction，但已經開著的付款頁一樣能付，不開第二個；付完帶回最後按的那一邊。
+      // 扣款週期照那個付款頁的（讀者在那頁付的是它的 price）
       if (pending?.checkoutTabId != null && (await deps.focusTab(pending.checkoutTabId))) {
         await deps.save({ ...pending, originTabId, from });
         return;
       }
       const checkoutTabId = await deps.createTab(url);
-      await deps.save({ checkoutTabId, originTabId, from });
+      await deps.save({ checkoutTabId, originTabId, from, billingPeriod });
     });
   }
 

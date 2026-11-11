@@ -1,6 +1,6 @@
 import type { Locale } from './locale.ts';
 import type { LegalDoc } from './links.ts';
-import { FREE_PAGES, MONTHLY_AVERAGE_USD, MONTHLY_PAGES, YEARLY_PRICE_USD } from '../../src/shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES, PERIOD_MONTHS, PRICE_USD } from '../../src/shared/hosted-api.ts';
 import type { PriceSide } from '../../src/ui/components.tsx';
 
 /**
@@ -59,10 +59,12 @@ export interface SiteCopy {
 }
 
 // 價格與頁數跟外掛共用同一份常數（src/shared/hosted-api.ts），不在這裡另外寫數字
-const ZH_YEARLY = `US$${YEARLY_PRICE_USD}`;
-const ZH_MONTHLY = `US$${MONTHLY_AVERAGE_USD}`;
-const EN_YEARLY = `$${YEARLY_PRICE_USD}`;
-const EN_MONTHLY = `$${MONTHLY_AVERAGE_USD}`;
+// 定價區塊改成免費、年繳、季繳三張卡片是另一張 ticket（spec #254）；這裡先只換成新的年繳價格
+const YEARLY_MONTHLY_AVERAGE = PRICE_USD.yearly / PERIOD_MONTHS.yearly;
+const ZH_YEARLY = `US$${PRICE_USD.yearly}`;
+const ZH_MONTHLY = `US$${YEARLY_MONTHLY_AVERAGE}`;
+const EN_YEARLY = `$${PRICE_USD.yearly}`;
+const EN_MONTHLY = `$${YEARLY_MONTHLY_AVERAGE}`;
 
 export const copy: Record<Locale, SiteCopy> = {
   'zh-tw': {

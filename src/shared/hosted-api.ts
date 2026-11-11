@@ -48,10 +48,16 @@ export const DEV_FREE_PAGES_PATH = '/v1/dev/free-pages';
 export const DEV_DAILY_FREE_PAGES_PATH = '/v1/dev/daily-free-pages';
 
 /**
- * POST { locale }（帶 token）：用 Paddle API 建立年繳 Subscription 的 transaction（custom_data 放這個 Account 的 id，
- * client 指定不了），回傳 CheckoutResponse：產品網站 checkout 頁的網址，外掛用新分頁打開。已經訂閱中回 409 alreadySubscribed。
+ * POST CheckoutRequest（帶 token）：用 Paddle API 建立這個 Billing Period 的 Subscription 的 transaction（custom_data 放這個 Account 的 id，
+ * client 指定不了），回傳 CheckoutResponse：產品網站 checkout 頁的網址，外掛用新分頁打開。
+ * 沒給或不認得的 billingPeriod 回 400（扣款週期由外掛選，checkout 頁不能改）；已經訂閱中回 409 alreadySubscribed。
  */
-export const CHECKOUT_PATH = '/v1/checkout';
+export const CHECKOUT_PATH = '/v1/subscription/checkout';
+/**
+ * 舊版外掛（#257 以前，只有年繳）的 checkout：POST { locale }，一律建立年繳的 transaction，其他跟 CHECKOUT_PATH 一樣。
+ * 新版外掛不呼叫；還有人用舊版就留著（CODING_STANDARDS「The hosted API only adds」）。
+ */
+export const LEGACY_CHECKOUT_PATH = '/v1/checkout';
 /** POST（帶 token）：用 Paddle API 替這個 Account 的 customer 建立 customer portal session，回傳 PortalResponse；沒訂閱過回 404。 */
 export const PORTAL_PATH = '/v1/subscription/portal';
 /** Paddle 送 webhook 的路徑（不帶 token，驗 Paddle-Signature）。 */
@@ -61,6 +67,15 @@ export const HEALTH_PATH = '/v1/health';
 
 /** checkout 頁的語言（產品網站的 /zh-tw/、/en/）。 */
 export type CheckoutLocale = 'zh-tw' | 'en';
+
+/** Billing Period（GLOSSARY）：Subscription 多久扣款一次。兩種的 Monthly Page Limit 一樣，只差價格。 */
+export type BillingPeriod = 'quarterly' | 'yearly';
+export const BILLING_PERIODS: readonly BillingPeriod[] = ['quarterly', 'yearly'];
+
+export interface CheckoutRequest {
+  locale: CheckoutLocale;
+  billingPeriod: BillingPeriod;
+}
 
 export interface CheckoutResponse {
   url: string;
@@ -79,18 +94,20 @@ export interface VerifyCodeResponse {
 export const FREE_PAGES = 50;
 
 /**
- * 訂閱的年費（美元，Paddle 的價格）與每月頁數，給外掛與網站的文案用。每月頁數真正的上限是 Worker 的 vars
- * （`worker/wrangler.jsonc` 的 `MONTHLY_PAGE_LIMIT`），調整時兩邊一起改。
+ * 每個 Billing Period 的標價（美元、含稅，ADR 0012）與扣款間隔，給外掛與網站的文案用。真正扣多少是 Paddle 上的 price
+ * （Worker 的 secret `PADDLE_PRICE_ID_QUARTERLY`／`PADDLE_PRICE_ID_YEARLY`），改價時兩邊一起改。
+ * 每月頁數真正的上限是 Worker 的 vars（`worker/wrangler.jsonc` 的 `MONTHLY_PAGE_LIMIT`），調整時兩邊一起改。
  */
-export const YEARLY_PRICE_USD = 20;
+export const PRICE_USD: Readonly<Record<BillingPeriod, number>> = { quarterly: 15, yearly: 48 };
+export const PERIOD_MONTHS: Readonly<Record<BillingPeriod, number>> = { quarterly: 3, yearly: 12 };
+/** Refund Window：每次扣款後幾天內可以全額退款。 */
+export const REFUND_WINDOW_DAYS = 14;
 export const MONTHLY_PAGES = 800;
 /**
  * 剩這麼多頁以下算快用完（大約一話）：圖示的綠點換成橘點、右鍵選單帶上剩餘頁數（#237），
  * side panel 底部那一行與帳號頁的進度條改用警告色。免費額度與本月額度同一個門檻。
  */
 export const LOW_QUOTA = 25;
-/** 年費攤到每個月的平均（文案的「平均每月 US$1.67」），兩位小數 */
-export const MONTHLY_AVERAGE_USD = (YEARLY_PRICE_USD / 12).toFixed(2);
 
 /**
  * 剩餘額度（spec #86「額度規則」）。外掛只顯示這裡的數字，不自己算。

@@ -14,7 +14,9 @@ import {
   bearerHeader,
   readHostedError,
   type AccountResponse,
+  type BillingPeriod,
   type CheckoutLocale,
+  type CheckoutRequest,
   type CheckoutResponse,
   type HostedErrorReason,
   type PortalResponse,
@@ -28,8 +30,8 @@ export interface HostedAccountClient {
   verifyCode(email: string, code: string): Promise<{ ok: true; token: string } | AuthFailure>;
   /** 帶 session token 讀目前的帳號狀態。 */
   account(token: string): Promise<{ ok: true; account: AccountResponse } | AuthFailure>;
-  /** 建立年繳 Subscription 的 checkout，回傳產品網站 checkout 頁的網址（locale 是頁面語言）。 */
-  checkout(token: string, locale: CheckoutLocale): Promise<{ ok: true; url: string } | AuthFailure>;
+  /** 建立這個 Billing Period 的 Subscription 的 checkout，回傳產品網站 checkout 頁的網址（locale 是頁面語言）。 */
+  checkout(token: string, locale: CheckoutLocale, billingPeriod: BillingPeriod): Promise<{ ok: true; url: string } | AuthFailure>;
   /** 建立 Paddle customer portal session，回傳網址。 */
   portal(token: string): Promise<{ ok: true; url: string } | AuthFailure>;
   /** 撤銷這個 session token。 */
@@ -80,7 +82,7 @@ export function createHostedAccountClient({ apiUrl, fetch }: { apiUrl: string; f
       if (!result.ok) return result;
       return { ok: true, account: (await result.response.json()) as AccountResponse };
     },
-    checkout: (token, locale) => url(CHECKOUT_PATH, { locale }, token),
+    checkout: (token, locale, billingPeriod) => url(CHECKOUT_PATH, { locale, billingPeriod } satisfies CheckoutRequest, token),
     portal: (token) => url(PORTAL_PATH, {}, token),
     async signOut(token) {
       const result = await post(SIGN_OUT_PATH, {}, token);
