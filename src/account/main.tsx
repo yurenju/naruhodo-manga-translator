@@ -2,7 +2,8 @@
  * 帳號與訂閱頁（#213，prototype/account-status 的方案 B）：所有帳號狀態的家。圖示右鍵選單「帳號與訂閱」直接打開；
  * 額度用完時 Page 上的紅色小標籤與點圖示帶著漫畫分頁打開（?from=N，「回到漫畫」切回去）；side panel 設定頁的「管理帳號 →」也到這裡。
  *
- * 由上到下：狀態說明（需要時）、付款中（需要時）、登入的帳號＋登出、目前方案（設計稿 B 版：狀態 Badge、扣款週期、下次續訂、本月額度的進度條，#259）、
+ * 由上到下：狀態說明（需要時）、付款中（需要時）、登入的帳號＋登出、目前方案（設計稿 B 版：狀態 Badge、扣款週期、下次續訂、本月額度的進度條，#259；
+ * 底部的退款區塊與確認對話框，#260）、
  * 訂閱（只有免費方案；年繳、季繳兩張並排的卡片，#257）、刪除帳號。
  * 要顯示什麼由 view.ts 的 accountPageView 決定；這裡只接上 chrome、Worker 與畫面。
  */
@@ -17,8 +18,9 @@ import {
   broadcastSessionChanged,
   hostedAccount,
   managePlan,
+  requestRefund,
   subscribe,
-  useHostedQuota,
+  useHostedAccount,
   useHostedSession,
   usePaymentAction,
   useTranslationMode,
@@ -30,8 +32,9 @@ import type { TranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, Callout } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
 import { SignIn } from '../ui/sign-in.tsx';
+import { RefundDialog } from '../ui/refund-dialog.tsx';
 import { OfferText, PaymentUnavailable } from '../ui/subscribe-button.tsx';
-import { accountPageView, signedOutText } from '../ui/view.ts';
+import { accountPageView, refundDialogView, signedOutText } from '../ui/view.ts';
 
 const LOGO = 'icons/naruhodo-small.svg';
 
@@ -97,11 +100,15 @@ function SignedOut({ text, onSignedIn }: { text: string; onSignedIn: () => void 
 }
 
 function Account({ session, mode, justSignedIn }: { session: HostedSession; mode: TranslationMode; justSignedIn: boolean }) {
-  const quota = useHostedQuota(session);
+  const account = useHostedAccount(session);
+  const quota = account?.quota;
   const payment = useAccountPayment();
   const [paymentFailed, runPayment] = usePaymentAction();
   const [deleting, setDeleting] = useState<'confirm' | 'busy' | undefined>(undefined);
   const [deleteFailed, setDeleteFailed] = useState(false);
+  /** 確認退款的對話框：confirm＝打開著，busy＝送出中。 */
+  const [refunding, setRefunding] = useState<'confirm' | 'busy' | undefined>(undefined);
+  const [refundFailed, setRefundFailed] = useState(false);
 
   if (deleting)
     return (
@@ -131,7 +138,18 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
     justPaid: quota?.plan === 'subscribed' ? payment.settled : undefined,
     justSignedIn,
     hasOrigin: from !== undefined,
+    refund: account?.refund,
+    now: Date.now(),
   });
+  const refundDialog = quota?.plan === 'subscribed' && account?.refund && view.plan?.refund?.kind === 'offer' ? refundDialogView(quota, account.refund) : undefined;
+  const confirmRefund = () => {
+    setRefunding('busy');
+    setRefundFailed(false);
+    void requestRefund(session).then((ok) => {
+      setRefunding(ok ? undefined : 'confirm');
+      setRefundFailed(!ok);
+    });
+  };
   /** 打開這個扣款週期的付款頁：付款分頁還開著的話 SW 切過去，不開第二個。 */
   const pay = (billingPeriod: BillingPeriod) => runPayment(() => subscribe(session, 'account', billingPeriod));
   return (
@@ -210,6 +228,33 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
               </span>
             </dd>
           </dl>
+          {view.plan.refund?.kind === 'offer' && (
+            <div class="ac-refund" role="group" aria-label="退款">
+              <div class="ac-refund__text">
+                <strong>{view.plan.refund.title}</strong>
+                <span class="ac-refund__detail">{view.plan.refund.detail}</span>
+              </div>
+              <Button
+                onClick={() => {
+                  setRefundFailed(false);
+                  setRefunding('confirm');
+                }}
+              >
+                申請退款
+              </Button>
+            </div>
+          )}
+          {view.plan.refund?.kind === 'pending' && (
+            <Callout tone="warn" class="naru-callout--stack" role="status" aria-label={view.plan.refund.title}>
+              <p>
+                <strong>{view.plan.refund.title}</strong>
+              </p>
+              <p>{view.plan.refund.body}</p>
+            </Callout>
+          )}
+          {refunding && refundDialog && (
+            <RefundDialog view={refundDialog} sending={refunding === 'busy'} failed={refundFailed} onConfirm={confirmRefund} onCancel={() => setRefunding(undefined)} />
+          )}
         </section>
       )}
       {view.subscribe && (

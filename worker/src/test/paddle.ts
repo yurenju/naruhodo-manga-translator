@@ -118,6 +118,45 @@ export function adjustmentEvent({
   };
 }
 
+export interface TransactionFields {
+  /** 有 custom_data 的話（首購：Worker 建立 transaction 時放的）。續約的 transaction 用 subscriptionId 對到 Account。 */
+  accountId?: string;
+  subscriptionId: string;
+  transactionId?: string;
+  /** 扣款時間（ISO）。 */
+  billedAt?: string;
+  /** 實付金額（美分，Paddle 的 details.totals.grand_total 是字串）。 */
+  grandTotal?: string;
+  eventId?: string;
+}
+
+/** Paddle 的 transaction.completed 事件（只放 Worker 會讀的欄位）：一次成功的扣款。 */
+export function transactionEvent({
+  accountId,
+  subscriptionId,
+  transactionId = `txn_test_${crypto.randomUUID().slice(0, 8)}`,
+  billedAt = new Date().toISOString(),
+  grandTotal = '4800',
+  eventId = `evt_test_${++events}_${crypto.randomUUID().slice(0, 8)}`,
+}: TransactionFields) {
+  return {
+    event_id: eventId,
+    event_type: 'transaction.completed',
+    occurred_at: billedAt,
+    notification_id: `ntf_test_${events}`,
+    data: {
+      id: transactionId,
+      status: 'completed',
+      subscription_id: subscriptionId,
+      customer_id: 'ctm_test',
+      billed_at: billedAt,
+      currency_code: 'USD',
+      details: { totals: { subtotal: grandTotal, tax: '0', total: grandTotal, grand_total: grandTotal } },
+      custom_data: accountId ? { account_id: accountId } : null,
+    },
+  };
+}
+
 /** Paddle API 的假回應：依序回傳，記下送出的網址與 body。 */
 export function fakePaddle(responses: (() => Response)[]) {
   const calls: { url: string; init: RequestInit; body: unknown }[] = [];

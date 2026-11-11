@@ -61,6 +61,7 @@ export async function quota(db: D1Database, accountId: string, { now, limit }: Q
     periodEndsAt: subscription.periodEndsAt,
     billingPeriod: subscription.billingPeriod,
     renewalPriceUsd: PRICE_USD[subscription.billingPeriod],
+    freePages: row?.free_pages ?? 0,
   };
 }
 

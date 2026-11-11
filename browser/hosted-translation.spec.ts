@@ -149,7 +149,7 @@ const accountIdFromCheckout = (url: string) => new URL(url).searchParams.get('_p
  */
 async function sendSubscriptionCreated(accountId: string, customerId = `ctm_browser_${accountId}`): Promise<void> {
   const now = new Date().toISOString();
-  const body = JSON.stringify({
+  await sendWebhook({
     event_id: `evt_browser_${randomUUID()}`,
     event_type: 'subscription.created',
     occurred_at: now,
@@ -163,6 +163,29 @@ async function sendSubscriptionCreated(accountId: string, customerId = `ctm_brow
       custom_data: { account_id: accountId },
     },
   });
+}
+
+/** 像 Paddle 一樣送一個 transaction.completed：這個 Account 的訂閱剛成功扣款 US$48（Worker 記下，算 Refund Window，#260）。 */
+async function sendTransactionCompleted(accountId: string): Promise<void> {
+  const now = new Date().toISOString();
+  await sendWebhook({
+    event_id: `evt_browser_${randomUUID()}`,
+    event_type: 'transaction.completed',
+    occurred_at: now,
+    data: {
+      id: `txn_browser_${accountId}`,
+      status: 'completed',
+      subscription_id: `sub_browser_${accountId}`,
+      billed_at: now,
+      details: { totals: { grand_total: '4800' } },
+      custom_data: { account_id: accountId },
+    },
+  });
+}
+
+/** 用 env.test 的 secret 簽好、送給本機 Worker 的 webhook。 */
+async function sendWebhook(event: unknown): Promise<void> {
+  const body = JSON.stringify(event);
   const ts = Math.floor(Date.now() / 1000);
   const h1 = createHmac('sha256', TEST_WEBHOOK_SECRET).update(`${ts}:${body}`).digest('hex');
   const response = await fetch(`${WORKER_URL}${PADDLE_WEBHOOK_PATH}`, {
@@ -300,14 +323,19 @@ test('直式捲動的長 Page 捲動兩次只扣一頁：扣掉最後一頁之�
   expect(await sw.evaluate(() => globalThis.__translateCalls ?? 0)).toBe(0);
 });
 
-/** 「查看方案」→ 帳號頁的「訂閱年繳」拿到 Account id、送 webhook，回到 side panel 時已經是訂閱中。畫面上還有頁在翻的話先 waitForVisiblePagesCharged。 */
-async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId?: string): Promise<void> {
+/**
+ * 「查看方案」→ 帳號頁的「訂閱年繳」拿到 Account id、送 webhook，回到 side panel 時已經是訂閱中；回傳 Account id。
+ * 畫面上還有頁在翻的話先 waitForVisiblePagesCharged。
+ */
+async function subscribeOnPanel(panel: Page, context: BrowserContext, customerId?: string): Promise<string> {
   const checkout = await openCheckout(await openPlansFromPanel(panel, context), context, '訂閱年繳');
   await expect.poll(() => checkout.url()).toMatch(/_ptxn=txn_fake_/);
   const closed = checkout.waitForEvent('close');
-  await sendSubscriptionCreated(accountIdFromCheckout(checkout.url()), customerId);
+  const accountId = accountIdFromCheckout(checkout.url());
+  await sendSubscriptionCreated(accountId, customerId);
   await closed;
   await expect(panel.getByRole('status', { name: '剩餘額度' })).toHaveText(/^本月剩 3,000 頁/);
+  return accountId;
 }
 
 // unit 測不到的：帳號頁按下的扣款週期一路帶到 Worker 的結帳 API（假 Paddle 的 transaction id 帶著它）、SW 用新分頁打開付款頁，
@@ -325,6 +353,34 @@ test('帳號頁選年繳：打開年繳的付款頁，帳號頁顯示「你選�
   await expect.poll(() => checkout.url()).toMatch(/^http:\/\/localhost:4321\/zh-tw\/checkout\?_ptxn=txn_fake_yearly_/);
   await expect(account.getByRole('status', { name: '在付款分頁完成付款' })).toContainText('你選的是 年繳 US$48・平均每月 US$4・省 20%。');
   await expect(account.getByRole('region', { name: '訂閱' })).toHaveCount(0);
+});
+
+// unit 測不到的（#260）：Worker 記下 transaction.completed 的扣款、GET /v1/account 的 refund 一路到帳號頁的退款區塊，
+// 原生 <dialog> 的確認對話框、退款 API 經過假 Paddle 成功後帳號頁重讀成「退款處理中」。哪些情況顯示退款區塊在 src/ui/view.test.ts，
+// 退款 API 的規則在 worker/src/refund-request.test.ts。
+test('申請退款：訂閱並扣款後，帳號頁按「申請退款」並確認 → 畫面變成「退款處理中」，管理訂閱照樣保留', async ({
+  context,
+  sw,
+  extensionId,
+  mockSite,
+}, testInfo) => {
+  const { panel } = await activateOnMockSite({ context, sw, extensionId, mockSite });
+  await signInOnPanel(panel, context, freshEmail(testInfo.workerIndex));
+  await waitForVisiblePagesCharged(panel);
+  await sendTransactionCompleted(await subscribeOnPanel(panel, context));
+  const account = await openAccountFromSettings(panel, context);
+  const plan = account.getByRole('region', { name: '目前方案' });
+  await expect(plan.getByRole('group', { name: '退款' })).toContainText('扣款後 14 天內可以申請全額退款');
+
+  await plan.getByRole('button', { name: '申請退款' }).click();
+  const dialog = account.getByRole('dialog', { name: '退款 US$48，並結束訂閱？' });
+  await expect(dialog).toContainText(`訂閱前剩下的 ${FREE_PAGES - VISIBLE_PAGES} 頁免費額度會恢復可用。`);
+  await dialog.getByRole('button', { name: '確定退款' }).click();
+
+  await expect(plan.getByRole('status', { name: '退款處理中' })).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await expect(plan.getByRole('button', { name: '申請退款' })).toHaveCount(0);
+  await expect(plan.getByRole('button', { name: '管理訂閱（付款方式、取消）' })).toBeVisible();
 });
 
 // unit 測不到的：Worker 的 502 經過 hosted-account-client 回到帳號頁，畫面真的出現錯誤、沒有打開新分頁（#156）。

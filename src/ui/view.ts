@@ -1,4 +1,4 @@
-import { FREE_PAGES, MONTHLY_PAGES, lowQuota, pageCount, type BillingPeriod, type Quota } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES, REFUND_WINDOW_DAYS, lowQuota, pageCount, type BillingPeriod, type Quota, type RefundInfo } from '../shared/hosted-api.ts';
 import type { PageView } from '../shared/messages.ts';
 import type { SeriesOption } from '../shared/series.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
@@ -280,7 +280,7 @@ export interface AccountPlanView {
   subscribed: boolean;
 }
 
-type SubscribedQuota = Extract<Quota, { plan: 'subscribed' }>;
+export type SubscribedQuota = Extract<Quota, { plan: 'subscribed' }>;
 
 /** 訂閱的狀態：扣款失敗重試中（照常可以用）、排定取消、訂閱中。設定頁與帳號頁的方案卡片共用。 */
 type SubscriptionState = 'pastDue' | 'cancelScheduled' | 'active';
@@ -339,6 +339,59 @@ export interface AccountPageInput {
   justPaid: BillingPeriod | undefined;
   justSignedIn: boolean;
   hasOrigin: boolean;
+  /** Worker 給的最近一次扣款的退款資訊（GET /v1/account 的 refund）；沒有扣款紀錄是 undefined。 */
+  refund?: RefundInfo;
+  /** 現在時間（算退款期還剩幾天）。 */
+  now: number;
+}
+
+/**
+ * 方案卡片底部的退款區塊（#260，設計稿 B 版）：offer＝在 Refund Window 內可以申請（右邊是「申請退款」），
+ * pending＝已經申請、等 Paddle 核准（同一個位置）。
+ */
+export type RefundBlock = { kind: 'offer'; title: string; detail: string } | { kind: 'pending'; title: string; body: string };
+
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * 訂閱者的退款區塊：能不能申請一律看 Worker 的 eligible（Refund Window、US$0、扣款失敗重試中、申請過都由 Worker 判斷），
+ * 這裡只算「還剩幾天」：不到一天也算 1 天。處理中不看退款期，到 Paddle 有結果前都顯示。
+ */
+function refundBlock(refund: RefundInfo | undefined, now: number): RefundBlock | undefined {
+  if (!refund) return undefined;
+  const charge = `${monthDay(refund.billedAt)}扣款的 ${usd(refund.amountUsd)}`;
+  if (refund.status === 'pending') return { kind: 'pending', title: '退款處理中', body: `已向 Paddle 申請退回 ${charge}。核准前照常可以翻譯；核准後訂閱就會結束。` };
+  if (!refund.eligible) return undefined;
+  const days = Math.max(1, Math.ceil((refund.windowEndsAt - now) / DAY_MS));
+  return {
+    kind: 'offer',
+    title: `扣款後 ${REFUND_WINDOW_DAYS} 天內可以申請全額退款`,
+    detail: `${monthDay(refund.billedAt)}已扣款 ${usd(refund.amountUsd)}・還剩 ${days} 天（到 ${monthDay(refund.windowEndsAt)}）`,
+  };
+}
+
+/** 按「申請退款」後的確認對話框（設計稿 B 版）：確定退款是 danger 按鈕。 */
+export interface RefundDialogView {
+  title: string;
+  points: string[];
+  cancel: string;
+  confirm: string;
+}
+
+export function refundDialogView(quota: SubscribedQuota, refund: RefundInfo): RefundDialogView {
+  const amount = usd(refund.amountUsd);
+  const freePages = quota.freePages ?? 0;
+  return {
+    title: `退款 ${amount}，並結束訂閱？`,
+    points: [
+      `${monthDay(refund.billedAt)}扣款的 ${amount} 會全額退回原本的付款方式，由 Paddle 處理。`,
+      `Paddle 核准退款後，訂閱就會結束，不再有每月 ${pageCount(quota.limit)} 頁。`,
+      freePages > 0 ? `訂閱前剩下的 ${freePages} 頁免費額度會恢復可用。` : '訂閱前的免費額度已經用完，訂閱結束後就不能再翻新的頁。',
+      '核准之前照常可以翻譯。',
+    ],
+    cancel: '先不要',
+    confirm: '確定退款',
+  };
 }
 
 /** 帳號與訂閱頁要顯示什麼（#213，prototype/account-status 的方案 B）。 */
@@ -362,6 +415,8 @@ export interface AccountPageView {
         reset: string | undefined;
         fraction: number;
         warn: boolean;
+        /** 方案卡片底部的退款區塊（只有訂閱者）；undefined＝不顯示。 */
+        refund: RefundBlock | undefined;
       }
     | undefined;
   /**
@@ -411,7 +466,7 @@ const SUBSCRIBE_SECTION: NonNullable<AccountPageView['subscribe']> = {
   note: '從訂閱那天起每月同一天重置，隨時可以取消。付款頁會在新分頁打開（由 Paddle 處理付款）。',
 };
 
-export function accountPageView({ mode, signedIn, quota, payment, justPaid, justSignedIn, hasOrigin }: AccountPageInput): AccountPageView {
+export function accountPageView({ mode, signedIn, quota, payment, justPaid, justSignedIn, hasOrigin, refund, now }: AccountPageInput): AccountPageView {
   const empty = { notice: undefined, plan: undefined, payment: undefined, subscribe: undefined, ownKeyNote: false, signedOut: undefined };
   if (!signedIn) return { ...empty, signedOut: signedOutText(mode) };
   if (!quota) return { ...empty, payment: payment && paymentView(payment), ownKeyNote: mode === 'ownKey' };
@@ -444,6 +499,7 @@ export function accountPageView({ mode, signedIn, quota, payment, justPaid, just
         quotaLabel: '免費額度',
         ...meter(FREE_PAGES, '已用完'),
         reset: undefined,
+        refund: undefined,
       },
       payment: payment && paymentView(payment),
       subscribe: payment && !payment.checkoutClosed ? undefined : SUBSCRIBE_SECTION,
@@ -468,6 +524,7 @@ export function accountPageView({ mode, signedIn, quota, payment, justPaid, just
       quotaLabel: '本月額度',
       ...meter(quota.limit, '本月已用完'),
       reset: `${monthDay(quota.resetsAt)}重置`,
+      refund: refundBlock(refund, now),
     },
     ownKeyNote: !usesAccount,
   };

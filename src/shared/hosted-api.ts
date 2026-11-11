@@ -28,7 +28,7 @@ export const SIGN_OUT_PATH = '/v1/auth/sign-out';
 /**
  * GET（帶 token）：目前的 Account 狀態 AccountResponse。
  * DELETE（帶 token）：刪除帳號，204。有訂閱的先取消 Paddle 訂閱（不退款；active 到扣款週期結束才失效，扣款失敗中或暫停的立即取消），取消失敗回 502 且什麼都不刪；
- * 之後刪除 Account、所有 session（每個 token 都失效）、額度、用量紀錄、訂閱，只保留 email hash（Free Pages 領取紀錄）。
+ * 之後刪除 Account、所有 session（每個 token 都失效）、額度、用量紀錄、訂閱、扣款紀錄，只保留 email hash（Free Pages 領取紀錄）。
  */
 export const ACCOUNT_PATH = '/v1/account';
 /**
@@ -60,6 +60,14 @@ export const CHECKOUT_PATH = '/v1/subscription/checkout';
 export const LEGACY_CHECKOUT_PATH = '/v1/checkout';
 /** POST（帶 token）：用 Paddle API 替這個 Account 的 customer 建立 customer portal session，回傳 PortalResponse；沒訂閱過回 404。 */
 export const PORTAL_PATH = '/v1/subscription/portal';
+/**
+ * POST（帶 token）：替最近一次成功扣款向 Paddle 申請全額退款（Refund Window，ADR 0012），204。退款記為處理中，**不取消訂閱**：
+ * Paddle 核准後 Worker 收到 adjustment 的 webhook 才取消。之後 GET /v1/account 的 refund.status 是 pending。
+ * 不能退時回 409 與原因：refundNoCharge（沒有成功扣款，或那筆扣款的訂閱已經結束）、refundWindowClosed（扣款超過 14 天）、
+ * refundZeroAmount（實付 US$0）、refundPastDue（扣款失敗重試中）、refundPending（已經申請過、處理中）、
+ * refundRejected（Paddle 拒絕過這筆）、refundCompleted（這筆已經退款）。Paddle API 失敗回 502，什麼都不記。
+ */
+export const REFUND_PATH = '/v1/subscription/refund';
 /** Paddle 送 webhook 的路徑（不帶 token，驗 Paddle-Signature）。 */
 export const PADDLE_WEBHOOK_PATH = '/webhooks/paddle';
 /** GET：Worker 與 D1 都能用就回 200 { ok: true }。部署後的健康檢查用（.github/workflows/ci.yml），外掛不呼叫。 */
@@ -136,7 +144,29 @@ export type Quota =
       billingPeriod: BillingPeriod;
       /** 下次續訂要扣的金額（美元、含稅）：這個 Billing Period 現在的標價，所以改版前的訂閱也是新的年繳價。 */
       renewalPriceUsd: number;
+      /** 訂閱前剩下的 Free Pages（訂閱中不扣也不能用，訂閱結束後恢復可用）；舊版 Worker 沒有這個欄位。 */
+      freePages?: number;
     };
+
+/** 最近一次成功扣款的退款狀態：none＝沒申請過、pending＝已向 Paddle 申請、等核准，refunded＝已退款，rejected＝Paddle 拒絕。 */
+export type RefundStatus = 'none' | 'pending' | 'refunded' | 'rejected';
+
+/**
+ * 最近一次成功扣款與它的 Refund Window（ADR 0012：每次扣款後 14 天內可以全額退款）。外掛只依這裡決定退款區塊，不自己算退款期。
+ * 時間是 Unix 毫秒，金額是實付的美元（含稅，折扣後）。
+ */
+export interface RefundInfo {
+  /** 扣款的時間。 */
+  billedAt: number;
+  amountUsd: number;
+  /** Refund Window 的截止：扣款後 14 天。 */
+  windowEndsAt: number;
+  /** 現在還在 Refund Window 內。 */
+  inWindow: boolean;
+  status: RefundStatus;
+  /** 現在可以按「申請退款」：在 Refund Window 內、實付不是 US$0、不是扣款失敗重試中、這筆沒申請過，而且訂閱還在。 */
+  eligible: boolean;
+}
 
 /** 快用完：Free Pages 剩 LOW_FREE_PAGES 頁以下、本月額度剩 LOW_MONTHLY_PAGES 頁以下（用完也算）。 */
 export const lowQuota = (quota: Quota): boolean => quota.remaining <= (quota.plan === 'free' ? LOW_FREE_PAGES : LOW_MONTHLY_PAGES);
@@ -147,6 +177,8 @@ export const pageCount = (pages: number): string => pages.toLocaleString('en-US'
 export interface AccountResponse {
   email: string;
   quota: Quota;
+  /** 最近一次成功扣款的退款資訊（#260）；沒有成功扣款過、或舊版 Worker 是 undefined。 */
+  refund?: RefundInfo;
 }
 
 /**
@@ -159,6 +191,7 @@ export interface AccountResponse {
  *   不是這個 Account 的額度用完，隔天 UTC 0 點恢復
  * - monthlyLimitReached：訂閱中、本月額度用完（402）；重置日期在 GET /v1/account 的 quota.resetsAt
  * - alreadySubscribed：已經訂閱中，不再建立 checkout（409）
+ * - refund*：不能申請退款的原因（409，見 REFUND_PATH）
  */
 export type HostedErrorReason =
   | 'signedOut'
@@ -169,7 +202,18 @@ export type HostedErrorReason =
   | 'freePagesExhausted'
   | 'freePagesPausedToday'
   | 'monthlyLimitReached'
-  | 'alreadySubscribed';
+  | 'alreadySubscribed'
+  | RefundRefusal;
+
+/** 退款 API 拒絕的原因（409）。 */
+export type RefundRefusal =
+  | 'refundNoCharge'
+  | 'refundWindowClosed'
+  | 'refundZeroAmount'
+  | 'refundPastDue'
+  | 'refundPending'
+  | 'refundRejected'
+  | 'refundCompleted';
 
 export interface HostedError {
   error: string;

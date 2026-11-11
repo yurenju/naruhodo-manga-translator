@@ -40,6 +40,24 @@ html, body { margin: 0; background: var(--naru-surface-2); }
 .ac-plan-quota { display: grid; gap: 6px; }
 .ac-plan-quota .ac-meter { display: block; }
 
+/* 退款區塊（#260，設計稿 B 版）：方案卡片底部獨立的淺灰底一塊，左邊兩行文字、右邊「申請退款」 */
+.ac-refund {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--naru-space-2) var(--naru-space-3);
+  padding: var(--naru-space-3); border-radius: var(--naru-radius-sm); background: var(--naru-surface-2);
+}
+.ac-refund__text { display: grid; gap: 2px; font-size: var(--naru-text-small); line-height: 1.5; }
+.ac-refund__detail { color: var(--naru-ink-2); }
+
+/* 確認退款的對話框（原生 <dialog> 的 showModal）：寬 440px，按鈕靠右 */
+.ac-dialog {
+  box-sizing: border-box; width: min(440px, calc(100% - 2 * var(--naru-space-4))); padding: var(--naru-space-5); border: 0;
+  border-radius: var(--naru-radius-md); background: var(--naru-surface); color: var(--naru-ink); box-shadow: var(--naru-shadow-2);
+}
+.ac-dialog::backdrop { background: rgba(31, 29, 26, 0.45); }
+.ac-dialog h3 { margin: 0 0 var(--naru-space-3); font-size: 18px; line-height: 1.4; }
+.ac-dialog ul { display: grid; gap: var(--naru-space-1); margin: 0 0 var(--naru-space-3); padding-left: var(--naru-space-5); font-size: var(--naru-text-small); color: var(--naru-ink-2); }
+.ac-dialog__actions { display: flex; justify-content: flex-end; gap: var(--naru-space-2); margin-top: var(--naru-space-3); }
+
 /* 訂閱：年繳、季繳兩張並排的卡片（#257，設計稿 A 版）。年繳加粗框、標「推薦」；窄的時候上下排 */
 .ac-offers { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--naru-space-3); }
 .ac-offer {

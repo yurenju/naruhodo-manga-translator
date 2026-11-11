@@ -95,14 +95,14 @@ export function monthlyCycle(anchor: number, now: number): { start: number; rese
   return { start: addMonths(anchor, n), resetsAt: addMonths(anchor, n + 1) };
 }
 
-const time = (value: unknown): number | undefined => {
+export const time = (value: unknown): number | undefined => {
   const ms = typeof value === 'string' ? Date.parse(value) : NaN;
   return Number.isNaN(ms) ? undefined : ms;
 };
 
-const object = (value: unknown): Record<string, unknown> => (typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {});
+export const object = (value: unknown): Record<string, unknown> => (typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {});
 
-const text = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
+export const text = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
 /**
  * 訂閱的 item 的 price 是哪一種 Billing Period：季繳的 price 是季繳，其他都當年繳，包括改版前的年繳 US$20
