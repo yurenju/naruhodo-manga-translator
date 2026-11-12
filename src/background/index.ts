@@ -97,8 +97,8 @@ const scanner = createScanner({
     const tab = await chrome.tabs.get(tabId);
     return tab.active ? tab.windowId : undefined;
   },
-  prepareCapture: (tabId, hideOverlay) =>
-    chrome.tabs.sendMessage<Message, CapturePreparedResponse>(tabId, { type: 'content:prepareCapture', hideOverlay }),
+  prepareCapture: (tabId, hideOverlay, mark) =>
+    chrome.tabs.sendMessage<Message, CapturePreparedResponse>(tabId, { type: 'content:prepareCapture', hideOverlay, mark }),
   finishCapture: (tabId) => chrome.tabs.sendMessage<Message, CaptureFinishedResponse>(tabId, { type: 'content:finishCapture' }),
   async captureWindow(windowId) {
     if (__E2E__) (globalThis.__captureLog ??= []).push(Date.now());
@@ -113,8 +113,8 @@ const scanner = createScanner({
     const startedAt = Date.now();
     const response = await chrome.runtime.sendMessage<Message, CropResponse>({ type: 'offscreen:crop', ...request });
     if ('error' in response) throw new Error(`crop failed: ${response.error}`);
-    trace('crop', { ms: Date.now() - startedAt, pages: response.pages });
-    return response.pages;
+    trace('crop', { ms: Date.now() - startedAt, frame: response.frame, pages: response.pages });
+    return response;
   },
   publish(tabId, pages, capture) {
     // 沒有 capture＝畫面上沒有完整可見的 Page（或停止）；停止時的清理在 onStatusChanged

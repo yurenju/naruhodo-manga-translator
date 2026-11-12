@@ -1,3 +1,4 @@
+import type { FrameMark, FrameVerdict } from './frame-mark.ts';
 import type { BillingPeriod } from './hosted-api.ts';
 import type { Stripe } from './long-page.ts';
 import type { PageText, RatioRect } from './page-text.ts';
@@ -77,8 +78,9 @@ export type Message =
   | { type: 'content:confirmOverlay'; anchorId: string }
   /**
    * SW → content script：截圖前開始重繪動畫（#60）、藏起疊在 Page 上的元素（#59），hideOverlay 時也藏覆蓋層；等兩個 rAF（已重繪）才回應 CapturePreparedResponse。
+   * mark：同時畫上的 frame 記號（shared/frame-mark.ts）。
    */
-  | { type: 'content:prepareCapture'; hideOverlay: boolean }
+  | { type: 'content:prepareCapture'; hideOverlay: boolean; mark: FrameMark }
   /** SW → content script：截完還原。回應 CaptureFinishedResponse。 */
   | { type: 'content:finishCapture' }
   /** content script → SW：翻頁訊號 debounce 後（#34）。SW 截圖比對 hash，變了才算翻頁。 */
@@ -262,6 +264,8 @@ export interface PageCandidatesResponse {
 export interface CropRequest extends PageCandidatesResponse {
   /** captureVisibleTab 的 data URL。 */
   screenshot: string;
+  /** 截圖前畫的 frame 記號：offscreen 用它判斷截到的是不是準備好之後的 frame，並在裁切前蓋掉它。 */
+  frameMark: FrameMark;
 }
 
 export interface PageThumb extends PageCandidate {
@@ -278,7 +282,8 @@ export interface PageThumb extends PageCandidate {
   stripes?: Stripe[];
 }
 
-export type CropResponse = { pages: PageThumb[] } | { error: string };
+/** frame：截圖是不是準備好之後的（shared/frame-mark.ts）；不是 fresh 時 pages 照樣算，由 SW 決定要不要重截。 */
+export type CropResponse = { pages: PageThumb[]; frame: FrameVerdict } | { error: string };
 
 /**
  * 狀態列顯示的翻譯資訊（spec #27 第 8 節）：「已翻譯」或「快取」・模型・秒數・費用。
@@ -335,6 +340,8 @@ export interface PipelineConfig {
 
 export interface AnalyzeRequest {
   screenshot: string;
+  /** 截圖裡的 frame 記號，裁切前蓋掉（CropRequest.frameMark）。 */
+  frameMark: FrameMark;
   viewport: Size;
   candidate: PageCandidate;
   /** Page 在候選裡的範圍（PageThumb.subRect）；省略＝整個候選。 */

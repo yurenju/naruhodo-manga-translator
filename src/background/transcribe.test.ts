@@ -46,7 +46,7 @@ const thumb = (anchorId: string, pageHash = HASHES[anchorId] ?? '0'.repeat(64)):
   thumbnail: `data:${anchorId}`,
   pageHash,
 });
-const capture: Capture = { screenshot: 'data:shot', viewport: { width: 100, height: 100 }, candidates: [], overlayShown: false };
+const capture: Capture = { screenshot: 'data:shot', frameMark: 0, viewport: { width: 100, height: 100 }, candidates: [], overlayShown: false };
 
 /** 記憶體裡的快取；查詢只比對完全相同的 hash（門檻比對由 page-hash.test.ts 負責）。 */
 function memoryCache(): PageCache & { saved: PageTranslation[] } {

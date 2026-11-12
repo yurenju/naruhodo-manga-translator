@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FrameMark, FrameVerdict } from '../shared/frame-mark.ts';
 import type { PageCandidate, PageThumb } from '../shared/messages.ts';
 import { createScanner, type ScannerDeps } from './scan.ts';
 
@@ -33,6 +34,12 @@ function fakeDeps(candidates: PageCandidate[] = [P1]) {
     stable: [] as boolean[],
     /** 每次準備截圖時頁面有沒有重繪（rAF 有沒有跑），依序取用；用完就是 true。 */
     painted: [] as boolean[],
+    /** 每次 crop 判斷截到的 frame，依序取用；用完就是 fresh。 */
+    frames: [] as FrameVerdict[],
+    /** 每次準備截圖時畫的 frame 記號。 */
+    marks: [] as FrameMark[],
+    /** 每次 crop 收到的 frame 記號。 */
+    cropMarks: [] as FrameMark[],
   };
   const deps: ScannerDeps = {
     findPageCandidates: async () => {
@@ -49,19 +56,23 @@ function fakeDeps(candidates: PageCandidate[] = [P1]) {
       env.onCapture();
       return `data:image/png;base64,SCREENSHOT${captures.length}`;
     },
-    crop: async ({ screenshot, candidates }) =>
-      candidates.map((c) => {
+    crop: async ({ screenshot, frameMark, candidates }) => {
+      env.cropMarks.push(frameMark);
+      const pages = candidates.map((c) => {
         const withOverlay = !env.capturedHidden && (c.overlaid?.length ?? 0) > 0;
         const pageHash = (withOverlay ? env.overlaidHash[c.anchorId] : env.cleanHash[c.anchorId]) ?? c.anchorId;
         return { anchorId: c.anchorId, rect: c.rect, thumbnail: `thumb(${screenshot},${c.anchorId})`, pageHash };
-      }),
+      });
+      return { pages, frame: env.frames.shift() ?? 'fresh' };
+    },
     publish: (tabId, pages, capture) => {
       published.push([tabId, pages]);
       publishedCaptures.push(capture);
     },
     // hide＝連覆蓋層一起藏；prepare＝只藏網站的遮擋物
-    prepareCapture: async (tabId, hideOverlay) => {
+    prepareCapture: async (tabId, hideOverlay, mark) => {
       env.hidden = hideOverlay;
+      env.marks.push(mark);
       events.push(`${hideOverlay ? 'hide' : 'prepare'} ${tabId}`);
       return { painted: env.painted.shift() ?? true };
     },
@@ -106,7 +117,7 @@ describe('scan', () => {
 
     await settle(scanner.scan(1));
 
-    expect(captures).toEqual([{ screenshot: 'data:image/png;base64,SCREENSHOT1', viewport: VIEWPORT, candidates: [P1], overlayShown: false }]);
+    expect(captures).toEqual([{ screenshot: 'data:image/png;base64,SCREENSHOT1', frameMark: 0, viewport: VIEWPORT, candidates: [P1], overlayShown: false }]);
   });
 
   it('沒有 Page 候選就不截圖，公布空清單', async () => {
@@ -265,6 +276,98 @@ describe('scan', () => {
     });
   });
 
+  describe('截到準備之前的舊 frame（兩個 rAF 跑完，captureVisibleTab 仍交回藏東西之前的畫面）', () => {
+    it('每次截圖的 frame 記號對調，crop 拿到同一次的記號', async () => {
+      const chrome = fakeDeps();
+      const scanner = createScanner(chrome.deps);
+
+      await settle(scanner.scan(1));
+      await settle(scanner.scan(1));
+
+      expect(chrome.env.marks).toEqual([0, 1]);
+      expect(chrome.env.cropMarks).toEqual([0, 1]);
+    });
+
+    it('截圖裡沒有這次的記號就丟掉、重截，公布重截的那張', async () => {
+      const chrome = fakeDeps();
+      chrome.env.frames = ['missing'];
+      const scanner = createScanner(chrome.deps);
+
+      await settle(scanner.scan(1));
+
+      expect(chrome.captures).toHaveLength(2);
+      expect(chrome.published).toHaveLength(1);
+      expect(scanner.getPages(1)[0]!.thumbnail).toBe('thumb(data:image/png;base64,SCREENSHOT2,a1)');
+    });
+
+    it('截到上一次截圖的記號（另一個 mark）也重截', async () => {
+      const chrome = fakeDeps();
+      chrome.env.frames = ['stale'];
+      const scanner = createScanner(chrome.deps);
+
+      await settle(scanner.scan(1));
+
+      expect(chrome.captures).toHaveLength(2);
+      expect(scanner.getPages(1)[0]!.thumbnail).toBe('thumb(data:image/png;base64,SCREENSHOT2,a1)');
+    });
+
+    it('一直截到舊 frame 就放棄，不公布、不丟錯（等下一次觸發）', async () => {
+      const chrome = fakeDeps();
+      chrome.env.frames = ['stale', 'stale', 'stale'];
+      const scanner = createScanner(chrome.deps);
+
+      await settle(scanner.scan(1));
+
+      expect(chrome.captures).toHaveLength(3);
+      expect(chrome.published).toEqual([]);
+    });
+
+    it('同一次掃描連兩張都沒有記號：當記號被網站蓋住（全螢幕等），照用；之後這個 tab 沒有記號也不重截', async () => {
+      const chrome = fakeDeps();
+      chrome.env.frames = ['missing', 'missing', 'missing'];
+      const scanner = createScanner(chrome.deps);
+
+      await settle(scanner.scan(1));
+      expect(chrome.captures).toHaveLength(2);
+      expect(chrome.published).toHaveLength(1);
+
+      await settle(scanner.scan(1));
+      expect(chrome.captures).toHaveLength(3);
+      expect(chrome.published).toHaveLength(2);
+    });
+
+    it('記號又看得到了就恢復檢查', async () => {
+      const chrome = fakeDeps();
+      chrome.env.frames = ['missing', 'missing', 'fresh', 'missing'];
+      const scanner = createScanner(chrome.deps);
+      await settle(scanner.scan(1));
+      await settle(scanner.scan(1));
+
+      await settle(scanner.scan(1));
+
+      expect(chrome.captures).toHaveLength(5);
+      expect(chrome.published).toHaveLength(3);
+    });
+
+    it('記帶覆蓋層的樣子時截到舊 frame 就不記（舊 frame 上可能還沒有覆蓋層）', async () => {
+      const A1 = 'a'.repeat(64);
+      const chrome = fakeDeps();
+      chrome.env.cleanHash.a1 = A1;
+      chrome.env.overlaidHash.a1 = 'b'.repeat(64);
+      const scanner = createScanner(chrome.deps);
+      await settle(scanner.scan(1));
+      chrome.env.candidates = [{ ...P1, overlaid: [A1] }];
+      chrome.env.frames = ['missing'];
+
+      await settle(scanner.recordOverlaid(1));
+      chrome.events.length = 0;
+      await settle(scanner.scan(1));
+
+      // 沒記到：下一次掃描照舊藏覆蓋層
+      expect(chrome.events.slice(0, 3)).toEqual(['hide 1', 'capture', 'restore 1']);
+    });
+  });
+
   describe('疊在 Page 上的網站元素（#59）', () => {
     it('不藏覆蓋層的那種截圖也要先藏網站的遮擋物', async () => {
       const chrome = fakeDeps([{ ...P1, overlaid: ['0'.repeat(64)] }]);
@@ -306,14 +409,16 @@ describe('scan', () => {
       const RIGHT = CLEAN;
       const LEFT = '0f'.repeat(32);
       const chrome = fakeDeps([P1]);
-      chrome.deps.crop = async ({ candidates }) =>
-        candidates.flatMap((c) => {
+      chrome.deps.crop = async ({ candidates }) => ({
+        frame: 'fresh',
+        pages: candidates.flatMap((c) => {
           const overlaid = !chrome.env.capturedHidden && (c.overlaid?.length ?? 0) > 0;
           return [
             { anchorId: c.anchorId, rect: c.rect, subRect: { x: 0.5, y: 0, w: 0.5, h: 1 }, thumbnail: 'r', pageHash: overlaid ? WITH_OVERLAY : RIGHT },
             { anchorId: c.anchorId, rect: c.rect, subRect: { x: 0, y: 0, w: 0.5, h: 1 }, thumbnail: 'l', pageHash: LEFT },
           ];
-        });
+        }),
+      });
       const scanner = createScanner(chrome.deps);
       await settle(scanner.scan(1));
       chrome.env.candidates = [{ ...P1, overlaid: [RIGHT] }];
