@@ -16,14 +16,16 @@ function setup() {
   const shown: [number, string, PageText][] = [];
   const pageHashes: string[] = [];
   const subs: (RatioRect | undefined)[] = [];
+  const removed: { tabId: number; anchorId: string; pageHashes: string[] }[] = [];
   const sync = createOverlaySync({
     show: ({ tabId, anchorId, pageHash, subRect, text }) => {
       shown.push([tabId, anchorId, text]);
       pageHashes.push(pageHash);
       subs.push(subRect);
     },
+    remove: (r) => removed.push(r),
   });
-  return { sync, shown, pageHashes, subs };
+  return { sync, shown, pageHashes, subs, removed };
 }
 
 describe('overlay sync', () => {
@@ -119,5 +121,60 @@ describe('overlay sync', () => {
     sync.publish(1, [page('a1', done)]);
 
     expect(shown).toHaveLength(1);
+  });
+
+  // #276：電子書閱讀器兩張 canvas 輪流畫頁，canvas 重畫沒有 src 可看；截圖才知道 anchor 上已經換頁
+  describe('擷取到的 anchor 上換了別的 Page（覆蓋層還是舊的）', () => {
+    const done: PageView['transcript'] = { state: 'done', text: TEXT, translated: true };
+    const OLD_RIGHT = 'a'.repeat(64);
+    const OLD_LEFT = 'b'.repeat(64);
+    const NEW_RIGHT = '1'.repeat(64);
+    const NEW_LEFT = '2'.repeat(64);
+
+    it('Spread：兩頁都換了，兩層舊覆蓋一起拿掉，不等新頁翻好', () => {
+      const { sync, removed } = setup();
+      const overlaid = [OLD_RIGHT, OLD_LEFT];
+
+      sync.captured(1, [{ ...page('a1', { state: 'analyzing' }, NEW_RIGHT), overlaid }, { ...page('a1', { state: 'analyzing' }, NEW_LEFT), overlaid }]);
+
+      expect(removed).toEqual([{ tabId: 1, anchorId: 'a1', pageHashes: [OLD_RIGHT, OLD_LEFT] }]);
+    });
+
+    it('還是同一頁（hash 只差一點）：不拿掉', () => {
+      const { sync, removed } = setup();
+      const nearlySame = `${'0'.repeat(63)}1`;
+
+      sync.captured(1, [{ ...page('a1', done), overlaid: [nearlySame] }]);
+
+      expect(removed).toEqual([]);
+    });
+
+    it('只換了一頁：只拿掉換掉的那層', () => {
+      const { sync, removed } = setup();
+      const overlaid = [OLD_RIGHT, OLD_LEFT];
+
+      sync.captured(1, [{ ...page('a1', done, OLD_RIGHT), overlaid }, { ...page('a1', { state: 'analyzing' }, NEW_LEFT), overlaid }]);
+
+      expect(removed).toEqual([{ tabId: 1, anchorId: 'a1', pageHashes: [OLD_LEFT] }]);
+    });
+
+    it('長 Page（visible）不比：它的 pageHash 是橫條，不是 Page 身分', () => {
+      const { sync, removed } = setup();
+      const visible = { x: 0, y: 0, width: 430, height: 300 };
+
+      sync.captured(1, [{ ...page('a1', { state: 'analyzing' }, NEW_RIGHT), visible, overlaid: [OLD_RIGHT] }]);
+
+      expect(removed).toEqual([]);
+    });
+
+    it('拿掉之後同一頁換回這個 anchor：再送一次', () => {
+      const { sync, shown } = setup();
+
+      sync.publish(1, [page('a1', done, OLD_RIGHT)]);
+      sync.captured(1, [{ ...page('a1', { state: 'analyzing' }, NEW_RIGHT), overlaid: [OLD_RIGHT] }]);
+      sync.publish(1, [page('a1', done, OLD_RIGHT)]);
+
+      expect(shown).toHaveLength(2);
+    });
   });
 });

@@ -304,6 +304,20 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     entry.layers.clear();
   }
 
+  /** 拿掉 anchor 上這幾頁的覆蓋層：截圖看到 anchor 上已經換成別頁（canvas 重畫沒有 src 可看，#276）。 */
+  function remove(anchor: HTMLElement, pageHashes: readonly string[]): void {
+    const entry = entries.get(anchor);
+    if (!entry) return;
+    const olds = [...entry.layers].filter(([, layer]) => pageHashes.includes(layer.pageHash));
+    if (olds.length === 0) return;
+    trace('overlay:remove', { pageHashes: olds.map(([, layer]) => layer.pageHash), reason: '截圖看到 anchor 上換頁了' });
+    for (const [key, layer] of olds) {
+      if (hovered?.layer === layer) setHovered(undefined);
+      entry.layers.delete(key);
+      layer.element.remove();
+    }
+  }
+
   function place(entry: Entry): void {
     for (const layer of entry.layers.values()) {
       const t = layerTransform(entry.anchor, layer.sub, layer.size);
@@ -800,7 +814,7 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     return changedParents.has(element as HTMLElement);
   }
 
-  return { show, highlight, setPageMode, setStatuses, hideForCapture, hideStatusForCapture, restoreAfterCapture, shownPages, coveredRects, clear, ownsStyleOf };
+  return { show, remove, highlight, setPageMode, setStatuses, hideForCapture, hideStatusForCapture, restoreAfterCapture, shownPages, coveredRects, clear, ownsStyleOf };
 }
 
 export type Overlay = ReturnType<typeof createOverlay>;

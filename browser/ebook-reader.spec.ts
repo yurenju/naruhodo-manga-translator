@@ -28,8 +28,9 @@ function readerOverlay(page: Page): Promise<ReaderOverlay> {
       const r = el.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     };
-    // 多張 img 輪流用時（buffers）取看得到的那張；藏起來的 img 上的譯文也要看不到才算
-    const img = [...document.querySelectorAll<HTMLImageElement>('#zoom > img')].find((el) => el.checkVisibility({ visibilityProperty: true }))!;
+    // 多張 img／canvas 輪流用時（buffers）取看得到的那張；藏起來的那張上的譯文也要看不到才算
+    const shown = [...document.querySelectorAll<HTMLImageElement | HTMLCanvasElement>('#zoom > img, #zoom > canvas')].find((el) => el.checkVisibility({ visibilityProperty: true }))!;
+    const img = shown instanceof HTMLCanvasElement ? Object.assign(shown, { naturalWidth: shown.width, naturalHeight: shown.height }) : shown;
     const texts = [...document.querySelectorAll('[data-naruhodo-overlay]')].flatMap((host) =>
       [...host.shadowRoot!.querySelectorAll('[data-balloon-id]')]
         .filter((el) => el.checkVisibility({ visibilityProperty: true }))
@@ -170,6 +171,24 @@ test('多張 img 輪流用（visibility 切換）：翻頁後藏起來的那張�
   expect((await overlaidTexts(page, 'p01-basic')).length, '翻回 p08 後還看得到 p01 的譯文').toBe(0);
   expect((await overlaidTexts(page, 'p07-spread')).length, '翻回 p08 後還看得到 p07 的譯文').toBe(0);
   await expectAligned(page, 'p08-action', '翻回來後');
+});
+
+test.describe('兩張 canvas 輪流用（#276）', () => {
+  // OCR 放慢：新頁還沒翻好的這段時間，才看得出舊譯文有沒有先拿掉
+  test.use({ fakeOcrDelayMs: 1500 });
+
+  test('畫進還留著舊譯文的 canvas：截圖認出換頁後，舊譯文在新頁翻好前就拿掉', async ({ context, sw, extensionId, mockSite }) => {
+    const { page } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: `${mockSite.ebookReaderUrl}?buffers=2&canvas=1` });
+    await waitForOverlay(page, 'p07-spread');
+    await turnTo(page, 'ArrowLeft', 1);
+    await waitForOverlay(page, 'p08-action');
+
+    // p01 畫回第一張 canvas，那張上面還掛著 p07 的覆蓋層
+    await turnTo(page, 'ArrowLeft', 2);
+    await expect.poll(async () => (await overlaidTexts(page, 'p07-spread')).length, '換頁後 p07 的譯文還留在新頁上').toBe(0);
+    expect((await overlaidTexts(page, 'p01-basic')).length, 'p07 的譯文是被 p01 的譯文蓋掉的，不是先拿掉').toBe(0);
+    await waitForOverlay(page, 'p01-basic');
+  });
 });
 
 /** 仿電子書閱讀器工具列上的文字（browser/mock-site/ebook-reader.ts）：截到工具列的話 OCR 會讀到。 */
