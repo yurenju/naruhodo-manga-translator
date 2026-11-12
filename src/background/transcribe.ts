@@ -191,6 +191,7 @@ const sameSlice = (a: Slice, b: Slice) => Math.abs(a.top - b.top) < SAME_SLICE &
 function analyzeRequestOf(page: PageThumb, capture: CropRequest): AnalyzeRequest {
   return {
     screenshot: capture.screenshot,
+    frameMark: capture.frameMark,
     viewport: capture.viewport,
     candidate: { anchorId: page.anchorId, rect: page.rect, ...(page.visible ? { visible: page.visible } : {}) },
     subRect: page.subRect,

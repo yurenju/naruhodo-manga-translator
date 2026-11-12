@@ -4,6 +4,7 @@ import { SYNTHETIC_GROUND_TRUTH } from '../background/synthetic-ground-truth.ts'
 import { boxToRatio, ERASE_PADDING, expandBox, ratioToBox, tupleBox } from '../content/overlay-layout.ts';
 import { indexedDbApiKeyStore } from '../shared/api-key-store.ts';
 import { createFakeTranslator } from '../shared/fake-translator.ts';
+import { frameMarkGeometry, judgeFrame, type FrameMark, type FrameVerdict } from '../shared/frame-mark.ts';
 import type {
   AnalyzeRequest,
   AnalyzeResponse,
@@ -48,10 +49,11 @@ const THUMBNAIL_WIDTH = 240;
  * 每個候選去黑邊、Spread 切成兩頁（spread.ts），每頁各自縮圖、算 hash。回傳依閱讀順序：同一個候選的
  * Spread 先右後左，side panel 與翻譯佇列都照這個順序。
  */
-async function crop({ screenshot, viewport, candidates }: CropRequest): Promise<PageThumb[]> {
-  const bitmap = await createImageBitmap(await (await fetch(screenshot)).blob());
+async function crop({ screenshot, frameMark, viewport, candidates }: CropRequest): Promise<{ pages: PageThumb[]; frame: FrameVerdict }> {
+  const { bitmap, frame } = await decodeScreenshot(screenshot, viewport, frameMark);
   try {
-    return candidates.flatMap((candidate) => {
+    if (frame !== 'fresh') trace('capture:frame', { frame, frameMark });
+    const pages = candidates.flatMap((candidate) => {
       if (candidate.visible) return [longPageThumb(bitmap, viewport, candidate, candidate.visible)];
       const src = toImageRect(candidate.rect, viewport, bitmap);
       const gray = grayOf(bitmap, src);
@@ -72,9 +74,31 @@ async function crop({ screenshot, viewport, candidates }: CropRequest): Promise<
         };
       });
     });
+    return { pages, frame };
   } finally {
     bitmap.close();
   }
+}
+
+/**
+ * 解碼截圖、讀 frame 記號（shared/frame-mark.ts），再用記號右邊那一行像素蓋掉它：記號不能進 hash、去黑邊與 OCR。
+ */
+async function decodeScreenshot(screenshot: string, viewport: Size, mark: FrameMark): Promise<{ bitmap: ImageBitmap; frame: FrameVerdict }> {
+  const raw = await createImageBitmap(await (await fetch(screenshot)).blob());
+  const canvas = new OffscreenCanvas(raw.width, raw.height);
+  const ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(raw, 0, 0);
+  const { samples, eraseRect } = frameMarkGeometry(viewport, raw);
+  raw.close();
+  const rgb = ({ x, y }: { x: number; y: number }) => {
+    const [r = 0, g = 0, b = 0] = ctx.getImageData(x, y, 1, 1).data;
+    return [r, g, b] as const;
+  };
+  const frame = judgeFrame(rgb(samples[0]), rgb(samples[1]), mark);
+  const { width, height } = eraseRect;
+  if (width < canvas.width && height <= canvas.height) ctx.drawImage(canvas, width, 0, 1, height, 0, 0, width, height);
+  return { bitmap: canvas.transferToImageBitmap(), frame };
 }
 
 /**
@@ -134,9 +158,9 @@ const pipeline = createLocalPipeline({
  * 從截圖裁出全解析度的 Page（Spread 的一頁用 subRect）跑本機流水線（座標換算與縮圖相同）；順便從同一張截圖算每個 Balloon 的擦除底色
  * （原地覆蓋用，canvas 網站的 canvas 是 tainted，content script 讀不到像素）。
  */
-async function analyze({ screenshot, viewport, candidate, subRect, collected = [], notesNames = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
+async function analyze({ screenshot, frameMark, viewport, candidate, subRect, collected = [], notesNames = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
   if (__E2E__ && config) pipeline.configure(config);
-  const bitmap = await createImageBitmap(await (await fetch(screenshot)).blob());
+  const { bitmap } = await decodeScreenshot(screenshot, viewport, frameMark);
   try {
     const candidateRect = toImageRect(candidate.visible ?? candidate.rect, viewport, bitmap);
     const rect = subRect ? subImageRect(candidateRect, subRect) : candidateRect;
@@ -328,7 +352,7 @@ async function testConnection(): Promise<TestConnectionResponse> {
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
   if (message.type === 'offscreen:crop') {
     crop(message).then(
-      (pages) => sendResponse({ pages } satisfies CropResponse),
+      (result) => sendResponse(result satisfies CropResponse),
       (e: unknown) => sendResponse({ error: String(e) } satisfies CropResponse),
     );
     return true;

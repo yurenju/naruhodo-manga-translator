@@ -191,7 +191,7 @@ if (!globalThis.__naruhodo) {
         return false;
       }
       case 'content:prepareCapture':
-        void capturePrep.prepare(message.hideOverlay).then((r) => sendResponse(r satisfies CapturePreparedResponse));
+        void capturePrep.prepare(message.hideOverlay, message.mark).then((r) => sendResponse(r satisfies CapturePreparedResponse));
         return true;
       case 'content:finishCapture': {
         const { stable, overlayHiddenMs } = capturePrep.finish();

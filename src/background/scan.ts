@@ -2,6 +2,7 @@
  * 找 Page → 截圖 → 裁切（spec #27 第 3.2 節）。
  * Chrome API 與其他 context 都從 deps 注入，SW 的 index.ts 負責接上真的 chrome.*。
  */
+import type { FrameMark, FrameVerdict } from '../shared/frame-mark.ts';
 import type { CropRequest, PageCandidate, PageCandidatesResponse, PageThumb } from '../shared/messages.ts';
 import { findSamePage } from '../shared/page-hash.ts';
 import { createTrace } from '../shared/trace.ts';
@@ -25,13 +26,15 @@ export interface ScannerDeps {
    * 截圖前：讓頁面持續重繪（#60）、藏起疊在 Page 上的網站元素（工具列、翻頁感應區，#59），hideOverlay 時
    * 也藏自己的覆蓋層（shadow host）；等到瀏覽器重繪完才 resolve（spec #27 第 3.2 節）。
    * painted＝false：等不到重繪（rAF 沒跑），頁面沒在產生新畫面，這時截到的是很久以前的舊 frame（#197）。
+   * mark：同時畫上的 frame 記號（shared/frame-mark.ts），crop 用它認出截到的是不是準備好之後的 frame。
    */
-  prepareCapture(tabId: number, hideOverlay: boolean): Promise<{ painted: boolean }>;
+  prepareCapture(tabId: number, hideOverlay: boolean, mark: FrameMark): Promise<{ painted: boolean }>;
   /** 截完立刻還原。stable＝false：藏起來的元素在截圖期間被換掉，截圖不能用。 */
   finishCapture(tabId: number): Promise<{ stable: boolean }>;
   /** 截圖。要在呼叫當下就送出 captureVisibleTab，限速是以呼叫的時間計算。 */
   captureWindow(windowId: number): Promise<string>;
-  crop(request: CropRequest): Promise<PageThumb[]>;
+  /** frame：截圖是不是 request.frameMark 那次準備之後的 frame。 */
+  crop(request: CropRequest): Promise<{ pages: PageThumb[]; frame: FrameVerdict }>;
   /** capture＝這次的截圖與版面（沒有 Page 或停止時是 undefined），給後面的本機流水線裁全解析度的 Page。 */
   publish(tabId: number, pages: PageThumb[], capture?: Capture): void;
 }
@@ -62,6 +65,28 @@ export function createScanner(deps: ScannerDeps) {
   /** 掃描一次只跑一個（跨 tab），限速才算得準。 */
   let queue: Promise<void> = Promise.resolve();
   let lastCaptureAt = -Infinity;
+  /** 下一次截圖的 frame 記號：每次對調，上一次截圖的 frame 也認得出來。 */
+  let nextMark: FrameMark = 0;
+  /** 截圖裡一直看不到 frame 記號的 tab（記號被網站的 top layer 蓋住等）：沒有記號的截圖照用，看到記號就恢復檢查。 */
+  const markHidden = new Set<number>();
+
+  /**
+   * 截到的 frame 能不能用。prepareCapture 等完兩個 rAF，captureVisibleTab 偶爾仍交回準備之前的 frame（高負載下），
+   * 藏起來的網站工具列、自己的狀態小標籤都在裡面。沒有記號的截圖第一次當舊 frame 重截；同一次掃描又沒有，
+   * 就當記號被蓋住，照用（跟沒有這個檢查時一樣）。
+   */
+  function frameUsable(tabId: number, frame: FrameVerdict, missedBefore: boolean): boolean {
+    if (frame === 'fresh') {
+      markHidden.delete(tabId);
+      return true;
+    }
+    if (frame === 'missing' && (markHidden.has(tabId) || missedBefore)) {
+      if (!markHidden.has(tabId)) trace('scan:frameMarkHidden', { tabId });
+      markHidden.add(tabId);
+      return true;
+    }
+    return false;
+  }
 
   async function waitForCaptureAllowed(): Promise<void> {
     const wait = lastCaptureAt + CAPTURE_INTERVAL_MS - Date.now();
@@ -111,14 +136,16 @@ export function createScanner(deps: ScannerDeps) {
    * 截圖前後的準備一律做（藏網站的遮擋物）；hideOverlay 決定要不要連自己的覆蓋層一起藏。
    * 頁面沒重繪就不截（screenshot 是 undefined）：真實 Chrome 這時會等 1.6 s 再交回最後一張舊 frame（#197）。
    */
-  async function capture(windowId: number, tabId: number, hideOverlay: boolean): Promise<{ screenshot: string | undefined; stable: boolean }> {
+  async function capture(windowId: number, tabId: number, hideOverlay: boolean): Promise<{ screenshot: string | undefined; stable: boolean; mark: FrameMark }> {
     let screenshot: string | undefined;
+    const mark = nextMark;
+    nextMark = mark === 0 ? 1 : 0;
     try {
-      const { painted } = await deps.prepareCapture(tabId, hideOverlay);
+      const { painted } = await deps.prepareCapture(tabId, hideOverlay, mark);
       if (!painted) {
         trace('scan:notPainted', { tabId });
         await deps.finishCapture(tabId);
-        return { screenshot: undefined, stable: true };
+        return { screenshot: undefined, stable: true, mark };
       }
       lastCaptureAt = Date.now();
       screenshot = await deps.captureWindow(windowId);
@@ -128,13 +155,17 @@ export function createScanner(deps: ScannerDeps) {
       throw e;
     }
     const { stable } = await deps.finishCapture(tabId);
-    return { screenshot, stable };
+    return { screenshot, stable, mark };
   }
 
   async function scanOnce(tabId: number, generation: number): Promise<void> {
     const isCurrentGeneration = () => (generations.get(tabId) ?? 0) === generation;
     let forceHide = hideNext.delete(tabId);
     let notPainted = false;
+    /** 這次掃描已經截到過沒有 frame 記號的截圖。 */
+    let missedMark = false;
+    /** 最後一次是因為截到舊 frame 而重來。 */
+    let staleFrame = false;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       // 等完才量 rect，rect 才不會在等待期間過時。
       await waitForCaptureAllowed();
@@ -155,7 +186,8 @@ export function createScanner(deps: ScannerDeps) {
       // 藏著的這段時間中文會閃回日文；已經記過帶覆蓋層樣子的 Page 就不藏，改用那個樣子認。網站疊在 Page 上的
       // 元素（工具列等）不管哪一種都藏（#59）。
       const keep = !forceHide && canKeepOverlay(tabId, before.candidates);
-      const { screenshot, stable } = await capture(windowId, tabId, !keep);
+      const { screenshot, stable, mark } = await capture(windowId, tabId, !keep);
+      staleFrame = false;
       // 頁面沒在產生新畫面（例如視窗被擋住）：舊 frame 可能還是上一頁、甚至帶著覆蓋層，認成翻好的頁就會把舊譯文蓋上新頁。
       // 一時卡住（長 task）重試就好；一直不重繪就放棄，等頁面重新可見時的翻頁訊號
       notPainted = screenshot === undefined;
@@ -169,8 +201,14 @@ export function createScanner(deps: ScannerDeps) {
         trace('scan:layoutChanged', { tabId, attempt });
         continue;
       }
-      const request: CropRequest = { screenshot, ...before };
-      const cropped = await deps.crop(request);
+      const request: CropRequest = { screenshot, frameMark: mark, ...before };
+      const { pages: cropped, frame } = await deps.crop(request);
+      if (!frameUsable(tabId, frame, missedMark)) {
+        trace('scan:staleFrame', { tabId, attempt, frame });
+        missedMark ||= frame === 'missing';
+        staleFrame = true;
+        continue;
+      }
       const result = keep ? toCleanPages(tabId, before.candidates, cropped) : cropped;
       if (!result) {
         forceHide = true;
@@ -183,7 +221,8 @@ export function createScanner(deps: ScannerDeps) {
       if (!keep && withOverlay(before.candidates).length > 0 && !canKeepOverlay(tabId, before.candidates)) void recordOverlaid(tabId);
       return;
     }
-    if (notPainted) return;
+    // 一直截到舊 frame 跟一直不重繪一樣：等下一次觸發
+    if (notPainted || staleFrame) return;
     throw new Error(`layout kept changing during capture (tab ${tabId})`);
   }
 
@@ -209,10 +248,11 @@ export function createScanner(deps: ScannerDeps) {
     if (shown.length === 0) return;
     const windowId = await deps.getVisibleWindowId(tabId);
     if (windowId === undefined) return;
-    const { screenshot, stable } = await capture(windowId, tabId, false);
+    const { screenshot, stable, mark } = await capture(windowId, tabId, false);
     if (screenshot === undefined || !stable || !sameLayout(before, await deps.findPageCandidates(tabId)) || !isCurrentGeneration()) return;
-    const cropped = await deps.crop({ screenshot, viewport: before.viewport, candidates: shown });
-    if (!isCurrentGeneration()) return;
+    const { pages: cropped, frame } = await deps.crop({ screenshot, frameMark: mark, viewport: before.viewport, candidates: shown });
+    // 舊 frame 上可能還沒有覆蓋層，記下的樣子會是錯的；不記，下次照舊藏覆蓋層
+    if (!isCurrentGeneration() || !frameUsable(tabId, frame, false)) return;
     let looks = overlaidLooks.get(tabId);
     if (!looks) overlaidLooks.set(tabId, (looks = new Map()));
     for (const page of cropped) {
