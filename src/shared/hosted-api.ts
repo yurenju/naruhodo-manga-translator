@@ -65,7 +65,8 @@ export const PORTAL_PATH = '/v1/subscription/portal';
  * Paddle 核准後 Worker 收到 adjustment 的 webhook 才取消。之後 GET /v1/account 的 refund.status 是 pending。
  * 不能退時回 409 與原因：refundNoCharge（沒有成功扣款，或那筆扣款的訂閱已經結束）、refundWindowClosed（扣款超過 14 天）、
  * refundZeroAmount（實付 US$0）、refundPastDue（扣款失敗重試中）、refundPending（已經申請過、處理中）、
- * refundRejected（Paddle 拒絕過這筆）、refundRefunded（這筆已經退款）。Paddle API 失敗回 502，什麼都不記。
+ * refundRejected（Paddle 拒絕過這筆）、refundRefunded（這筆已經退款）、refundByEmail（這個 email 退款過，這次要寫信）。
+ * Paddle API 失敗回 502，什麼都不記。
  */
 export const REFUND_PATH = '/v1/subscription/refund';
 /** Paddle 送 webhook 的路徑（不帶 token，驗 Paddle-Signature）。 */
@@ -169,6 +170,11 @@ export interface RefundInfo {
   status: RefundStatus;
   /** 現在可以按「申請退款」：在 Refund Window 內、實付不是 US$0、不是扣款失敗重試中、這筆沒申請過，而且訂閱還在。 */
   eligible: boolean;
+  /**
+   * 其他條件都符合，但這個 email 退款過（ADR 0012：同一個 email 只有第一次退款能在外掛裡申請）：這次要寫信申請。
+   * true 時 eligible 是 false。
+   */
+  byEmail: boolean;
 }
 
 /** 快用完：Free Pages 剩 LOW_FREE_PAGES 頁以下、本月額度剩 LOW_MONTHLY_PAGES 頁以下（用完也算）。 */
@@ -216,7 +222,8 @@ export type RefundRefusal =
   | 'refundPastDue'
   | 'refundPending'
   | 'refundRejected'
-  | 'refundRefunded';
+  | 'refundRefunded'
+  | 'refundByEmail';
 
 export interface HostedError {
   error: string;

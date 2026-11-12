@@ -143,7 +143,7 @@ How often a Subscription is charged: every quarter or every year. Never monthly:
 _Avoid_: billing cycle (ambiguous with the monthly reset of the Monthly Page Limit), term
 
 **Refund Window** (退款期)
-The 14 days after every charge of a Subscription that took money, renewals included (a charge brought to US$0 by a discount has none), during which the reader can get that charge back in full however many Translated Pages they used. The reader asks for it in the extension; the Subscription keeps working while the refund is pending and ends once the payment provider approves it, after which whatever Free Pages were left become usable again.
+The 14 days after every charge of a Subscription that took money, renewals included (a charge brought to US$0 by a discount has none), during which the reader can get that charge back in full however many Translated Pages they used. An email address's first refund is asked for in the extension; once one has been refunded, later ones are asked for by writing to us, even from a new Account, and the same person refunding again and again may be declined. The Subscription keeps working while the refund is pending and ends once the payment provider approves it, after which whatever Free Pages were left become usable again.
 A refund request is *pending* until the payment provider decides, then *refunded* or *rejected*. The Worker's database stores the provider's word for refunded, `approved`, and translates it at the API.
 _Avoid_: trial, money-back guarantee (in the UI), cooling-off period
 

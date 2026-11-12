@@ -58,6 +58,7 @@ describe('GET /v1/account 的退款資訊', () => {
       inWindow: true,
       status: 'none',
       eligible: true,
+      byEmail: false,
     });
   });
 });

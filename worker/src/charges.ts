@@ -4,6 +4,7 @@
  * 與退款 API 都從最近一次扣款算。Paddle 核准或拒絕退款（adjustment 的 webhook）也記在 charges：refundOutcome（#261）。
  */
 import { REFUND_WINDOW_DAYS, type RefundInfo, type RefundRefusal, type RefundStatus } from '../../src/shared/hosted-api.ts';
+import { sha256 } from './hash.ts';
 import { eventHandled, eventOwner, markEventHandled, object, text, time } from './paddle-event.ts';
 import { activeSubscription, type Subscription } from './subscription.ts';
 
@@ -53,11 +54,31 @@ const latestCharge = (db: D1Database, accountId: string) =>
     .bind(accountId)
     .first<Row>();
 
+/** 這個 Account 的 email 退款過（refunded_emails，刪除帳號後仍保留）。 */
+async function emailRefundedBefore(db: D1Database, accountId: string): Promise<boolean> {
+  const account = await db.prepare('SELECT email FROM accounts WHERE id = ?').bind(accountId).first<{ email: string }>();
+  if (!account) return false;
+  return (await db.prepare('SELECT 1 FROM refunded_emails WHERE email_hash = ?').bind(await sha256(account.email)).first()) !== null;
+}
+
+/** 算 refusal 要的：最近一次扣款、它的訂閱，以及這個 email 退款過沒。 */
+interface RefundState {
+  charge: Row | null;
+  subscription: Subscription | undefined;
+  refundedBefore: boolean;
+}
+
+async function refundState(db: D1Database, accountId: string): Promise<RefundState> {
+  const [charge, subscription, refundedBefore] = await Promise.all([latestCharge(db, accountId), activeSubscription(db, accountId), emailRefundedBefore(db, accountId)]);
+  return { charge, subscription, refundedBefore };
+}
+
 /**
  * 最近一次扣款能不能退款；undefined＝可以。先看退款狀態（申請過就不能再申請），再看訂閱：那筆扣款的訂閱要還有權限
- * （排定取消也算，退款期看的是扣款日）、不是扣款失敗重試中；最後看金額與 Refund Window。
+ * （排定取消也算，退款期看的是扣款日）、不是扣款失敗重試中；再看金額與 Refund Window。
+ * 其他都符合才看 email 退款過沒（ADR 0012）：refundByEmail＝這次要寫信，所以只在原本能申請時出現。
  */
-function refusal(charge: Row, subscription: Subscription | undefined, now: number): RefundRefusal | undefined {
+function refusal({ charge, subscription, refundedBefore }: RefundState & { charge: Row }, now: number): RefundRefusal | undefined {
   if (charge.refund_status === 'pending') return 'refundPending';
   if (charge.refund_status === 'rejected') return 'refundRejected';
   if (charge.refund_status === 'approved') return 'refundRefunded';
@@ -65,21 +86,25 @@ function refusal(charge: Row, subscription: Subscription | undefined, now: numbe
   if (subscription.status === 'past_due') return 'refundPastDue';
   if (charge.amount_cents <= 0) return 'refundZeroAmount';
   if (now >= charge.billed_at + REFUND_WINDOW_MS) return 'refundWindowClosed';
+  if (refundedBefore) return 'refundByEmail';
   return undefined;
 }
 
 /** GET /v1/account 的退款資訊：最近一次扣款；沒有成功扣款過是 undefined。 */
 export async function refundInfo(db: D1Database, accountId: string, now: number): Promise<RefundInfo | undefined> {
-  const [charge, subscription] = await Promise.all([latestCharge(db, accountId), activeSubscription(db, accountId)]);
+  const state = await refundState(db, accountId);
+  const { charge } = state;
   if (!charge) return undefined;
   const windowEndsAt = charge.billed_at + REFUND_WINDOW_MS;
+  const reason = refusal({ ...state, charge }, now);
   return {
     billedAt: charge.billed_at,
     amountUsd: charge.amount_cents / 100,
     windowEndsAt,
     inWindow: now < windowEndsAt,
     status: STATUS[charge.refund_status ?? 'none'],
-    eligible: refusal(charge, subscription, now) === undefined,
+    eligible: reason === undefined,
+    byEmail: reason === 'refundByEmail',
   };
 }
 
@@ -88,9 +113,10 @@ export async function refundInfo(db: D1Database, accountId: string, now: number)
  * 條件式 UPDATE（只有還沒申請過的才改），同時送來的兩個請求只有一個拿得到，不會建立兩筆退款。
  */
 export async function claimRefund(db: D1Database, accountId: string, now: number): Promise<{ ok: true; transactionId: string } | { ok: false; reason: RefundRefusal }> {
-  const [charge, subscription] = await Promise.all([latestCharge(db, accountId), activeSubscription(db, accountId)]);
+  const state = await refundState(db, accountId);
+  const { charge } = state;
   if (!charge) return { ok: false, reason: 'refundNoCharge' };
-  const reason = refusal(charge, subscription, now);
+  const reason = refusal({ ...state, charge }, now);
   if (reason) return { ok: false, reason };
   const claimed = await db
     .prepare("UPDATE charges SET refund_status = 'pending' WHERE transaction_id = ? AND refund_status IS NULL")
@@ -167,5 +193,24 @@ export async function recordRefundOutcome(db: D1Database, outcome: RefundOutcome
              WHERE transaction_id = ? AND (refund_status IS NULL OR refund_status = 'pending') AND (refund_adjustment_id IS NULL OR refund_adjustment_id = ?)`,
           )
           .bind(outcome.adjustmentId, outcome.transactionId, outcome.adjustmentId);
-  await db.batch([update, markEventHandled(db, outcome.eventId, now)]);
+  const remember = outcome.status === 'approved' ? await rememberRefundedEmail(db, outcome, now) : [];
+  await db.batch([update, ...remember, markEventHandled(db, outcome.eventId, now)]);
+}
+
+/**
+ * 核准的退款記下 email（ADR 0012）：這筆扣款的 Account 的 email hash，已經記過就不動。從哪裡申請的都算（外掛、paddle.net、後台）。
+ * 用扣款對 Account；扣款沒記下（#260 之前的、或扣款事件還沒到）就用訂閱對。帳號已經刪了就對不到、不記
+ * （處理中就刪帳號的，刪除時已經記下，見 auth.ts 的 deleteAccount）。
+ */
+async function rememberRefundedEmail(db: D1Database, { transactionId, subscriptionId }: RefundOutcome, now: number): Promise<D1PreparedStatement[]> {
+  const row = await db
+    .prepare(
+      `SELECT email FROM accounts WHERE id = COALESCE(
+         (SELECT account_id FROM charges WHERE transaction_id = ?1),
+         (SELECT account_id FROM subscriptions WHERE paddle_subscription_id = ?2))`,
+    )
+    .bind(transactionId, subscriptionId)
+    .first<{ email: string }>();
+  if (!row) return [];
+  return [db.prepare('INSERT INTO refunded_emails (email_hash, refunded_at) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(await sha256(row.email), now)];
 }

@@ -131,12 +131,19 @@ export async function revokeSession(db: D1Database, token: string, now: number):
  * 刪除 Account（spec #86「Worker API」、#95）：Account、所有 session（所以每個 token 都失效）、額度、訂閱，
  * 以及這個 email 還沒用掉的驗證碼與驗證次數，一次刪掉。之後 D1 裡沒有這個 email 的原文。
  * 用量紀錄不刪、只拿掉帳號關聯（#238）：裡面只有數字，留著 D1 的總額才對得上 Anthropic 的帳單。
- * Free Pages 領取紀錄（email hash）不刪，同一個 email 重新註冊不會再領；paddle_events 只有事件 id，不屬於任何 Account。
+ * Free Pages 領取紀錄與退款紀錄（都是 email hash）不刪，同一個 email 重新註冊不會再領、退款仍要寫信（ADR 0012）。退款還在處理中就刪除的，
+ * 現在就記成退款過：核准的 webhook 之後對不到 Account，記不到 email（不然「申請退款、馬上刪帳號」就能一直退）。paddle_events 只有事件 id，不屬於任何 Account。
  * 子資料表先處理，最後才刪 accounts（D1 會檢查 foreign key；otps 要靠 accounts 查出 email）。
  */
-export async function deleteAccount(db: D1Database, accountId: string): Promise<void> {
+export async function deleteAccount(db: D1Database, accountId: string, now: number): Promise<void> {
   const email = await accountEmail(db, accountId);
   await db.batch([
+    db
+      .prepare(
+        `INSERT INTO refunded_emails (email_hash, refunded_at) SELECT ?1, ?2
+         WHERE EXISTS (SELECT 1 FROM charges WHERE account_id = ?3 AND refund_status IN ('pending', 'approved')) ON CONFLICT DO NOTHING`,
+      )
+      .bind(await sha256(email ?? ''), now, accountId),
     db.prepare('DELETE FROM verify_attempts WHERE email_hash = ?').bind(await sha256(email ?? '')),
     db.prepare('DELETE FROM otps WHERE email = (SELECT email FROM accounts WHERE id = ?)').bind(accountId),
     db.prepare('UPDATE usage_records SET account_id = NULL WHERE account_id = ?').bind(accountId),

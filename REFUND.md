@@ -1,6 +1,6 @@
 # Naruhodo Refund Policy
 
-Effective date: 2026-11-01
+Effective date: 2026-11-12
 Publisher: Sad Coder, Inc.
 
 The Naruhodo subscription is sold by Paddle.com, our reseller and Merchant of Record, on behalf of Sad Coder, Inc. Paddle handles all payments and refunds. Google is not the seller, and payments do not go through the Chrome Web Store.
@@ -13,11 +13,13 @@ The 14 days start when the payment is made. After 14 days, that payment is not r
 
 A payment that a discount brought down to US$0 has nothing to refund, so it has no 14-day refund period. A payment with a partial discount can be refunded; the refund is the amount you actually paid.
 
+If the same person repeatedly subscribes and asks for a refund, including through different accounts, we may decline further refunds, except where the law requires one.
+
 A refunded subscription is cancelled, so it stops working once Paddle approves the refund. Until then you can keep translating. Any free pages you had left before subscribing become available again once it ends.
 
 ## How to request a refund
 
-In the extension, open the account page (right-click the Naruhodo icon on the toolbar and choose 帳號與訂閱, Account and subscription). Within 14 days of a payment, the subscription card shows **申請退款** (Request refund); confirm, and the extension asks Paddle to refund that payment. The account page shows the refund as being processed until Paddle approves or declines it. Paddle returns the money to the payment method you used.
+In the extension, open the account page (right-click the Naruhodo icon on the toolbar and choose 帳號與訂閱, Account and subscription). Within 14 days of a payment, the subscription card shows **申請退款** (Request refund); confirm, and the extension asks Paddle to refund that payment. The account page shows the refund as being processed until Paddle approves or declines it. Paddle returns the money to the payment method you used. If your email address has had a refund before, the card asks you to write to us instead.
 
 Refunds are handled by Paddle, so you can also request one on Paddle's buyer support site at [paddle.net](https://paddle.net): find your order (the receipt email Paddle sent you has the details) and choose **Request refund**.
 

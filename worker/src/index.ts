@@ -299,11 +299,11 @@ const ROUTES: Record<string, Handler> = {
   }),
   // 刪除帳號：先取消 Paddle 訂閱，失敗就 502、什麼都不刪（帳號刪了訂閱卻還在扣款就沒有人能取消了）。
   // 要不要送、何時生效見 cancellationOnDelete；刪除後 Paddle 送來的事件找不到 Account，applyPaddleEvent 會忽略
-  [`DELETE ${ACCOUNT_PATH}`]: authed(async ({ env }, accountId) =>
+  [`DELETE ${ACCOUNT_PATH}`]: authed(async ({ env, now }, accountId) =>
     viaPaddle(async () => {
       const cancellation = await cancellationOnDelete(env.DB, accountId);
       if (cancellation) await paddle(env).cancelSubscription(cancellation.subscriptionId, cancellation.timing);
-      await deleteAccount(env.DB, accountId);
+      await deleteAccount(env.DB, accountId, now);
       return new Response(null, { status: 204 });
     }),
   ),
