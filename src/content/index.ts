@@ -169,6 +169,16 @@ if (!globalThis.__naruhodo) {
         else trace('overlay:skip', { anchorId: message.anchorId, pageHash: message.pageHash, reason: 'anchor 不在最近一次量到的 Page 裡' });
         return false;
       }
+      case 'content:removeOverlay': {
+        const anchor = anchors.get(message.anchorId);
+        if (anchor instanceof HTMLElement) overlay.remove(anchor, message.pageHashes);
+        return false;
+      }
+      case 'content:confirmOverlay': {
+        const anchor = anchors.get(message.anchorId);
+        if (anchor instanceof HTMLElement) overlay.confirm(anchor);
+        return false;
+      }
       case 'content:pageStatus': {
         // anchor 不在最近一次量到的 Page 裡（已經捲走或換頁）就不畫
         const statuses = message.anchors.flatMap(({ anchorId, ...status }) => {

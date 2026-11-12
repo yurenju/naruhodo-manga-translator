@@ -404,6 +404,14 @@ const overlaySync = createOverlaySync({
     const message: Message = { type: 'content:showOverlay', anchorId, pageHash, subRect, text };
     chrome.tabs.sendMessage(tabId, message).catch(() => {});
   },
+  remove({ tabId, anchorId, pageHashes }) {
+    const message: Message = { type: 'content:removeOverlay', anchorId, pageHashes };
+    chrome.tabs.sendMessage(tabId, message).catch(() => {});
+  },
+  confirm({ tabId, anchorId }) {
+    const message: Message = { type: 'content:confirmOverlay', anchorId };
+    chrome.tabs.sendMessage(tabId, message).catch(() => {});
+  },
 });
 
 let modelStatus: ModelStatus = { state: 'idle' };

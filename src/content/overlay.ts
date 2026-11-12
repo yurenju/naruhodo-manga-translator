@@ -81,6 +81,8 @@ const STYLE = `${TOKENS}
 .hl.on { display: block; }
 /* 長 Page 截圖時擦除與譯文不藏，tooltip 與高亮框藏（hideForCapture） */
 :host([data-capturing]) .tip, :host([data-capturing]) .hl { visibility: hidden; }
+/* anchor 重新出現、截圖還沒確認上面是同一頁（#276）：譯文先藏著，Page 上的狀態照常顯示 */
+:host([data-unverified]) .pl { visibility: hidden; }
 /* Page 上的狀態（#185）：跟 anchor 一樣大、不縮放，不擋點擊；只有紅色小標籤可以點 */
 .st { position: absolute; overflow: hidden; pointer-events: none; z-index: 3; font-family: var(--naru-font-sans); }
 .st-chip { position: absolute; top: 8px; right: 8px; display: flex; align-items: center; gap: 6px; margin: 0; padding: 3px 9px;
@@ -264,6 +266,9 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     if (entry.host.style.visibility === visibility) return;
     if (!capturing)
       trace('overlay:anchorVisibility', { pageHashes: [...entry.layers.values()].map((layer) => layer.pageHash), shown: visibility === 'visible' });
+    // anchor 被藏起來（不是截圖時藏 host）：再出現時上面可能已經換頁了，canvas 重畫沒有 src 可看（#276）。
+    // 譯文先藏著，等截圖確認（confirm）或新的譯文到（show）。學習時譯文本來就不顯示，不用等。
+    if (!capturing && visibility === 'hidden' && entry.layers.size > 0 && pageMode !== 'learn') entry.host.dataset.unverified = '';
     entry.host.style.visibility = visibility;
     if (visibility === 'hidden' && hovered && [...entry.layers.values()].includes(hovered.layer)) setHovered(undefined);
   }
@@ -302,6 +307,28 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     if (hovered && [...entry.layers.values()].includes(hovered.layer)) setHovered(undefined);
     for (const layer of entry.layers.values()) layer.element.remove();
     entry.layers.clear();
+  }
+
+  /** 截圖確認 anchor 上剩下的覆蓋層還是同一頁：先藏著的譯文顯示回來（#276）。 */
+  function confirm(anchor: HTMLElement): void {
+    const entry = entries.get(anchor);
+    if (!entry || !('unverified' in entry.host.dataset)) return;
+    trace('overlay:confirm', { pageHashes: [...entry.layers.values()].map((layer) => layer.pageHash) });
+    delete entry.host.dataset.unverified;
+  }
+
+  /** 拿掉 anchor 上這幾頁的覆蓋層：截圖看到 anchor 上已經換成別頁（canvas 重畫沒有 src 可看，#276）。 */
+  function remove(anchor: HTMLElement, pageHashes: readonly string[]): void {
+    const entry = entries.get(anchor);
+    if (!entry) return;
+    const olds = [...entry.layers].filter(([, layer]) => pageHashes.includes(layer.pageHash));
+    if (olds.length === 0) return;
+    trace('overlay:remove', { pageHashes: olds.map(([, layer]) => layer.pageHash), reason: '截圖看到 anchor 上換頁了' });
+    for (const [key, layer] of olds) {
+      if (hovered?.layer === layer) setHovered(undefined);
+      entry.layers.delete(key);
+      layer.element.remove();
+    }
   }
 
   function place(entry: Entry): void {
@@ -485,6 +512,8 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
       entry.layers.delete(key);
     }
     entry.layers.set(subKey(sub), layer);
+    // 新的譯文是 SW 依這次截圖送的：anchor 上確實是這一頁
+    delete entry.host.dataset.unverified;
     // 先縮放再放進 DOM：Page 像素大小的層一放進去就可能超出視窗、撐出捲軸，place() 量到的就是被擠窄的 anchor；
     // 捲軸在同一段同步程式裡又消失，ResizeObserver 看不到這次變化，層就一直對在錯的位置（試翻頁右頁往左偏）
     place(entry);
@@ -581,7 +610,7 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     }
     let hit: { layer: PageLayer; line: HoverLine; area: number } | undefined;
     for (const entry of entries.values()) {
-      if (entry.host.style.visibility === 'hidden') continue;
+      if (entry.host.style.visibility === 'hidden' || 'unverified' in entry.host.dataset) continue;
       for (const layer of entry.layers.values()) {
         const r = layer.element.getBoundingClientRect();
         if (r.width === 0 || r.height === 0) continue;
@@ -718,7 +747,11 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     if (mode === pageMode) return;
     trace('overlay:pageMode', { pageMode: mode });
     pageMode = mode;
-    for (const entry of entries.values()) entry.host.dataset.pageMode = mode;
+    for (const entry of entries.values()) {
+      entry.host.dataset.pageMode = mode;
+      // 學習時不等截圖確認（見 applyVisibility）；切回翻譯時沒有等著的確認，不能一直藏著
+      delete entry.host.dataset.unverified;
+    }
     if (hovered) showTooltip(hovered.layer, hovered.line);
   }
 
@@ -800,7 +833,7 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     return changedParents.has(element as HTMLElement);
   }
 
-  return { show, highlight, setPageMode, setStatuses, hideForCapture, hideStatusForCapture, restoreAfterCapture, shownPages, coveredRects, clear, ownsStyleOf };
+  return { show, remove, confirm, highlight, setPageMode, setStatuses, hideForCapture, hideStatusForCapture, restoreAfterCapture, shownPages, coveredRects, clear, ownsStyleOf };
 }
 
 export type Overlay = ReturnType<typeof createOverlay>;

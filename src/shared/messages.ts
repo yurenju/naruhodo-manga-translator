@@ -71,6 +71,10 @@ export type Message =
    * （沒給＝整個 anchor；Spread 的一頁或去掉黑邊，#35）。pageHash＝Page 身分，hover 同步用（同一個 anchor 可能有兩個 Page）。
    */
   | { type: 'content:showOverlay'; anchorId: string; pageHash: string; subRect?: RatioRect; text: PageText }
+  /** SW → content script：截圖看到 anchor 上已經換成別頁，拿掉這幾頁的覆蓋層（#276）。 */
+  | { type: 'content:removeOverlay'; anchorId: string; pageHashes: string[] }
+  /** SW → content script：截圖確認 anchor 上剩下的覆蓋層還是同一頁，anchor 重新出現時先藏著的層可以顯示了（#276）。 */
+  | { type: 'content:confirmOverlay'; anchorId: string }
   /**
    * SW → content script：截圖前開始重繪動畫（#60）、藏起疊在 Page 上的元素（#59），hideOverlay 時也藏覆蓋層；等兩個 rAF（已重繪）才回應 CapturePreparedResponse。
    */

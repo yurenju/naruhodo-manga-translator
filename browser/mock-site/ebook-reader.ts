@@ -13,6 +13,8 @@
  * 網址參數：`toolbar=shown` 一開始就顯示工具列；`bg=white` 白底（合成圖的邊是白的）；
  * `buffers=3` 仿真實閱讀器輪流用好幾張疊在一起的 `<img>`：新畫面畫進下一張，載入後用 `visibility` 切換，
  * 藏起來的那張保留舊的 `src`、留在原地（真實的電子書閱讀器實測）。
+ * `canvas=1`（搭配 `buffers`）：輪流用的是 `<canvas>`，新畫面直接畫進下一張 canvas、再切 `visibility`。
+ * canvas 重畫沒有 `src` 可以看，外掛只能從截圖知道上面換頁了（#276，真實的電子書閱讀器實測是兩張 canvas 輪流）。
  */
 export const READER_VIEWS = ['p07-spread', 'p08-action', 'p01-basic'] as const;
 
@@ -27,8 +29,8 @@ export function ebookReaderPage(): string {
   body.white { background: #fff; }
   #zoom { width: 100vw; height: 100vh; transform-origin: 0 0; }
   #zoom.buffered { position: relative; }
-  #zoom > img { display: block; width: 100vw; height: 100vh; pointer-events: none; }
-  #zoom.buffered > img { position: absolute; left: 0; top: 0; }
+  #zoom > img, #zoom > canvas { display: block; width: 100vw; height: 100vh; pointer-events: none; }
+  #zoom.buffered > img, #zoom.buffered > canvas { position: absolute; left: 0; top: 0; }
   #tap { position: absolute; inset: 0; }
   #chrome.hidden { display: none; }
   #chrome.fading { opacity: 0.5; }
@@ -70,8 +72,10 @@ export function ebookReaderPage(): string {
     fade = setTimeout(() => toolbar.classList.replace('fading', 'hidden'), FADE_MS);
   });
   const zoom = document.getElementById('zoom');
+  const canvasMode = params.get('canvas') === '1';
   const buffers = [document.getElementById('page')];
-  for (let i = 1; i < Number(params.get('buffers') ?? 1); i++) buffers.push(zoom.appendChild(document.createElement('img')));
+  if (canvasMode) buffers[0].replaceWith((buffers[0] = document.createElement('canvas')));
+  for (let i = 1; i < Number(params.get('buffers') ?? 1); i++) buffers.push(zoom.appendChild(document.createElement(canvasMode ? 'canvas' : 'img')));
   zoom.classList.toggle('buffered', buffers.length > 1);
   let shown = 0;
   let index = 0;
@@ -94,6 +98,22 @@ export function ebookReaderPage(): string {
     const h = Math.round(source.height * scale);
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(source, Math.floor((canvas.width - w) / 2), Math.floor((canvas.height - h) / 2), w, h);
+    const show = (next) => {
+      shown = next;
+      buffers.forEach((b, i) => { b.style.visibility = i === shown ? 'visible' : 'hidden'; });
+      document.body.dataset.pageIndex = String(index);
+      document.body.dataset.ready = 'true';
+    };
+    if (canvasMode) {
+      // 畫進下一張 canvas（同一個元素，內容換掉），再切 visibility
+      const next = (shown + 1) % buffers.length;
+      const target = buffers[next];
+      target.width = canvas.width;
+      target.height = canvas.height;
+      target.getContext('2d').drawImage(canvas, 0, 0);
+      show(next);
+      return;
+    }
     const blob = await new Promise((resolve) => canvas.toBlob(resolve));
     // 單張：同一個 img 換 src；多張：畫進下一張，載入後才切 visibility（舊的那張留著舊 src）
     const next = (shown + 1) % buffers.length;
@@ -102,10 +122,7 @@ export function ebookReaderPage(): string {
     document.body.dataset.ready = 'false';
     img.onload = () => {
       if (previous) URL.revokeObjectURL(previous);
-      shown = next;
-      buffers.forEach((b, i) => { b.style.visibility = i === shown ? 'visible' : 'hidden'; });
-      document.body.dataset.pageIndex = String(index);
-      document.body.dataset.ready = 'true';
+      show(next);
     };
     img.src = URL.createObjectURL(blob);
   }

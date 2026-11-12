@@ -15,6 +15,10 @@ export interface OverlayShow extends PageOnAnchor {
 
 export interface OverlaySyncDeps {
   show(show: OverlayShow): void;
+  /** 拿掉 anchor 上這幾頁的覆蓋層（截圖看到 anchor 上已經不是它們了）。 */
+  remove(remove: { tabId: number; anchorId: string; pageHashes: string[] }): void;
+  /** anchor 上剩下的覆蓋層截圖確認過還是同一頁：anchor 重新出現時先藏著的層可以顯示了。 */
+  confirm(confirm: { tabId: number; anchorId: string }): void;
 }
 
 /** 送過的一筆：哪個 anchor 上的哪一頁、送的是哪一份結果、蓋在 anchor 的哪個範圍。 */
@@ -53,8 +57,17 @@ export function createOverlaySync(deps: OverlaySyncDeps) {
   /**
    * 每次擷取後：擷取到的 anchor 只記得上面確實還顯示著的覆蓋（PageCandidate.overlaid）。content script 清掉的
    * （img 換了 src、電子書閱讀器視窗大小變了重新產生合成圖）下次 publish 會重送，同一頁換回來時覆蓋才回得來。
+   * 截圖認出 anchor 上已經換成別頁、覆蓋層卻還是舊的（canvas 重畫沒有 src 可看，#276）：馬上拿掉舊層，不等新頁翻好；
+   * 剩下的層確認可以顯示（content script 在 anchor 重新出現時先藏著，等這次截圖）。
    */
-  function captured(tabId: number, pages: readonly PageCandidate[]): void {
+  function captured(tabId: number, pages: readonly PageThumbLike[]): void {
+    for (const { anchorId, stale, kept } of verifyOverlays(pages)) {
+      if (stale.length > 0) {
+        deps.remove({ tabId, anchorId, pageHashes: stale });
+        sent.set(tabId, (sent.get(tabId) ?? []).filter((s) => s.anchorId !== anchorId || !stale.includes(s.pageHash)));
+      }
+      if (kept.length > 0) deps.confirm({ tabId, anchorId });
+    }
     // 這次沒擷取到的 anchor（捲走了）不知道，當作還顯示著
     const isStillShown = (s: Sent) => {
       const onAnchor = pages.filter((p) => p.anchorId === s.anchorId);
@@ -64,4 +77,23 @@ export function createOverlaySync(deps: OverlaySyncDeps) {
   }
 
   return { publish, captured };
+}
+
+/** 擷取到的一頁：哪個 anchor、截圖算出的 Page 身分、anchor 上顯示著哪幾頁的覆蓋層。 */
+type PageThumbLike = PageCandidate & { pageHash: string };
+
+/**
+ * 每個擷取到、有覆蓋層的 anchor：覆蓋層顯示的 Page 哪些已經不在這次截圖裡（stale），哪些還在（kept）。
+ * 長 Page（visible）不比，全部算 kept：它的 pageHash 是第一條橫條、不是 Page 身分（spec #142）。
+ */
+export function verifyOverlays(pages: readonly PageThumbLike[]): { anchorId: string; stale: string[]; kept: string[] }[] {
+  const anchors = new Map<string, PageThumbLike[]>();
+  for (const page of pages) anchors.set(page.anchorId, [...(anchors.get(page.anchorId) ?? []), page]);
+  return [...anchors].flatMap(([anchorId, onAnchor]) => {
+    const overlaid = onAnchor[0]?.overlaid ?? [];
+    if (overlaid.length === 0) return [];
+    if (onAnchor.some((page) => page.visible)) return [{ anchorId, stale: [], kept: overlaid }];
+    const stale = overlaid.filter((hash) => !findSamePage(onAnchor, hash));
+    return [{ anchorId, stale, kept: overlaid.filter((hash) => !stale.includes(hash)) }];
+  });
 }
