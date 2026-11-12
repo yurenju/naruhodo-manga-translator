@@ -147,3 +147,5 @@ workflow 會先跑型別檢查與單元測試，通過後更新 `package.json` �
 ## 授權
 
 [MIT](LICENSE)
+
+想 fork 嗎？歡迎，商用也可以。只是不能用 Naruhodo 的名稱與圖示發布，也不能連到 Naruhodo 的翻譯服務；自己營運服務時，條款、隱私權政策與網站都要換成你自己的。詳見 [FORKING.md](FORKING.md)。

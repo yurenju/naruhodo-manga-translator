@@ -55,7 +55,7 @@ We may limit, suspend or close accounts that break these rules.
 
 - **The manga is not ours.** Naruhodo works on manga that you are already viewing. You are responsible for having the right to view it. Translations are for your own personal use; do not publish or redistribute them where that would infringe the rights of the manga's creators or publishers.
 - **Translations can be wrong.** Translations are produced automatically by AI and may be inaccurate, incomplete or inappropriate. Do not rely on them where accuracy matters.
-- **Open source.** The source code of the extension and the Naruhodo service is published under the MIT License. That license governs the code; these terms govern your use of the Naruhodo service we operate.
+- **Open source.** The source code of the extension and the Naruhodo service is published under the MIT License. That license governs the code; these terms govern your use of the Naruhodo service we operate. If you fork the code, see the [forking guide](https://github.com/yurenju/naruhodo-manga-translator/blob/main/FORKING.md).
 
 ## 8. Availability and changes to Naruhodo
 
