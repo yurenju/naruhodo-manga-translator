@@ -630,7 +630,7 @@ describe('帳號頁的退款區塊（#260，設計稿 B 版）', () => {
   const billedAt = new Date(2026, 10, 3, 11, 0).getTime();
   const windowEndsAt = new Date(2026, 10, 17, 11, 0).getTime();
   const now = new Date(2026, 10, 10, 11, 0).getTime();
-  const refund = (fields: Partial<RefundInfo> = {}): RefundInfo => ({ billedAt, amountUsd: 48, windowEndsAt, inWindow: true, status: 'none', eligible: true, ...fields });
+  const refund = (fields: Partial<RefundInfo> = {}): RefundInfo => ({ billedAt, amountUsd: 48, windowEndsAt, inWindow: true, status: 'none', eligible: true, byEmail: false, ...fields });
   const plan = (quota: Quota, r: RefundInfo | undefined) => accountPageView({ ...hosted, now, quota, refund: r }).plan;
 
   it('在退款期內：標題、扣款日與金額、還剩幾天，以及「申請退款」', () => {
@@ -648,6 +648,15 @@ describe('帳號頁的退款區塊（#260，設計稿 B 版）', () => {
 
   it('部分折扣：寫實付金額', () => {
     expect(plan(subscribed(), refund({ amountUsd: 1 }))?.refund).toMatchObject({ detail: '11 月 3 日已扣款 US$1・還剩 7 天（到 11 月 17 日）' });
+  });
+
+  it('這個 email 退款過（byEmail）：照樣寫退款期，但改成寫信申請，不說原因', () => {
+    expect(plan(subscribed(), refund({ eligible: false, byEmail: true }))?.refund).toEqual({
+      kind: 'byEmail',
+      title: '扣款後 14 天內可以申請全額退款',
+      detail: '11 月 3 日已扣款 US$48・還剩 7 天（到 11 月 17 日）',
+      body: '這次的退款請寫信到 dev@sadcoder.com，我們會盡快處理。',
+    });
   });
 
   it('已排定取消、還在退款期內：照樣有退款區塊', () => {
@@ -706,6 +715,7 @@ describe('帳號頁的「✓ 已退款」（#261，設計稿 B 版）', () => {
     inWindow: true,
     status: 'refunded',
     eligible: false,
+    byEmail: false,
     ...fields,
   });
   const page = (quota: Quota, refund: RefundInfo, fields: Partial<Parameters<typeof accountPageView>[0]> = {}) => accountPageView({ ...hosted, now, quota, refund, ...fields });
@@ -746,7 +756,7 @@ describe('帳號頁的「✓ 已退款」（#261，設計稿 B 版）', () => {
 
 describe('申請退款的確認對話框（#260）', () => {
   const billedAt = new Date(2026, 10, 3, 11, 0).getTime();
-  const refund: RefundInfo = { billedAt, amountUsd: 48, windowEndsAt: billedAt + 14 * 86_400_000, inWindow: true, status: 'none', eligible: true };
+  const refund: RefundInfo = { billedAt, amountUsd: 48, windowEndsAt: billedAt + 14 * 86_400_000, inWindow: true, status: 'none', eligible: true, byEmail: false };
 
   it('退多少、退回哪裡、核准後訂閱結束、Free Pages 恢復、核准前照常翻譯', () => {
     expect(refundDialogView(subscribed({ freePages: 62 }) as SubscribedQuota, refund)).toEqual({

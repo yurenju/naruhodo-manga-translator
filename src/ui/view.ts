@@ -348,10 +348,12 @@ export interface AccountPageInput {
 
 /**
  * 方案卡片底部的退款區塊（#260，設計稿 B 版）：offer＝在 Refund Window 內可以申請（右邊是「申請退款」），
+ * byEmail＝在 Refund Window 內，但這個 email 退款過（ADR 0012），右邊不是按鈕、改請讀者寫信（不寫原因），
  * pending＝已經申請、等 Paddle 核准，rejected＝Paddle 沒有核准（#261；都在同一個位置，沒有按鈕）。
  */
 export type RefundBlock =
   | { kind: 'offer'; title: string; detail: string }
+  | { kind: 'byEmail'; title: string; detail: string; body: string }
   | { kind: 'pending'; title: string; body: string }
   | { kind: 'rejected'; title: string; body: string };
 
@@ -373,13 +375,14 @@ function refundBlock(refund: RefundInfo | undefined, now: number): RefundBlock |
       body: `Paddle 沒有核准 ${monthDay(refund.billedAt)}這筆 ${usd(refund.amountUsd)} 的退款，訂閱照常繼續。請寫信到 ${CONTACT_EMAIL}，我們會協助處理。`,
     };
   }
-  if (!refund.eligible) return undefined;
+  if (!refund.eligible && !refund.byEmail) return undefined;
   const days = Math.max(1, Math.ceil((refund.windowEndsAt - now) / DAY_MS));
-  return {
-    kind: 'offer',
+  const windowText = {
     title: `扣款後 ${REFUND_WINDOW_DAYS} 天內可以申請全額退款`,
     detail: `${monthDay(refund.billedAt)}已扣款 ${usd(refund.amountUsd)}・還剩 ${days} 天（到 ${monthDay(refund.windowEndsAt)}）`,
   };
+  if (refund.byEmail) return { kind: 'byEmail', ...windowText, body: `這次的退款請寫信到 ${CONTACT_EMAIL}，我們會盡快處理。` };
+  return { kind: 'offer', ...windowText };
 }
 
 /** 按「申請退款」後的確認對話框（設計稿 B 版）：確定退款是 danger 按鈕。 */

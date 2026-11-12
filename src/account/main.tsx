@@ -31,6 +31,7 @@ import { ownPaymentChange, watchPendingPayment, type PendingPayment } from '../s
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import { Badge, Button, Callout } from '../ui/components.tsx';
 import { DeleteAccount } from '../ui/delete-account.tsx';
+import { CONTACT_EMAIL } from '../ui/links.ts';
 import { SignIn } from '../ui/sign-in.tsx';
 import { RefundDialog } from '../ui/refund-dialog.tsx';
 import { OfferPrice, OfferText, PaymentUnavailable } from '../ui/subscribe-button.tsx';
@@ -242,6 +243,18 @@ function Account({ session, mode, justSignedIn }: { session: HostedSession; mode
               >
                 申請退款
               </Button>
+            </div>
+          )}
+          {view.plan.refund?.kind === 'byEmail' && (
+            <div class="ac-refund" role="group" aria-label="退款">
+              <div class="ac-refund__text">
+                <strong>{view.plan.refund.title}</strong>
+                <span class="ac-refund__detail">{view.plan.refund.detail}</span>
+                <span class="ac-refund__detail">{view.plan.refund.body}</span>
+              </div>
+              <a class="naru-btn naru-btn--secondary" href={`mailto:${CONTACT_EMAIL}`}>
+                寫信申請
+              </a>
             </div>
           )}
           {(view.plan.refund?.kind === 'pending' || view.plan.refund?.kind === 'rejected') && (
