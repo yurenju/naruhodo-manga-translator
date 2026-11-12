@@ -4,7 +4,8 @@
  * 1. 去黑邊：電子書閱讀器把頁面等比例縮放塞進視窗，周圍是純黑邊，而且黑邊只會出現在一個方向、兩側等寬（#35 實測）。
  *    所以只把「完全均勻的暗色帶」當黑邊，而且兩側都有、寬度相同才切；深色出血頁、夜景的邊緣不會整條均勻，
  *    單側的純黑出血也不對稱，都會留著。白色留白不算黑邊（白底網站的頁面留白不能切掉）。
- * 2. 去掉任何顏色的均勻邊（含白底網站的左右留白）之後寬 > 高才當 Spread，從那個範圍的正中間切；那個範圍的兩半長寬比要像漫畫頁，
+ * 2. 去掉任何顏色的均勻邊（含白底網站的左右留白；兩側不一樣寬時只去掉兩側共同的那段，範圍的中心不動）之後寬 > 高才當 Spread，
+ *    從那個範圍的正中間切；那個範圍的兩半長寬比要像漫畫頁，
  *    不像的話這次不產生 Page（回傳空陣列，等下一次截圖）：通常是畫面上有東西干擾了形狀，當成一頁會把整張 Spread
  *    送去翻譯（#55）。形狀、中縫與長寬比都看同一個範圍，左右留白才不會讓長寬比失準。切出來的兩頁仍延伸到去黑邊後的外緣：
  *    白色留白跟單頁一樣算在頁面裡（第 1 點）。去白邊會連頁面本身對稱的留白一起切掉，送進 OCR 的圖跟 hash 都會變（#55 試過）。
@@ -28,11 +29,13 @@ const PAGE_ASPECT_MAX = 0.9;
 
 /** 回傳的 Page 依閱讀順序（Spread 先右後左），座標相對 image；寬 > 高卻切不開時是空陣列。 */
 export function splitSpread(image: GrayImage): Rect[] {
-  const content = trimBorders(image, isBorderLine);
-  // 是不是 Spread 看的是去掉任何顏色的均勻邊之後的形狀：白底網站上置中的單頁不能從中間切開。
-  // 在去黑邊後的範圍裡找：兩頁的白色留白不一樣寬時只是不裁留白，黑邊照樣不算進形狀
-  // （電子書閱讀器實測：連黑邊一起算長寬比，整張截圖的一半不像漫畫頁，整張跨頁都不翻）
-  const shape = trimBorders(image, isUniform, content);
+  const content = inset(borderWidths(image, isBorderLine), (a, b) => (symmetric(a, b) ? [a, b] : [0, 0]));
+  // 是不是 Spread、中縫、長寬比都看去掉任何顏色的均勻邊之後的形狀：白底網站上置中的單頁不能從中間切開。
+  // 在去黑邊後的範圍裡找，黑邊不算進形狀（電子書閱讀器實測：連黑邊一起算長寬比，整張截圖的一半不像漫畫頁）。
+  // 兩側只裁共同的那段留白（較窄的一側）：閱讀器把跨頁置中，兩頁的圖外緣留白不一樣寬時，中縫仍在畫面正中間，
+  // 多出來的那段留白也不會讓長寬比失準（#277：寬視窗整張截圖的一半不像漫畫頁，整張跨頁都不翻）。
+  // 不照各側實際的留白裁：只顯示一頁時空白那半也是均勻的，會被當留白裁掉，變成單頁的形狀（第 3 點）
+  const shape = inset(borderWidths(image, isUniform, content), (a, b) => [Math.min(a, b), Math.min(a, b)]);
   if (shape.width <= shape.height) return [content];
   const half = Math.round(shape.width / 2);
   const seam = shape.x + half;
@@ -90,21 +93,36 @@ const symmetric = (a: number, b: number) => a > 0 && b > 0 && Math.abs(a - b) <=
 
 type LineTest = (line: Rect) => boolean;
 
-/** 在 within 範圍裡去掉兩側對稱、符合 lineTest 的邊；不對稱的那個方向不裁。 */
-function trimBorders(
+/** within 範圍裡四邊各有幾條符合 lineTest 的線；整塊都符合時四邊都是 0（沒有內容可切）。 */
+interface Borders {
+  within: Rect;
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+function borderWidths(
   image: GrayImage,
   lineTest: (image: GrayImage, line: Rect) => boolean,
   within: Rect = { x: 0, y: 0, width: image.width, height: image.height },
-): Rect {
+): Borders {
   const { x, y, width, height } = within;
   const isBorder: LineTest = (line) => lineTest(image, line);
   const top = countBorder(height, (i) => ({ x, y: y + i, width, height: 1 }), isBorder);
-  // 整塊都是均勻的：沒有內容可切
-  if (top === height) return within;
-  const bottom = countBorder(height, (i) => ({ x, y: y + height - 1 - i, width, height: 1 }), isBorder);
-  const left = countBorder(width, (i) => ({ x: x + i, y, width: 1, height }), isBorder);
-  const right = countBorder(width, (i) => ({ x: x + width - 1 - i, y, width: 1, height }), isBorder);
-  const [t, b] = symmetric(top, bottom) ? [top, bottom] : [0, 0];
-  const [l, r] = symmetric(left, right) ? [left, right] : [0, 0];
-  return { x: x + l, y: y + t, width: width - l - r, height: height - t - b };
+  if (top === height) return { within, top: 0, bottom: 0, left: 0, right: 0 };
+  return {
+    within,
+    top,
+    bottom: countBorder(height, (i) => ({ x, y: y + height - 1 - i, width, height: 1 }), isBorder),
+    left: countBorder(width, (i) => ({ x: x + i, y, width: 1, height }), isBorder),
+    right: countBorder(width, (i) => ({ x: x + width - 1 - i, y, width: 1, height }), isBorder),
+  };
+}
+
+/** 依 pick（兩側的邊寬 → 兩側實際要裁多少）把範圍往內縮。 */
+function inset({ within, top, bottom, left, right }: Borders, pick: (a: number, b: number) => [number, number]): Rect {
+  const [t, b] = pick(top, bottom);
+  const [l, r] = pick(left, right);
+  return { x: within.x + l, y: within.y + t, width: within.width - l - r, height: within.height - t - b };
 }

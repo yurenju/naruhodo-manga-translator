@@ -126,6 +126,27 @@ describe('Spread 切頁', () => {
     ]);
   });
 
+  it('寬視窗、白底、左右留白不一樣寬的 Spread：照樣從畫面正中間切成兩頁（#277）', () => {
+    // 電子書閱讀器實測（截圖 2561×1398）：跨頁置中，但兩頁的圖外緣留白不一樣寬，兩側均勻的白邊差約 40 px。
+    // 整張截圖的一半（1280÷1398）不像漫畫頁，形狀要扣掉兩側共同的留白才看得出是跨頁
+    const { image, content } = letterbox(readGray('p07-spread'), { width: 2561, height: 1398 }, 255);
+    for (let y = content.y; y < content.y + content.height; y++) image.gray.fill(255, y * image.width + content.x, y * image.width + content.x + 40);
+    const seam = expectedPages('p07-spread', content)[0]!.x;
+    expectNear(splitSpread(image), [
+      { x: seam, y: 0, width: image.width - seam, height: image.height },
+      { x: 0, y: 0, width: seam, height: image.height },
+    ]);
+  });
+
+  it('白底網站上偏一邊的單頁（左右留白不一樣寬）：不從中間切開', () => {
+    const page = cropGray(readGray('p07-spread'), readGroundTruth('p07-spread').pages[0]!.bbox);
+    const { image, content } = letterbox(page, { width: 1600, height: 1000 }, 255);
+    // 往右移 100 px：左留白比右留白寬
+    const shifted = new Uint8Array(image.gray.length).fill(255);
+    for (let y = 0; y < image.height; y++) shifted.set(image.gray.subarray(y * image.width + content.x, y * image.width + content.x + content.width), y * image.width + content.x + 100);
+    expect(splitSpread({ ...image, gray: shifted }).map(box)).toEqual([[0, 0, 1600, 1000]]);
+  });
+
   it('白色邊框不切（白底網站的頁面留白）', () => {
     const { image } = letterbox(readGray('p01-basic'), { width: 1600, height: 1000 }, 255);
     expect(splitSpread(image).map(box)).toEqual([[0, 0, 1600, 1000]]);
