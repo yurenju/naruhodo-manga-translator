@@ -156,7 +156,7 @@ export type OnStatusAction = (action: StatusAction, pageHash: string) => void;
 const subKey = (sub: RatioRect) => `${sub.x},${sub.y},${sub.w},${sub.h}`;
 
 /** canvas 的 width/height、img 的 naturalWidth/Height；其他元素不知道。 */
-function intrinsicSize(anchor: HTMLElement): { width: number; height: number } {
+export function intrinsicSize(anchor: Element): { width: number; height: number } {
   if (anchor instanceof HTMLCanvasElement) return { width: anchor.width, height: anchor.height };
   if (anchor instanceof HTMLImageElement) return { width: anchor.naturalWidth, height: anchor.naturalHeight };
   return { width: 0, height: 0 };

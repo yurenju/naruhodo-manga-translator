@@ -2,7 +2,7 @@ import type { CaptureFinishedResponse, CapturePreparedResponse, Message, PageCan
 import { loadPageMode, onPageModeChange } from '../shared/page-mode.ts';
 import { createTrace } from '../shared/trace.ts';
 import { createCapturePrep } from './capture.ts';
-import { createOverlay, HOST_ATTRIBUTE, isShown, untilRepainted } from './overlay.ts';
+import { createOverlay, HOST_ATTRIBUTE, intrinsicSize, isShown, untilRepainted } from './overlay.ts';
 import { longPageVisible, pageCandidateRejection } from './page-candidates.ts';
 import { watchPageTurns } from './page-turn.ts';
 import { stopRepaint } from './repaint.ts';
@@ -61,7 +61,9 @@ if (!globalThis.__naruhodo) {
       const slice = shown ? longPageVisible(rect, visible, clips) : undefined;
       // 被工具列之類蓋住的照樣算：截圖前會把蓋在上面的元素藏起來（#59、ADR 0004）。
       // 藏起來的不算：疊在看得到的那張底下，截到的是上面那張，譯文會被貼到兩張上
-      const reason = !shown ? 'hidden' : slice ? undefined : pageCandidateRejection(rect, visible, clips);
+      // object-fit 是 fill（預設）才會變形；contain／cover 這類保持比例，不看
+      const intrinsic = getComputedStyle(element).objectFit === 'fill' ? intrinsicSize(element) : undefined;
+      const reason = !shown ? 'hidden' : slice ? undefined : pageCandidateRejection(rect, visible, clips, intrinsic);
       if (reason === undefined) {
         const overlaid = overlay.shownPages(element);
         if (slice) longAnchors.add(element);

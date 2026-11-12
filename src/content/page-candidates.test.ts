@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPageCandidate, longPageVisible, pageCandidateRejection } from './page-candidates.ts';
+import { isPageCandidate, isStretched, longPageVisible, pageCandidateRejection } from './page-candidates.ts';
 
 const VIEWPORT = { width: 1280, height: 720 };
 /** 仿 canvas 網站一頁在畫面上的大小。 */
@@ -111,5 +111,31 @@ describe('longPageVisible（直式捲動的長 Page）', () => {
     const viewer = { x: 425, y: 57, width: 430, height: 625 };
     expect(longPageVisible(page(425, 57), VIEWPORT, [viewer])).toBeUndefined();
     expect(longPageVisible(page(640, 57), VIEWPORT, [viewer])).toBeUndefined();
+  });
+});
+
+describe('isStretched', () => {
+  const full = { x: 0, y: 0, width: 872, height: 1394 };
+
+  it('視窗變窄、閱讀器還沒重新產生圖：舊的 1258×1402 被撐成 872×1394 是變形的過渡畫面，不當 Page 候選', () => {
+    expect(isStretched(full, { width: 1258, height: 1402 })).toBe(true);
+    expect(pageCandidateRejection(full, { width: 872, height: 1394 }, [], { width: 1258, height: 1402 })).toBe('stretched');
+  });
+
+  it('重新產生後（圖跟顯示一樣大，或高 DPI 的兩倍）不算', () => {
+    expect(isStretched(full, { width: 872, height: 1394 })).toBe(false);
+    expect(isStretched(full, { width: 1744, height: 2788 })).toBe(false);
+  });
+
+  it('width／height 屬性跟圖差一點（看不出變形）不算', () => {
+    expect(isStretched({ x: 0, y: 0, width: 800, height: 1200 }, { width: 1000, height: 1400 })).toBe(false);
+  });
+
+  it('還沒載入（naturalWidth 0）不知道比例，不算', () => {
+    expect(isStretched(full, { width: 0, height: 0 })).toBe(false);
+  });
+
+  it('不知道圖本身的大小（object-fit 不是 fill）照舊是候選', () => {
+    expect(pageCandidateRejection(full, { width: 872, height: 1394 })).toBeUndefined();
   });
 });

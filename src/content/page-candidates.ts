@@ -32,18 +32,48 @@ const contains = (outer: Rect, inner: Rect) =>
   inner.y + inner.height <= outer.y + outer.height + VIEWPORT_TOLERANCE;
 
 /**
+ * 顯示的長寬比跟圖本身的長寬比差超過這麼多（比值減 1），就當成被拉伸的過渡畫面。
+ * 量測：仿電子書閱讀器在 1258×1402 合成的圖，side panel 打開、viewport 變 872×1394 後到重新合成前被撐成 872×1394，
+ * 差 43%；Spread 被拉窄到寬 ≤ 高，切不開、當成單頁多翻一次。網站把 width／height 屬性寫得跟圖差一點的情況
+ * 看不出變形，取 10% 不擋到它們。
+ */
+export const MAX_STRETCH = 0.1;
+
+/**
+ * 被拉伸：intrinsic＝圖本身的像素（img.naturalWidth、canvas.width），只在 object-fit 是 fill（預設，會變形）時給。
+ * 視窗大小一變，整個 viewport 一張圖的閱讀器重新產生圖之前，舊圖被 CSS 撐成新的 viewport 大小。
+ * 這時截圖會翻到變形的頁（#55 不穩定的原因），等網站換上新圖（load／src 變動會再觸發掃描）才翻。
+ * 還沒載入（0）不知道比例，不算。
+ */
+export function isStretched(rect: Rect, intrinsic: Size): boolean {
+  if (intrinsic.width <= 0 || intrinsic.height <= 0 || rect.width <= 0 || rect.height <= 0) return false;
+  const shown = rect.width / rect.height;
+  const own = intrinsic.width / intrinsic.height;
+  return Math.max(shown / own, own / shown) - 1 > MAX_STRETCH;
+}
+
+/**
  * clips＝會裁切內容的祖先（overflow 不是 visible）的 rect：翻頁式 viewer 把隔壁頁放在裁切範圍外，
  * getBoundingClientRect 看不出來，要完整落在每一個裡面才算可見。
  */
-export function isPageCandidate(rect: Rect, viewport: Size, clips: readonly Rect[] = []): boolean {
-  return pageCandidateRejection(rect, viewport, clips) === undefined;
+export function isPageCandidate(rect: Rect, viewport: Size, clips: readonly Rect[] = [], intrinsic?: Size): boolean {
+  return pageCandidateRejection(rect, viewport, clips, intrinsic) === undefined;
 }
 
-/** 不是 Page 候選的原因（除錯記錄用）：太小、沒完整落在 viewport 內、被裁切祖先擋住；是候選時 undefined。 */
-export function pageCandidateRejection(rect: Rect, viewport: Size, clips: readonly Rect[] = []): 'small' | 'outsideViewport' | 'clipped' | undefined {
+/**
+ * 不是 Page 候選的原因（除錯記錄用）：太小、沒完整落在 viewport 內、被裁切祖先擋住、被拉伸變形（見 isStretched）；
+ * 是候選時 undefined。
+ */
+export function pageCandidateRejection(
+  rect: Rect,
+  viewport: Size,
+  clips: readonly Rect[] = [],
+  intrinsic?: Size,
+): 'small' | 'outsideViewport' | 'clipped' | 'stretched' | undefined {
   if (rect.width < MIN_PAGE_SIDE || rect.height < minPageHeight(viewport)) return 'small';
   if (!contains({ x: 0, y: 0, ...viewport }, rect)) return 'outsideViewport';
   if (!clips.every((clip) => contains(clip, rect))) return 'clipped';
+  if (intrinsic && isStretched(rect, intrinsic)) return 'stretched';
   return undefined;
 }
 
