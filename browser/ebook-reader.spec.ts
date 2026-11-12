@@ -185,9 +185,25 @@ test.describe('兩張 canvas 輪流用（#276）', () => {
 
     // p01 畫回第一張 canvas，那張上面還掛著 p07 的覆蓋層
     await turnTo(page, 'ArrowLeft', 2);
+    // canvas 一出現、截圖還沒認出換頁之前，p07 的譯文也不能閃出來
+    expect((await overlaidTexts(page, 'p07-spread')).length, '換頁當下 p07 的譯文閃出來').toBe(0);
     await expect.poll(async () => (await overlaidTexts(page, 'p07-spread')).length, '換頁後 p07 的譯文還留在新頁上').toBe(0);
     expect((await overlaidTexts(page, 'p01-basic')).length, 'p07 的譯文是被 p01 的譯文蓋掉的，不是先拿掉').toBe(0);
     await waitForOverlay(page, 'p01-basic');
+  });
+
+  test('翻回還掛著同一頁覆蓋層的 canvas：截圖確認是同一頁前先藏著，確認後不重翻就顯示', async ({ context, sw, extensionId, mockSite }) => {
+    const { page } = await activateOnMockSite({ context, sw, extensionId, mockSite, url: `${mockSite.ebookReaderUrl}?buffers=2&canvas=1` });
+    await waitForOverlay(page, 'p07-spread');
+    await turnTo(page, 'ArrowLeft', 1);
+    await waitForOverlay(page, 'p08-action');
+    const translateCalls = await sw.evaluate(() => globalThis.__translateCalls ?? 0);
+
+    // p07 畫回第一張 canvas，那張上面掛著的就是 p07 的覆蓋層
+    await turnTo(page, 'ArrowRight', 0);
+    expect((await overlaidTexts(page, 'p07-spread')).length, '截圖確認前就顯示了').toBe(0);
+    await waitForOverlay(page, 'p07-spread');
+    expect(await sw.evaluate(() => globalThis.__translateCalls ?? 0)).toBe(translateCalls);
   });
 });
 

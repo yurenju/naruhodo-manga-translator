@@ -17,6 +17,7 @@ function setup() {
   const pageHashes: string[] = [];
   const subs: (RatioRect | undefined)[] = [];
   const removed: { tabId: number; anchorId: string; pageHashes: string[] }[] = [];
+  const confirmed: { tabId: number; anchorId: string }[] = [];
   const sync = createOverlaySync({
     show: ({ tabId, anchorId, pageHash, subRect, text }) => {
       shown.push([tabId, anchorId, text]);
@@ -24,8 +25,9 @@ function setup() {
       subs.push(subRect);
     },
     remove: (r) => removed.push(r),
+    confirm: (c) => confirmed.push(c),
   });
-  return { sync, shown, pageHashes, subs, removed };
+  return { sync, shown, pageHashes, subs, removed, confirmed };
 }
 
 describe('overlay sync', () => {
@@ -131,40 +133,53 @@ describe('overlay sync', () => {
     const NEW_RIGHT = '1'.repeat(64);
     const NEW_LEFT = '2'.repeat(64);
 
-    it('Spread：兩頁都換了，兩層舊覆蓋一起拿掉，不等新頁翻好', () => {
-      const { sync, removed } = setup();
+    it('Spread：兩頁都換了，兩層舊覆蓋一起拿掉，不等新頁翻好；沒有剩下的層要確認', () => {
+      const { sync, removed, confirmed } = setup();
       const overlaid = [OLD_RIGHT, OLD_LEFT];
 
       sync.captured(1, [{ ...page('a1', { state: 'analyzing' }, NEW_RIGHT), overlaid }, { ...page('a1', { state: 'analyzing' }, NEW_LEFT), overlaid }]);
 
       expect(removed).toEqual([{ tabId: 1, anchorId: 'a1', pageHashes: [OLD_RIGHT, OLD_LEFT] }]);
+      expect(confirmed).toEqual([]);
     });
 
-    it('還是同一頁（hash 只差一點）：不拿掉', () => {
-      const { sync, removed } = setup();
+    it('還是同一頁（hash 只差一點）：不拿掉，確認覆蓋層可以顯示（anchor 重新出現時先藏著等這個）', () => {
+      const { sync, removed, confirmed } = setup();
       const nearlySame = `${'0'.repeat(63)}1`;
 
       sync.captured(1, [{ ...page('a1', done), overlaid: [nearlySame] }]);
 
       expect(removed).toEqual([]);
+      expect(confirmed).toEqual([{ tabId: 1, anchorId: 'a1' }]);
     });
 
-    it('只換了一頁：只拿掉換掉的那層', () => {
-      const { sync, removed } = setup();
+    it('只換了一頁：只拿掉換掉的那層，另一層確認', () => {
+      const { sync, removed, confirmed } = setup();
       const overlaid = [OLD_RIGHT, OLD_LEFT];
 
       sync.captured(1, [{ ...page('a1', done, OLD_RIGHT), overlaid }, { ...page('a1', { state: 'analyzing' }, NEW_LEFT), overlaid }]);
 
       expect(removed).toEqual([{ tabId: 1, anchorId: 'a1', pageHashes: [OLD_LEFT] }]);
+      expect(confirmed).toEqual([{ tabId: 1, anchorId: 'a1' }]);
     });
 
-    it('長 Page（visible）不比：它的 pageHash 是橫條，不是 Page 身分', () => {
-      const { sync, removed } = setup();
+    it('長 Page（visible）不比：它的 pageHash 是橫條，不是 Page 身分；直接確認', () => {
+      const { sync, removed, confirmed } = setup();
       const visible = { x: 0, y: 0, width: 430, height: 300 };
 
       sync.captured(1, [{ ...page('a1', { state: 'analyzing' }, NEW_RIGHT), visible, overlaid: [OLD_RIGHT] }]);
 
       expect(removed).toEqual([]);
+      expect(confirmed).toEqual([{ tabId: 1, anchorId: 'a1' }]);
+    });
+
+    it('anchor 上沒有覆蓋層：不拿也不確認', () => {
+      const { sync, removed, confirmed } = setup();
+
+      sync.captured(1, [page('a1', { state: 'analyzing' }, NEW_RIGHT)]);
+
+      expect(removed).toEqual([]);
+      expect(confirmed).toEqual([]);
     });
 
     it('拿掉之後同一頁換回這個 anchor：再送一次', () => {
