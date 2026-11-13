@@ -234,10 +234,10 @@ function dropShakyTail(ocr: Recognized, skip: ReadonlySet<number>): { kept: Reco
 
 export interface AnalyzeOptions {
   /**
-   * 收不收一個框（外框，0～1 比例）；不收的不做 OCR、不出現在結果。長 Page 用它擋掉被可見範圍切到的框
+   * 收不收一個框（外框，0～1 比例；kind＝Balloon 還是 Loose Text）；不收的不做 OCR、不出現在結果。長 Page 用它擋掉被可見範圍切到的框
    * 與已收過的框（spec #142）；閱讀順序仍然看整頁的框排。
    */
-  accept?: (box: RatioRect) => boolean;
+  accept?: (box: RatioRect, kind: 'balloon' | 'loose') => boolean;
   /** 這部 Series 的 Notes 條目原文：OCR 讀成形近字的名字換回來（#228）。 */
   notesNames?: readonly string[];
   /** 每修一處呼叫一次（id 是這段在結果裡的 id），給 trace 記。 */
@@ -250,7 +250,7 @@ export async function analyzePage(engine: Engine, image: PageImage, reading: (ja
   const detections = nms((await engine.detect(image)).filter((d) => d.score >= SCORE_THRESHOLD));
   const gray = image.gray();
   const all = readingOrder(group(detections), gray);
-  const units = all.filter((u) => accept?.(ratio(u.bbox)) ?? true);
+  const units = all.filter((u) => accept?.(ratio(u.bbox), u.kind) ?? true);
   // accept 不收的段字還在圖上，裁切一樣要避開
   const textBoxes = all.map((u) => u.textBbox);
   const recognized = await engine.recognize(

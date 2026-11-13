@@ -237,6 +237,15 @@ if (!globalThis.__naruhodo) {
         overlay.setStatuses(statuses);
         return false;
       }
+      case 'content:pageOutlines': {
+        // anchor 不在最近一次量到的 Page 裡（已經捲走或換頁）就不畫
+        const outlines = message.pages.flatMap(({ anchorId, subRect, translating, waiting }) => {
+          const anchor = anchors.get(anchorId);
+          return anchor instanceof HTMLElement ? [{ anchor, sub: subRect, translating, waiting }] : [];
+        });
+        overlay.setOutlines(outlines);
+        return false;
+      }
       case 'content:prepareCapture':
         void capturePrep.prepare(message.hideOverlay, message.mark).then((r) => sendResponse(r satisfies CapturePreparedResponse));
         return true;

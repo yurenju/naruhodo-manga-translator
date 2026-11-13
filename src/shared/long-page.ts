@@ -2,7 +2,7 @@
  * 直式捲動的長 Page（spec #142「直式捲動的長 Page」、ADR 0004）：比可見範圍高的 Page 跟著捲動一截一截辨識。
  * 這裡是純函式：Page 身分（固定橫條指紋）、哪些框要收、收進來的 Line 怎麼排。
  */
-import type { Rect } from './messages.ts';
+import type { LineBox, Rect } from './messages.ts';
 import { hammingDistance, pageHash, SAME_PAGE_MAX_DISTANCE, type GrayImage } from './page-hash.ts';
 import type { BalloonText, LooseText, PageText, RatioRect } from './page-text.ts';
 
@@ -145,6 +145,25 @@ export function rejectInSlice(
   if (column && !ownsBox(onPage)) return 'otherPage';
   if (collected.some((c) => overlaps(c, onPage))) return 'overlap';
   return undefined;
+}
+
+/** 被可見範圍邊緣切到的一個框（相對這一截的比例座標）。 */
+export interface CutBox {
+  box: RatioRect;
+  kind: LineBox['kind'];
+}
+
+/**
+ * 被切到、之後才會收的框（#283）：換成 Page 座標，content script 在上面畫等待中的外圈。
+ * - 跟已收 Line（Page 座標）重疊的不算：已經翻好的句子捲到邊緣時也會被偵測成「被切到」，它不是在等。
+ * - 直式排版的一串（inColumn）裡每個 Page 辨識的都是整串看得到的範圍，同一個框只算在中心所在的那個 Page 上。
+ * tooTall（比可見範圍還高、永遠收不到）不在 cut 裡：外圈的意思是「之後會翻」。
+ */
+export function waitingBoxes(cut: readonly CutBox[], slice: Slice, collected: readonly RatioRect[], inColumn: boolean): LineBox[] {
+  return cut
+    .map(({ box, kind }) => ({ kind, box: toPageBox(box, slice) }))
+    .filter(({ box }) => (!inColumn || ownsBox(box)) && !collected.some((c) => overlaps(c, box)))
+    .map((line, i) => ({ id: `w${i + 1}`, order: i + 1, ...line }));
 }
 
 /** 直式排版的一串裡，框（Page 座標，可以超出 0～1）歸不歸這個 Page：看中心落在誰裡面，跨交界的框只有一個 Page 收。 */

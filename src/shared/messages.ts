@@ -134,6 +134,8 @@ export type Message =
   | { type: 'onboarding:return'; tabId: number }
   /** SW → content script：這個 tab 每個 anchor 上的狀態（#185），整份換掉；沒列到的 anchor 拿掉狀態。 */
   | { type: 'content:pageStatus'; anchors: AnchorStatus[] }
+  /** SW → content script：這個 tab 每個 Page 上的外圈（#285 翻譯中、#283 等待中），整份換掉；沒列到的拿掉。 */
+  | { type: 'content:pageOutlines'; pages: PageOutlines[] }
   /** content script → SW：Page 上的紅色小標籤被點了（#185）。 */
   | { type: 'content:statusAction'; action: StatusAction; pageHash: string }
   /** e2e build 才有：等同點外掛圖示（spec #27 第 12 節）。 */
@@ -148,6 +150,24 @@ export type Message =
 export interface LineRef {
   pageHash: string;
   lineId: string;
+}
+
+/**
+ * Page 上一句的外框（Page 座標）：外圈畫在這裡。Balloon 是泡泡外框（balloonBbox），Loose Text 是文字框（bbox）。
+ * order：閱讀順序，外圈的明暗照它錯開。
+ */
+export interface LineBox {
+  id: string;
+  kind: 'balloon' | 'loose';
+  box: RatioRect;
+  order: number;
+}
+
+/** 一個 Page 上要畫的外圈：translating＝實線、原地淡入淡出（#285）；waiting＝虛線流動（#283）。 */
+export interface PageOutlines extends PageOnAnchor {
+  subRect?: RatioRect;
+  translating: LineBox[];
+  waiting: LineBox[];
 }
 
 /** e2e build 才有（SW 的 globalThis.__configureForTest）：模型下載來源、強制 wasm、改用 FakeTranslator。 */
@@ -343,6 +363,10 @@ export interface PageView extends PageThumb {
         stale?: StaleReason;
       }
     | { state: 'error'; message: string };
+  /** 已經送出翻譯、譯文還沒回來的句子（#285）；沒有時省略。 */
+  translatingLines?: LineBox[];
+  /** 長 Page、直式排版的一串：被可見範圍的上緣或下緣切到、先不收的框（#283）；沒有時省略。 */
+  waitingLines?: LineBox[];
 }
 
 export interface PagesResponse {
@@ -406,7 +430,8 @@ export interface PreviousCapture {
   dy: number;
 }
 
-export type AnalyzeResponse = { text: PageText } | { error: string };
+/** waiting：長 Page 的這一截裡被可見範圍邊緣切到、先不收的框（Page 座標，#283）；沒有時省略。 */
+export type AnalyzeResponse = { text: PageText; waiting?: LineBox[] } | { error: string };
 /** 跟 texts 同順序。 */
 export type KuromojiReadingsResponse = { readings: string[] } | { error: string };
 
