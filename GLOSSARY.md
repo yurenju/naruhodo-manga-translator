@@ -17,8 +17,12 @@ One installment of a Series, as published.
 _Avoid_: chapter (unless the site itself uses it), issue
 
 **Page** (頁)
-One manga page image as the reader sees it on the site. The same Page read on different sites is still one Page. A Page can be taller than the screen, as in vertically scrolled works where the reader scrolls through it; it is still one Page. Banners, thumbnails, ads and other images on a site that are not pages of a manga are not Pages, even when they carry Japanese text and even when the reader activated the extension on that tab.
+One manga page image as the reader sees it on the site. The same Page read on different sites is still one Page. A Page can be taller than the screen, as in vertically scrolled works where the reader scrolls through it; it is still one Page. Pages stacked one above another to be scrolled through are still Pages, one image each. The images a site cuts a Strip into are not Pages: the cuts ignore the content. Banners, thumbnails, ads and other images on a site that are not pages of a manga are not Pages, even when they carry Japanese text and even when the reader activated the extension on that tab.
 _Avoid_: image, screen
+
+**Strip** (條漫)
+A run of images stacked one above another whose content continues across them: one long drawing the site has cut into pieces of a fixed height, read by scrolling. Told apart from Pages stacked vertically by the pixels where two images meet: when the rows on both sides join up and are not blank, the run is a Strip. Until such a join is seen, the run is treated as stacked Pages. A Strip has no Pages of its own, so its text is counted in Lines.
+_Avoid_: webtoon, 直式漫畫 (stacked Pages scroll vertically too), long page
 
 **Spread** (跨頁 / 見開き)
 Two Pages shown side by side as the reader sees them.
@@ -123,7 +127,7 @@ A reader identified by an email address, needed for Hosted Translation. Holds th
 _Avoid_: user (ambiguous with reader), member, profile
 
 **Translated Page** (已翻譯頁)
-The unit every limit counts: one Page whose translation came back from Hosted Translation, including one the reader asked to translate again. Viewing an already translated Page again, a translation that failed, or the Practice Spread is not a Translated Page; a Spread is two.
+The unit every limit counts: one Page whose translation came back from Hosted Translation, including one the reader asked to translate again. Viewing an already translated Page again, a translation that failed, or the Practice Spread is not a Translated Page; a Spread is two. A Strip has no Pages, so every 8 Lines translated from it count as one Translated Page, rounded up, the first Line counting the first; blank space and how the site cut the Strip do not matter.
 _Avoid_: credit, 點數, token, request
 
 **Free Pages** (免費額度)

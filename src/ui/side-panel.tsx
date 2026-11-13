@@ -6,7 +6,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useId, useState } from 'preact/hooks';
 import { FREE_PAGES, type BillingPeriod, type Quota } from '../shared/hosted-api.ts';
-import type { LineRef, ModelStatus, PageView } from '../shared/messages.ts';
+import type { LineRef, ModelStatus, PageView, StripStatus } from '../shared/messages.ts';
 import { megabytes } from '../shared/model-download.ts';
 import type { PageMode } from '../shared/page-mode.ts';
 import { loadPunctuationFont } from '../shared/punctuation-face.ts';
@@ -20,6 +20,7 @@ import {
   canTranslate,
   hasUntranslated,
   quotaView,
+  stripView,
   setupNotices,
   parentPage,
   sidePanelScreen,
@@ -353,6 +354,8 @@ export interface SidePanelProps {
   onDismissHostedHint?: () => void;
   /** 內建翻譯的剩餘額度（Worker 的 GET /v1/account）；undefined＝還在讀、沒登入或自備金鑰。 */
   quota?: Quota;
+  /** 這個分頁正在讀 Strip（條漫，#282）時，它到目前計了幾句、幾頁；不是 Strip 時 undefined。 */
+  strip?: StripStatus;
   /** 「查看方案」：打開帳號與訂閱頁（spec #254）；沒給時（網站上的展示）按鈕停用。 */
   onViewPlans?: () => void;
   /** 帳號頁發起的付款確認了（#176）：顯示一次「已訂閱」，帶付款的扣款週期。 */
@@ -487,6 +490,7 @@ export function SidePanel(props: SidePanelProps) {
   const translate = () => onTranslate();
   const view = sidePanelView(pages, access.mode);
   const quota = quotaView(access, props.quota);
+  const strip = stripView(access, props.strip);
   const sync: TranscriptSync = { display, hovered, onLineHover: props.onLineHover };
   return (
     <div class="naru-side-panel">
@@ -507,6 +511,7 @@ export function SidePanel(props: SidePanelProps) {
         {done.length > 0 && <DisplaySwitch display={display} onLevel={setLevel} onFurigana={setFurigana} />}
         {/* 不是錯誤：首頁、目錄頁本來就沒有 Page（縮圖太小不算），讓讀者知道外掛是刻意沒翻 */}
         {pages.length === 0 && <Callout role="status">這個畫面沒有找到漫畫頁</Callout>}
+        {strip && <Callout role="status">{strip.notice}</Callout>}
         <ul aria-label="Page">
           {view.pages.map((entry) => (
             // 同一個 anchor 可能有兩個 Page（Spread），key 要帶 Page 身分
@@ -523,6 +528,11 @@ export function SidePanel(props: SidePanelProps) {
       {/* 底部固定列；放在 main 外面才是 contentinfo landmark。內建翻譯的剩餘頁數一行、整體翻譯狀態＋按鈕一行（#77、#92）；作品在 Transcript 上方的作品卡（#186） */}
       <footer aria-label="狀態列">
         {quota.line && <QuotaLine line={quota.line} onViewPlans={props.onViewPlans} />}
+        {strip?.line && (
+          <div role="status" aria-label="條漫計費" class="status-row quota-row">
+            <span>{strip.line}</span>
+          </div>
+        )}
         <div class="status-row">
           <StatusText status={view.status} />
           {quota.footerButton === 'plans' ? (

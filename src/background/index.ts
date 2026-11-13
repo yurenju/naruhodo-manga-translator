@@ -32,7 +32,7 @@ import { createHostedAccountClient } from '../shared/hosted-account-client.ts';
 import { accountUrl, blockedPageUrl } from '../shared/account-page.ts';
 import { onboardingUrl, saveInstallState, saveOnboarding } from '../shared/onboarding.ts';
 import type { ActionBadge, StatusAction } from '../shared/page-status.ts';
-import { quotaIndicator } from '../shared/quota-indicator.ts';
+import { quotaIndicator, stripTitle } from '../shared/quota-indicator.ts';
 import { createQuotaIndicatorSync, type QuotaLookup } from './quota-indicator-sync.ts';
 import { loadSidePanelOnActivation, watchSidePanelOnActivation } from '../shared/side-panel-setting.ts';
 import { loadPendingPayment, savePendingPayment, showSubscribedNotice } from '../shared/payment-return.ts';
@@ -301,10 +301,11 @@ const transcriber = createTranscriber({
       notifyPanel({ type: 'notes:changed', seriesId });
     },
   },
-  publish(tabId, pages) {
-    notifyPanel({ type: 'pages:updated', tabId, pages });
+  publish(tabId, pages, strip) {
+    // strip 一律送：side panel 自己知道是不是內建翻譯、有沒有登入，決定要不要顯示計費方式的說明（#282）
+    notifyPanel({ type: 'pages:updated', tabId, pages, ...(strip ? { strip } : {}) });
     overlaySync.publish(tabId, pages);
-    void pageStatus.pagesUpdated(tabId, pages);
+    void pageStatus.pagesUpdated(tabId, pages, strip !== undefined);
   },
   onJobEvent(event) {
     trace('job', { ...event });
@@ -354,7 +355,18 @@ const BADGES: Record<ActionBadge, { text: string; color: string }> = {
   lowQuota: { text: ' ', color: '#E8710A' },
   // 已啟動、沒事：一個小小的綠色標記
   on: { text: ' ', color: '#2E8B57' },
+  // 正在讀照句數計頁的 Strip（條漫，#282）：圓點換成「條」字，快用完一樣是橘色底
+  strip: { text: '條', color: '#2E8B57' },
+  stripLowQuota: { text: '條', color: '#E8710A' },
 };
+
+/** 圖示的 hover 提示：全域那一份（剩餘頁數，#237），以及正在讀 Strip 的分頁（多一行計費方式，#282）。 */
+let actionTitle = quotaIndicator(undefined).title;
+/** 設過分頁專屬 hover 提示的分頁 → 現在是不是 Strip；全域的提示變了要跟著重設（分頁專屬的不會自己跟著變）。 */
+const stripTitles = new Map<number, boolean>();
+const showTabTitle = (tabId: number, strip: boolean) =>
+  // 分頁已經關了也沒關係
+  chrome.action.setTitle({ tabId, title: strip ? stripTitle(actionTitle) : actionTitle }).catch(() => {});
 
 /** 內建翻譯、已登入時的剩餘額度；自備金鑰或沒登入（包含 token 已失效）是 none。 */
 async function lookupQuota(): Promise<QuotaLookup> {
@@ -373,7 +385,9 @@ async function lookupQuota(): Promise<QuotaLookup> {
 const quotaIndicatorSync = createQuotaIndicatorSync({
   lookup: lookupQuota,
   async show({ title, menuTitle, lowQuota }) {
+    actionTitle = title;
     await chrome.action.setTitle({ title });
+    for (const [tabId, strip] of stripTitles) void showTabTitle(tabId, strip);
     // 選單還沒建好（SW 剛啟動）時會失敗：建好之後會再更新一次
     chrome.contextMenus.update(MENU_ACCOUNT, { title: menuTitle }, () => void chrome.runtime.lastError);
     await pageStatus.quotaChanged(lowQuota);
@@ -396,6 +410,12 @@ const pageStatus = createPageStatusSync({
   async accessProblem() {
     if (await getTranslator()) return undefined;
     return (await loadTranslationMode()) === 'hosted' ? 'signIn' : 'ownKey';
+  },
+  // 自備金鑰沒有頁數可計；沒登入時還翻不了
+  stripBilled: async () => (await loadTranslationMode()) === 'hosted' && (await hostedSessionToken()) !== undefined,
+  setStrip(tabId, strip) {
+    stripTitles.set(tabId, strip);
+    void showTabTitle(tabId, strip);
   },
 });
 
@@ -835,7 +855,7 @@ chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) =>
       return false;
     }
     case 'panel:getPages':
-      sendResponse({ pages: transcriber.get(message.tabId) } satisfies PagesResponse);
+      sendResponse({ pages: transcriber.get(message.tabId), strip: transcriber.getStrip(message.tabId) } satisfies PagesResponse);
       return false;
     case 'panel:translate':
       void transcriber.translate(message.tabId, message.pageHash).finally(() => sendResponse());

@@ -16,6 +16,7 @@ import type {
   ModelStatus,
   PageCandidate,
   PageThumb,
+  PreviousCapture,
   Rect,
   Size,
   TestConnectionResponse,
@@ -23,10 +24,11 @@ import type {
   ProposeNotesResponse,
   GuessSeriesResponse,
 } from '../shared/messages.ts';
-import { rejectInSlice, sliceOf, stripeFingerprint, toPageText } from '../shared/long-page.ts';
+import { collectedBoxes, cutEdges, rejectInSlice, sliceOf, stripeFingerprint, toPageText, type Slice, type SliceEdges } from '../shared/long-page.ts';
 import { pageHash, type GrayImage } from '../shared/page-hash.ts';
 import type { BalloonText, EraseData, LooseText, PageText, RatioRect } from '../shared/page-text.ts';
 import { grayOfRgba, type RgbaImage } from '../shared/pixels.ts';
+import { junctionVerdict, stitchWindow, type JunctionMeasure, type Rows } from '../shared/strip.ts';
 import { createTrace } from '../shared/trace.ts';
 import type { NotesInput, NotesOutput, SeriesGuessOutput, TitleSignals, TranslateInput, TranslateOutput } from '../shared/translator.ts';
 import { createClaudeTranslator } from './claude-translator.ts';
@@ -74,10 +76,40 @@ async function crop({ screenshot, frameMark, viewport, candidates }: CropRequest
         };
       });
     });
-    return { pages, frame };
+    const junctions = columnJunctions(bitmap, viewport, candidates);
+    if (__DEBUG__ && junctions.size > 0) trace('strip:junctions', { junctions: [...junctions].map(([anchorId, measure]) => ({ anchorId, ...measure })) });
+    return { pages: pages.map((page) => (junctions.has(page.anchorId) ? { ...page, junctionAbove: junctions.get(page.anchorId)!.verdict } : page)), frame };
   } finally {
     bitmap.close();
   }
+}
+
+/** 交界離整串看得到的範圍的上下緣至少這麼多截圖像素才量：太靠邊時那一列可能是可見範圍外面的東西。 */
+const JUNCTION_MARGIN = 4;
+
+/**
+ * 直式排版的一串（#282）裡，出現在截圖上的每個交界：上面元素的最後一列與下面元素的第一列接不接得起來
+ * （shared/strip.ts）。key＝交界下面那個元素的 anchorId。canvas 多半讀不到像素（跨來源），所以從截圖量。
+ */
+function columnJunctions(bitmap: ImageBitmap, viewport: Size, candidates: readonly PageCandidate[]): Map<string, JunctionMeasure> {
+  const scale = bitmap.height / viewport.height;
+  const junctions = new Map<string, JunctionMeasure>();
+  const byColumn = new Map<string, PageCandidate[]>();
+  for (const c of candidates) if (c.column) byColumn.set(c.column.id, [...(byColumn.get(c.column.id) ?? []), c]);
+  for (const members of byColumn.values()) {
+    members.sort((a, b) => a.rect.y - b.rect.y);
+    for (const [i, lower] of members.entries()) {
+      const upper = members[i - 1];
+      if (!upper || Math.abs(upper.rect.y + upper.rect.height - lower.rect.y) > 2) continue;
+      const region = toImageRect(lower.column!.region, viewport, bitmap);
+      // 元素的邊會對齊到裝置像素：交界那一條線的上面一列屬於上面的元素，下面一列屬於下面的
+      const row = Math.round(lower.rect.y * scale);
+      if (row - 1 < region.y + JUNCTION_MARGIN || row + 1 > region.y + region.height - JUNCTION_MARGIN || region.width < 8) continue;
+      const line = (y: number) => grayOf(bitmap, { x: region.x + 2, y, width: region.width - 4, height: 1 }).gray;
+      junctions.set(lower.anchorId, junctionVerdict(line(row - 1), line(row)));
+    }
+  }
+  return junctions;
 }
 
 /**
@@ -158,19 +190,28 @@ const pipeline = createLocalPipeline({
  * 從截圖裁出全解析度的 Page（Spread 的一頁用 subRect）跑本機流水線（座標換算與縮圖相同）；順便從同一張截圖算每個 Balloon 的擦除底色
  * （原地覆蓋用，canvas 網站的 canvas 是 tainted，content script 讀不到像素）。
  */
-async function analyze({ screenshot, frameMark, viewport, candidate, subRect, collected = [], notesNames = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
+async function analyze({ screenshot, frameMark, viewport, candidate, subRect, collected = [], column, notesNames = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
   if (__E2E__ && config) pipeline.configure(config);
   const { bitmap } = await decodeScreenshot(screenshot, viewport, frameMark);
   try {
     const candidateRect = toImageRect(candidate.visible ?? candidate.rect, viewport, bitmap);
     const rect = subRect ? subImageRect(candidateRect, subRect) : candidateRect;
-    // 長 Page（spec #142）：只跑看得到的那一截，被切到的與已收過的框不做 OCR
+    // 長 Page（spec #142）：只跑看得到的那一截，被切到的與已收過的框不做 OCR。
+    // 直式排版的一串（#282）：這一截是整串看得到的範圍，只收中心落在這個 Page 裡的框
     const slice = candidate.visible && sliceOf(candidate.rect, candidate.visible);
+    const edges: SliceEdges | undefined = column && { top: column.cutTop, bottom: column.cutBottom };
     const rejected: { box: RatioRect; reason: string }[] = [];
+    /** 被這一截的上緣／下緣切到的框（截圖像素）：有上一次的截圖時拼起來再辨識。 */
+    const cutTop: Rows[] = [];
+    const cutBottom: Rows[] = [];
     const accept = slice
       ? (box: RatioRect) => {
-          const reason = rejectInSlice(box, slice, rect.height, collected);
+          const reason = rejectInSlice(box, slice, rect.height, collected, edges);
           if (reason) rejected.push({ box, reason });
+          if (reason === 'cut' && edges) {
+            const rows = { top: rect.y + box.y * rect.height, bottom: rect.y + (box.y + box.h) * rect.height };
+            (cutEdges(box, rect.height, edges).top ? cutTop : cutBottom).push(rows);
+          }
           return reason === undefined;
         }
       : undefined;
@@ -201,9 +242,126 @@ async function analyze({ screenshot, frameMark, viewport, candidate, subRect, co
       });
     }
     // 長 Page：這一截的座標換成 Page 座標，transcriber 併進整個 Page
-    return slice ? toPageText(text, slice) : text;
+    if (!slice) return text;
+    const onPage = toPageText(text, slice);
+    if (!column?.previous || cutTop.length + cutBottom.length === 0) return onPage;
+    const stitched = await analyzeStitched({
+      bitmap,
+      viewport,
+      candidate,
+      rect,
+      column: { ...column, previous: column.previous },
+      cutTop,
+      cutBottom,
+      collected: [...collected, ...collectedBoxes(onPage)],
+      notesNames,
+    });
+    return stitched ? mergePasses(onPage, stitched) : onPage;
   } finally {
     bitmap.close();
+  }
+}
+
+/** 拼接那一次收到的 Line 接在這次的後面：id 與順序都錯開（transcriber 併進整個 Page 時會重編、依位置重排）。 */
+function mergePasses(first: PageText, second: PageText): PageText {
+  const offset = first.balloons.length + first.looseText.length;
+  const shift = <T extends { id: string; order: number }>(t: T): T => ({ ...t, id: `${t.id}s`, order: t.order + offset });
+  return { balloons: [...first.balloons, ...second.balloons.map(shift)], looseText: [...first.looseText, ...second.looseText.map(shift)] };
+}
+
+interface StitchRequest {
+  bitmap: ImageBitmap;
+  viewport: Size;
+  candidate: PageCandidate;
+  /** 這次整串看得到的範圍（截圖像素）。 */
+  rect: Rect;
+  column: { cutTop: boolean; cutBottom: boolean; previous: PreviousCapture };
+  cutTop: Rows[];
+  cutBottom: Rows[];
+  /** 已收 Line 的外框（Page 座標），含這次剛收的。 */
+  collected: RatioRect[];
+  notesNames: string[];
+}
+
+/**
+ * 被可見範圍邊緣切到的框（#282）：把同一串上一次的截圖接在這次被切的那一緣外面，在拼起來的圖上再辨識一次，
+ * 只收跨過接縫的框（其他的這次或上次已經處理過）。回傳 Page 座標；兩次截圖接不起來時 undefined。
+ */
+async function analyzeStitched({ bitmap, viewport, candidate, rect, column, cutTop, cutBottom, collected, notesNames }: StitchRequest): Promise<PageText | undefined> {
+  const { previous } = column;
+  const { bitmap: before } = await decodeScreenshot(previous.screenshot, previous.viewport, previous.frameMark);
+  try {
+    // 視窗大小變了（開關 side panel）就不拼：兩張截圖的版面不同
+    if (before.width !== bitmap.width || before.height !== bitmap.height) return undefined;
+    const scale = bitmap.height / viewport.height;
+    const region = toImageRect(previous.region, previous.viewport, before);
+    if (Math.abs(region.x - rect.x) > 1 || Math.abs(region.width - rect.width) > 1) return undefined;
+    const dy = Math.round(previous.dy * scale);
+    const current = { top: rect.y, bottom: rect.y + rect.height };
+    const stitch = stitchWindow(current, { top: region.y - dy, bottom: region.y + region.height - dy }, cutTop, cutBottom);
+    if (!stitch) {
+      trace('stitch:skip', { anchorId: candidate.anchorId, dy, current, previous: region });
+      return undefined;
+    }
+    const { window, seam, edge } = stitch;
+    const height = window.bottom - window.top;
+    const canvas = new OffscreenCanvas(rect.width, height);
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    /** 視窗裡的一段列從某張截圖畫進來；那張截圖裡的 y 比這次的座標多 offset。 */
+    const draw = (source: ImageBitmap, rows: Rows, offset: number) => {
+      const h = rows.bottom - rows.top;
+      if (h > 0) ctx.drawImage(source, rect.x, rows.top + offset, rect.width, h, 0, rows.top - window.top, rect.width, h);
+    };
+    draw(before, edge === 'top' ? { top: window.top, bottom: seam } : { top: seam, bottom: window.bottom }, dy);
+    draw(bitmap, edge === 'top' ? { top: seam, bottom: window.bottom } : { top: window.top, bottom: seam }, 0);
+    const stitched = canvas.transferToImageBitmap();
+    try {
+      const whole = { x: 0, y: 0, width: rect.width, height };
+      const pageTop = candidate.rect.y * scale;
+      const pageHeight = candidate.rect.height * scale;
+      const slice: Slice = { top: (window.top - pageTop) / pageHeight, bottom: (window.bottom - pageTop) / pageHeight };
+      const seamAt = (seam - window.top) / height;
+      const margin = 2 / height;
+      // 視窗最外面那一緣（上一次截圖的邊緣、或這次的另一緣）也被切的框，兩次截圖加起來還是看不完整
+      const outer: SliceEdges =
+        edge === 'top'
+          ? { top: previous.cutTop, bottom: window.bottom >= current.bottom && column.cutBottom }
+          : { top: window.top <= current.top && column.cutTop, bottom: previous.cutBottom };
+      const rejected: { box: RatioRect; reason: string }[] = [];
+      const accept = (box: RatioRect) => {
+        // 沒跨過接縫的框不是這一次要補的
+        if (box.y >= seamAt - margin || box.y + box.h <= seamAt + margin) return false;
+        // 先看歸屬與重疊：已經收過的高框再出現時是 overlap，不是 tooTall
+        const cut = cutEdges(box, height, outer);
+        const reason = rejectInSlice(box, slice, height, collected, { top: false, bottom: false }) ?? (cut.top || cut.bottom ? 'tooTall' : undefined);
+        if (reason) rejected.push({ box, reason });
+        return reason === undefined;
+      };
+      const startedAt = performance.now();
+      const analyzed = await pipeline.analyze(stitched, whole, { accept, notesNames });
+      const rgba = pageRgba(stitched, whole);
+      const text = { balloons: eraseBalloons(analyzed.balloons, rgba), looseText: eraseLoose(analyzed.looseText, rgba) };
+      if (__DEBUG__) {
+        trace('stitch', {
+          anchorId: candidate.anchorId,
+          edge,
+          dy,
+          window,
+          seam,
+          ms: Math.round(performance.now() - startedAt),
+          rejected,
+          balloons: text.balloons.map(({ id, 原文, ocrConfidence, balloonBbox }) => ({ id, 原文, ocrConfidence, balloonBbox })),
+          looseText: text.looseText.map(({ id, 原文, ocrConfidence, bbox }) => ({ id, 原文, ocrConfidence, bbox })),
+          detections: detectionImage(stitched, whole, text),
+        });
+      }
+      return toPageText(text, slice);
+    } finally {
+      stitched.close();
+    }
+  } finally {
+    before.close();
   }
 }
 

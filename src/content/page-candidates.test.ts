@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPageCandidate, isStretched, longPageVisible, pageCandidateRejection } from './page-candidates.ts';
+import { columnMemberVisible, columnRegion, isPageCandidate, isStretched, longPageVisible, pageCandidateRejection, verticalColumns } from './page-candidates.ts';
 
 const VIEWPORT = { width: 1280, height: 720 };
 /** 仿 canvas 網站一頁在畫面上的大小。 */
@@ -137,5 +137,67 @@ describe('isStretched', () => {
 
   it('不知道圖本身的大小（object-fit 不是 fill）照舊是候選', () => {
     expect(pageCandidateRejection(full, { width: 872, height: 1394 })).toBeUndefined();
+  });
+});
+
+describe('直式排版的一串（#282）', () => {
+  // 真實網站量到的版面：每個元素各自包在不同的父元素裡，只有幾何看得出是一串
+  const scroller = {};
+  /** 把條漫切成多張 canvas 的網站：800×1000，上下緊貼。 */
+  const slices = [0, 1000, 2000, 3000].map((y) => ({ rect: { x: 453, y, width: 800, height: 1000 }, scroller }));
+
+  it('上下緊貼、同寬、同 x、在同一個捲動範圍裡的元素是同一串', () => {
+    const columns = verticalColumns(slices);
+
+    expect(columns[0]).toBeDefined();
+    expect(new Set(columns).size).toBe(1);
+  });
+
+  it('中間有間距的（一頁接一頁、留白 16 px 的 canvas 網站）不是一串', () => {
+    const pages = [16, 657, 1298].map((y) => ({ rect: { x: 425, y, width: 430, height: 625 }, scroller }));
+
+    expect(verticalColumns(pages)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it('左右並排（Spread 的兩頁）、寬度不同、不在同一個捲動範圍、或不在任何捲動範圍裡的不算', () => {
+    const upper = { x: 453, y: 0, width: 800, height: 1000 };
+    const below = { x: 453, y: 1000, width: 800, height: 1000 };
+
+    expect(verticalColumns([{ rect: upper, scroller }, { rect: { ...upper, x: 1253 }, scroller }])).toEqual([undefined, undefined]);
+    expect(verticalColumns([{ rect: upper, scroller }, { rect: { ...below, width: 600 }, scroller }])).toEqual([undefined, undefined]);
+    expect(verticalColumns([{ rect: upper, scroller }, { rect: below, scroller: {} }])).toEqual([undefined, undefined]);
+    expect(verticalColumns([{ rect: upper, scroller: undefined }, { rect: below, scroller: undefined }])).toEqual([undefined, undefined]);
+  });
+
+  it('同一個捲動範圍裡的縮圖、頭像不會被算進去', () => {
+    const icon = { rect: { x: 453, y: 4000, width: 120, height: 120 }, scroller };
+
+    expect(verticalColumns([...slices, icon]).at(-1)).toBeUndefined();
+  });
+
+  // 電子書閱讀器的直式捲動：img 1080×1512，捲動容器 1706×816
+  const VIEW = { width: 1706, height: 932 };
+  const clip = { x: 0, y: 0, width: 1706, height: 816 };
+  const img = (y: number) => ({ x: 313, y, width: 1080, height: 1512 });
+
+  it('一串裡的元素看得到的那一截：露出一點也算；整個在可見範圍外的沒有', () => {
+    expect(columnMemberVisible(img(100), VIEW, [clip])).toEqual({ x: 313, y: 100, width: 1080, height: 716 });
+    expect(columnMemberVisible(img(-1412), VIEW, [clip])).toEqual({ x: 313, y: 0, width: 1080, height: 100 });
+    expect(columnMemberVisible(img(1612), VIEW, [clip])).toBeUndefined();
+    expect(columnMemberVisible(img(-2924), VIEW, [clip])).toBeUndefined();
+  });
+
+  it('整串看得到的範圍是看得到的元素合起來的一整塊；上下還有內容的那一緣算被切', () => {
+    const members = [-1412, 100].map((y) => ({ rect: img(y), visible: columnMemberVisible(img(y), VIEW, [clip])! }));
+
+    expect(columnRegion(members)).toEqual({ region: { x: 313, y: 0, width: 1080, height: 816 }, cutTop: true, cutBottom: true });
+  });
+
+  it('這一串的開頭完整露出來時上緣不算被切；可見範圍剛好停在交界上、交界外還有元素時算', () => {
+    const first = { rect: img(100), visible: columnMemberVisible(img(100), VIEW, [clip])! };
+    expect(columnRegion([first])).toMatchObject({ region: { y: 100, height: 716 }, cutTop: false, cutBottom: true });
+
+    const atJunction = { rect: img(0), visible: columnMemberVisible(img(0), VIEW, [clip])! };
+    expect(columnRegion([atJunction], [img(-1512)])).toMatchObject({ cutTop: true });
   });
 });

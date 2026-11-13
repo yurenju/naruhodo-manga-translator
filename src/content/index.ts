@@ -1,9 +1,9 @@
-import type { CaptureFinishedResponse, CapturePreparedResponse, Message, PageCandidate, PageCandidatesResponse, Rect } from '../shared/messages.ts';
+import type { CaptureFinishedResponse, CapturePreparedResponse, ColumnView, Message, PageCandidate, PageCandidatesResponse, Rect } from '../shared/messages.ts';
 import { loadPageMode, onPageModeChange } from '../shared/page-mode.ts';
 import { createTrace } from '../shared/trace.ts';
 import { createCapturePrep } from './capture.ts';
 import { createOverlay, HOST_ATTRIBUTE, intrinsicSize, isShown, untilRepainted } from './overlay.ts';
-import { longPageVisible, pageCandidateRejection } from './page-candidates.ts';
+import { columnMemberVisible, columnRegion, longPageVisible, MIN_PAGE_SIDE, pageCandidateRejection, verticalColumns } from './page-candidates.ts';
 import { watchPageTurns } from './page-turn.ts';
 import { stopRepaint } from './repaint.ts';
 
@@ -52,18 +52,34 @@ if (!globalThis.__naruhodo) {
     let small = 0;
     anchors.clear();
     longAnchors.clear();
-    for (const element of document.querySelectorAll('img, canvas')) {
+    const measured = [...document.querySelectorAll('img, canvas')].map((element) => {
       const { x, y, width, height } = element.getBoundingClientRect();
-      const rect = { x, y, width, height };
-      const clips = clipRects(element);
       const shown = isShown(element);
-      // 比可見範圍高的長 Page 只處理看得到的那一截（spec #142）；其他照「完整可見」的規則
-      const slice = shown ? longPageVisible(rect, visible, clips) : undefined;
+      // 藏起來的不算在任何一串裡（scroller 給 undefined）
+      return { element, rect: { x, y, width, height }, clips: clipRects(element), shown, scroller: shown ? scrollerOf(element) : undefined };
+    });
+    // 直式排版的一串（#282）：整串看得到的範圍一起辨識，跨元素交界的框照常收
+    const columnOf = verticalColumns(measured);
+    const columns = new Map<number, ColumnView>();
+    const memberVisible = measured.map((m, i) => (columnOf[i] === undefined ? undefined : columnMemberVisible(m.rect, visible, m.clips)));
+    for (const key of new Set(columnOf)) {
+      if (key === undefined) continue;
+      const members = measured.flatMap((m, i) => (columnOf[i] === key ? [{ rect: m.rect, visible: memberVisible[i], scroller: m.scroller }] : []));
+      const seen = members.flatMap((m) => (m.visible ? [{ rect: m.rect, visible: m.visible }] : []));
+      if (seen.length === 0) continue;
+      const hidden = members.filter((m) => !m.visible).map((m) => m.rect);
+      columns.set(key, { id: columnIdOf(members[0]!.scroller!, seen[0]!.rect.x), ...columnRegion(seen, hidden) });
+    }
+    for (const [i, { element, rect, clips, shown }] of measured.entries()) {
+      const column = columnOf[i] === undefined ? undefined : columns.get(columnOf[i]);
+      const inColumn = columnOf[i] !== undefined;
+      // 比可見範圍高的長 Page 只處理看得到的那一截（spec #142）；一串裡的元素也是；其他照「完整可見」的規則
+      const slice = !shown ? undefined : inColumn ? memberVisible[i] : longPageVisible(rect, visible, clips);
       // 被工具列之類蓋住的照樣算：截圖前會把蓋在上面的元素藏起來（#59、ADR 0004）。
       // 藏起來的不算：疊在看得到的那張底下，截到的是上面那張，譯文會被貼到兩張上
       // object-fit 是 fill（預設）才會變形；contain／cover 這類保持比例，不看
       const intrinsic = getComputedStyle(element).objectFit === 'fill' ? intrinsicSize(element) : undefined;
-      const reason = !shown ? 'hidden' : slice ? undefined : pageCandidateRejection(rect, visible, clips, intrinsic);
+      const reason = !shown ? 'hidden' : slice ? undefined : inColumn ? 'outsideViewport' : pageCandidateRejection(rect, visible, clips, intrinsic);
       if (reason === undefined) {
         const overlaid = overlay.shownPages(element);
         if (slice) longAnchors.add(element);
@@ -74,6 +90,7 @@ if (!globalThis.__naruhodo) {
           ...(slice ? { visible: slice } : {}),
           ...(covered.length > 0 ? { covered } : {}),
           ...(overlaid.length > 0 ? { overlaid } : {}),
+          ...(column ? { column } : {}),
         });
       }
       else if (__DEBUG__ && reason === 'small') small++;
@@ -82,6 +99,36 @@ if (!globalThis.__naruhodo) {
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     if (__DEBUG__) trace('candidates', { url: location.href, viewport, visible, dpr: devicePixelRatio, candidates, rejected, small });
     return { viewport, candidates };
+  }
+
+  /**
+   * 元素所在的上下捲動範圍（#282）：最近一個上下可以捲的祖先，沒有的話是整份文件（文件可以捲時）。
+   * 不在任何可以上下捲的範圍裡是 undefined：上下相疊但不能捲的圖不當成直式排版的一串。
+   */
+  function scrollerOf(element: Element): Element | Document | undefined {
+    for (let el = element.parentElement; el && el !== document.documentElement && el !== document.body; el = el.parentElement) {
+      const { overflowY } = getComputedStyle(el);
+      if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') && el.scrollHeight > el.clientHeight + 1) return el;
+    }
+    const root = document.scrollingElement ?? document.documentElement;
+    return root.scrollHeight > root.clientHeight + 1 ? document : undefined;
+  }
+
+  /** 一串的 id：同一個捲動範圍裡同一欄（依第一次看到時的 x）一直用同一個；版面左右移動（開關 side panel）不換。 */
+  const columnIds = new WeakMap<object, { x: number; id: string }[]>();
+  let nextColumnId = 1;
+  function columnIdOf(scroller: Element | Document, x: number): string {
+    let known = columnIds.get(scroller);
+    if (!known) columnIds.set(scroller, (known = []));
+    // 一個捲動範圍通常只有一欄；有好幾欄時用 x 最接近的那一欄
+    const nearest = known.reduce<{ x: number; id: string } | undefined>((a, b) => (!a || Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a), undefined);
+    if (nearest && (known.length === 1 || Math.abs(nearest.x - x) < MIN_PAGE_SIDE)) {
+      nearest.x = x;
+      return nearest.id;
+    }
+    const column = { x, id: `c${nextColumnId++}` };
+    known.push(column);
+    return column.id;
   }
 
   /** 會裁切內容的祖先（overflow 不是 visible）：翻頁式 viewer 的隔壁頁在它外面。 */

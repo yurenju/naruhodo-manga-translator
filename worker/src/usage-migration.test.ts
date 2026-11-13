@@ -45,14 +45,13 @@ describe('migration 0007：重建 usage_records', () => {
           .bind(r.id, r.account_id, r.created_at, r.kind, r.input_tokens, r.output_tokens, r.cache_read_tokens, r.cost_usd, r.page_record_id, r.practice),
       ),
     ]);
-    const continuableBefore = await continuability();
-    // 0006 的資料本身要有能接續、也有不能接續的，比較才有意義
-    expect(continuableBefore.filter(([, , ok]) => ok)).toEqual([[1, A, true]]);
-
     await applyD1Migrations(db, env.TEST_MIGRATIONS);
 
-    expect(await rows()).toEqual(OLD_ROWS.map((r) => ({ ...r, cache_write_tokens: null, model: null })));
-    expect(await continuability()).toEqual(continuableBefore);
+    // strip、lines 是 0014 加的（#282）：之前的紀錄都不是 Strip
+    expect(await rows()).toEqual(OLD_ROWS.map((r) => ({ ...r, cache_write_tokens: null, model: null, strip: 0, lines: null })));
+    // 接續的判斷不變：0006 的資料裡只有 A 自己扣過頁、1 小時內的那次翻譯（id 1）能被 A 接續。
+    // 現在的 continuable 會讀 0014 才有的欄位，所以只能在套完全部 migration 之後問
+    expect((await continuability()).filter(([, , ok]) => ok)).toEqual([[1, A, true]]);
     const inserted = await db
       .prepare(
         `INSERT INTO usage_records (account_id, created_at, kind, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, model)

@@ -24,12 +24,18 @@
  * （同一個 Page 已翻好的 Line 算一頁 Prior Pages；Hosted Translation 的接續請求帶這個 Page 的 usageRecordId，Worker 不重複扣頁），
  * 顯示與快取的是整個 Page。身分先看 anchor，認不出才比橫條指紋（記憶體裡的，再來是快取）。
  * 同一個 Page 一次只有一截在本機段排隊：還沒開始時換成最新的那一截。
+ *
+ * 直式排版的一串（#282，PageThumb.column）：一串裡的每個元素照長 Page 處理（身分、快取、Line 都以元素為單位），
+ * 但辨識的範圍是整串看得到的那一塊，跨元素交界的框由中心所在的元素收；被可見範圍邊緣切到的框帶上這一串
+ * 上一次的截圖，offscreen 拼起來再辨識。看到接得起來的交界（PageThumb.junctionAbove）這一串就是 Strip（條漫）：
+ * Hosted Translation 改照句數計頁，累計記在這一串上（ColumnState.charge），不走長 Page 的接續。
  */
-import { addLines, collectedBoxes, matchingStripe, pickLines, replaceLines, sliceOf, type Slice, type Stripe } from '../shared/long-page.ts';
-import type { AnalyzeRequest, CropRequest, PageThumb, PageView } from '../shared/messages.ts';
+import { addLines, collectedBoxes, matchingStripe, pickLines, replaceLines, sliceOf, withoutEdgeHalves, type Slice, type Stripe } from '../shared/long-page.ts';
+import { STRIP_WINDOW_MS } from '../shared/hosted-api.ts';
+import type { AnalyzeRequest, CropRequest, PageThumb, PageView, PreviousCapture, Rect, StripStatus } from '../shared/messages.ts';
 import type { Capture } from './scan.ts';
 import { findSamePage } from '../shared/page-hash.ts';
-import { pageLines, type PageCharge, type PageText } from '../shared/page-text.ts';
+import { pageLines, type PageCharge, type PageText, type StripCharge } from '../shared/page-text.ts';
 import type { SeriesNotes, TranslatorVersion } from '../shared/series-notes.ts';
 import type { Series } from '../shared/series.ts';
 import { createTrace } from '../shared/trace.ts';
@@ -65,7 +71,8 @@ export interface TranscriberDeps {
   getSeries(seriesId: string): Promise<Series | undefined>;
   cache: PageCache;
   notes: NotesStore;
-  publish(tabId: number, pages: PageView[]): void;
+  /** strip：畫面上的這一串是 Strip（條漫，#282）時，它到目前計了幾句、幾頁（還沒有 Hosted Translation 的累計時是 0）。 */
+  publish(tabId: number, pages: PageView[], strip?: StripStatus): void;
   onJobEvent?(event: JobEvent): void;
 }
 
@@ -125,6 +132,50 @@ interface LongPage {
   slice: Slice;
   /** Hosted Translation：這個 Page 扣頁的那次，接續的截帶上它。也存在快取裡，翻走、重新整理後再出現照樣接續。 */
   charge?: PageCharge;
+  /** 最近一次看到它時所在的那一串（直式排版，#282）；單獨一個長 Page 沒有。 */
+  column?: string;
+}
+
+/** 一個 tab 裡直式排版的一串（#282）。 */
+interface ColumnState {
+  /** 看過接得起來的交界：這一串是 Strip（條漫），Hosted Translation 照句數計頁。認定之後不會變回來。 */
+  strip: boolean;
+  /** Strip 的計費累計（Hosted Translation 翻過才有）；也存在每個元素的快取裡，SW 重新啟動後接著算。 */
+  charge?: StripCharge;
+  /** 上一次的截圖：下一次有框被可見範圍邊緣切到時拿來拼接。 */
+  last?: ColumnCapture;
+}
+
+interface ColumnCapture {
+  capture: CropRequest;
+  region: Rect;
+  cutTop: boolean;
+  cutBottom: boolean;
+  /** 那次每個看得到的元素的位置：跟下一次同一個元素的位置相減就是捲了多少。 */
+  rects: Map<string, Rect>;
+}
+
+/** 捲動不到這麼多 CSS px 的兩次截圖當成同一個位置，不拼接。 */
+const MIN_SCROLL = 1;
+
+/**
+ * 這一串這次的截圖能不能跟上一次拼：兩次都看得到同一個元素（anchor）才知道捲了多少；位置一樣就不必拼。
+ * members：這次這一串裡看得到的元素。
+ */
+function previousCapture(last: ColumnCapture | undefined, members: readonly PageThumb[]): PreviousCapture | undefined {
+  const shared = last && members.find((m) => last.rects.has(m.anchorId));
+  if (!last || !shared) return undefined;
+  const dy = last.rects.get(shared.anchorId)!.y - shared.rect.y;
+  if (Math.abs(dy) < MIN_SCROLL) return undefined;
+  const { screenshot, frameMark, viewport } = last.capture;
+  return { screenshot, frameMark, viewport, region: last.region, cutTop: last.cutTop, cutBottom: last.cutBottom, dy };
+}
+
+/** 兩份 Strip 累計裡比較新的：同一串取句數多的，不同串取後來的。 */
+function newerStripCharge(a: StripCharge | undefined, b: StripCharge): StripCharge {
+  if (!a) return b;
+  if (a.usageRecordId === b.usageRecordId) return b.lines > a.lines ? b : a;
+  return b.chargedAt > a.chargedAt ? b : a;
 }
 
 /** 扣頁之後多久內接續（跟 Worker 的條件一樣，worker/src/quota.ts）；超過就不帶，Worker 當成新的一頁扣。 */
@@ -137,6 +188,8 @@ interface TabState {
   /** 最近一次擷取到的可見 Page（依閱讀順序）。 */
   pages: PageThumb[];
   records: PageRecord[];
+  /** 直式排版的每一串（#282），key＝ColumnView.id。 */
+  columns: Map<string, ColumnState>;
   /** 按了「重新翻譯」時畫面上的 Page（retranslate）：下一次擷取還看得到的那些從頭來過（startOver）。 */
   retranslating?: PageRecord[];
 }
@@ -187,14 +240,23 @@ interface JobSpec {
 const SAME_SLICE = 1e-3;
 const sameSlice = (a: Slice, b: Slice) => Math.abs(a.top - b.top) < SAME_SLICE && Math.abs(a.bottom - b.bottom) < SAME_SLICE;
 
-/** 擷取到的 Page 要送去辨識的內容（一般 Page 是整個 Page，長 Page 是看得到的那一截）。 */
-function analyzeRequestOf(page: PageThumb, capture: CropRequest): AnalyzeRequest {
+/** 長 Page 這次要辨識的範圍（畫面 CSS px）：單獨一個是自己看得到的那一截，一串裡的是整串看得到的範圍（#282）。 */
+const analyzedRect = (page: PageThumb): Rect | undefined => page.column?.region ?? page.visible;
+
+/**
+ * 擷取到的 Page 要送去辨識的內容（一般 Page 是整個 Page，長 Page 是看得到的那一截，一串裡的是整串看得到的範圍）。
+ * previous：這一串上一次的截圖（接得上時）。
+ */
+function analyzeRequestOf(page: PageThumb, capture: CropRequest, previous?: PreviousCapture): AnalyzeRequest {
+  const visible = analyzedRect(page);
+  const { column } = page;
   return {
     screenshot: capture.screenshot,
     frameMark: capture.frameMark,
     viewport: capture.viewport,
-    candidate: { anchorId: page.anchorId, rect: page.rect, ...(page.visible ? { visible: page.visible } : {}) },
+    candidate: { anchorId: page.anchorId, rect: page.rect, ...(visible ? { visible } : {}) },
     subRect: page.subRect,
+    ...(column ? { column: { cutTop: column.cutTop, cutBottom: column.cutBottom, ...(previous ? { previous } : {}) } } : {}),
   };
 }
 
@@ -223,7 +285,7 @@ export function createTranscriber(deps: TranscriberDeps) {
     kuromojiReadings: deps.kuromojiReadings,
   });
   const tabs = new Map<number, TabState>();
-  const views = new Map<number, PageView[]>();
+  const views = new Map<number, { pages: PageView[]; strip?: StripStatus }>();
   const seen = new Map<number, SeenPages>();
   let batches = 0;
 
@@ -310,8 +372,44 @@ export function createTranscriber(deps: TranscriberDeps) {
       ...page,
       transcript: findSamePage(tab.records, page.pageHash)?.transcript ?? { state: 'analyzing' },
     }));
-    views.set(tab.tabId, current);
-    deps.publish(tab.tabId, current);
+    const strip = stripStatus(tab);
+    views.set(tab.tabId, { pages: current, ...(strip ? { strip } : {}) });
+    deps.publish(tab.tabId, current, strip);
+  }
+
+  /** 畫面上的 Page 所在的那一串是 Strip 時，它到目前計了幾句、幾頁（#282）。 */
+  function stripStatus(tab: TabState): StripStatus | undefined {
+    for (const page of tab.pages) {
+      const column = page.column && tab.columns.get(page.column.id);
+      if (column?.strip) return { lines: column.charge?.lines ?? 0, pages: column.charge?.pages ?? 0 };
+    }
+    return undefined;
+  }
+
+  /**
+   * 這次擷取裡的每一串（#282）：看到接得起來的交界就認定是 Strip；算出這次能不能跟上一次的截圖拼，再記下這次的。
+   * 回傳每一串能拼的上一次截圖。
+   */
+  function seeColumns(tab: TabState, pages: readonly PageThumb[], capture: CropRequest): Map<string, PreviousCapture> {
+    const members = new Map<string, PageThumb[]>();
+    for (const page of pages) if (page.column) members.set(page.column.id, [...(members.get(page.column.id) ?? []), page]);
+    const previous = new Map<string, PreviousCapture>();
+    for (const [id, thumbs] of members) {
+      let column = tab.columns.get(id);
+      if (!column) tab.columns.set(id, (column = { strip: false }));
+      const continuous = thumbs.find((p) => p.junctionAbove === 'continuous');
+      if (continuous && !column.strip) {
+        column.strip = true;
+        trace('strip:detected', { tabId: tab.tabId, column: id, anchorId: continuous.anchorId });
+      }
+      const { region, cutTop, cutBottom } = thumbs[0]!.column!;
+      const rects = new Map(thumbs.map((p) => [p.anchorId, p.rect]));
+      const before = previousCapture(column.last, thumbs);
+      if (before) previous.set(id, before);
+      // 位置跟上一次一樣（同一個畫面又截了一次）就留著原本那次：它才是「捲動前」的畫面
+      if (before || !column.last || !thumbs.some((p) => column.last!.rects.has(p.anchorId))) column.last = { capture, region, cutTop, cutBottom, rects };
+    }
+    return previous;
   }
 
   /** 排程時決定 Prior Pages 的位置，並讓這頁的 ① 等同一批裡閱讀順序在前的頁（換掉 settled 之前先取）。 */
@@ -461,12 +559,16 @@ export function createTranscriber(deps: TranscriberDeps) {
     const { record } = job;
     const { charge } = long;
     const continues = job.added && charge && Date.now() - charge.chargedAt < CONTINUATION_WINDOW_MS;
+    // Strip（#282）：照句數計頁，接著這一串的累計；累計太久以前的就不帶，Worker 從頭計
+    const column = long.column === undefined ? undefined : job.tab.columns.get(long.column);
+    const stripCharge = column?.charge && Date.now() - column.charge.chargedAt < STRIP_WINDOW_MS ? column.charge : undefined;
     return {
       stripes: long.stripes,
       // 翻譯期間下一截可能又收了新的 Line：回來時才併回當下的整個 Page
       whole: (part) => (record.text = replaceLines(record.text!, part)),
       ...(continues ? { charge } : {}),
       charged: (next) => (long.charge = next),
+      ...(column?.strip ? { strip: { ...(stripCharge ? { charge: stripCharge } : {}), charged: (next) => (column.charge = newerStripCharge(column.charge, next)) } } : {}),
     };
   }
 
@@ -491,12 +593,12 @@ export function createTranscriber(deps: TranscriberDeps) {
   }
 
   /** 已認出的長 Page 又擷取到一截：沒處理過的那一截排進本機段；還沒開始的工作換成這一截。 */
-  function requestSlice(record: PageRecord, page: PageThumb, capture: CropRequest, spec: Omit<JobSpec, 'record' | 'request'>): void {
+  function requestSlice(record: PageRecord, page: PageThumb, capture: CropRequest, previous: PreviousCapture | undefined, spec: Omit<JobSpec, 'record' | 'request'>): void {
     const long = record.long!;
-    const slice = sliceOf(page.rect, page.visible!);
+    const slice = sliceOf(page.rect, analyzedRect(page)!);
     if (sameSlice(long.slice, slice)) return;
     long.slice = slice;
-    const request = analyzeRequestOf(page, capture);
+    const request = analyzeRequestOf(page, capture, previous);
     if (record.job && !record.job.started) record.job.request = request;
     else enqueueLocal(newJob({ ...spec, record, request }));
   }
@@ -516,10 +618,21 @@ export function createTranscriber(deps: TranscriberDeps) {
     record.pageHash = cached.pageHash;
     long.stripes = mergeStripes(cached.stripes ?? [], long.stripes);
     tab.pages = tab.pages.map((p) => (p.anchorId === long.anchorId && p.pageHash === provisional ? { ...p, pageHash: cached.pageHash } : p));
+    // 這個元素當初是照 Strip 計費的（#282）：這一串就是 Strip，從快取裡的累計接著算（SW 重新啟動、重新整理之後）
+    const column = long.column === undefined ? undefined : tab.columns.get(long.column);
+    if (column && cached.strip) {
+      column.strip = true;
+      column.charge = newerStripCharge(column.charge, cached.strip);
+    }
     if (record.ignoreCache) return undefined;
     if (cached.charge) long.charge = cached.charge;
-    if (transcript.state === 'done') record.text = transcript.text;
-    return transcript;
+    if (transcript.state !== 'done') return transcript;
+    // 一串裡的元素：#282 之前存進快取、被元素交界切成兩半的 Line 不要，這一截照常辨識時會收到完整的那一句
+    const text = column ? withoutEdgeHalves(transcript.text) : transcript.text;
+    const dropped = transcript.text.balloons.length + transcript.text.looseText.length - text.balloons.length - text.looseText.length;
+    if (dropped > 0) trace('column:edgeHalvesDropped', { tabId: tab.tabId, pageHash: cached.pageHash, dropped });
+    record.text = text;
+    return { ...transcript, text };
   }
 
   /**
@@ -531,7 +644,7 @@ export function createTranscriber(deps: TranscriberDeps) {
     if (!capture) pages = [];
     let tab = tabs.get(tabId);
     if (!tab) {
-      tab = { tabId, pages: [], records: [] };
+      tab = { tabId, pages: [], records: [], columns: new Map() };
       tabs.set(tabId, tab);
     }
     // 沒藏覆蓋層的截圖裡有自己的譯文，不能拿來重新辨識：等按下後那次藏了覆蓋層的擷取（index.ts 的 panel:retranslate）
@@ -544,6 +657,7 @@ export function createTranscriber(deps: TranscriberDeps) {
       const known = identifyLongPage(current, page);
       if (known) {
         known.long!.anchorId = page.anchorId;
+        known.long!.column = page.column?.id;
         known.long!.stripes = mergeStripes(known.long!.stripes, page.stripes ?? []);
         const same = { ...page, pageHash: known.pageHash };
         longOf.set(same, known);
@@ -556,6 +670,8 @@ export function createTranscriber(deps: TranscriberDeps) {
     tab.pages = pages;
     prune(tab);
     forgetErrors(tab);
+    const previousOf = capture ? seeColumns(tab, pages, capture) : new Map<string, PreviousCapture>();
+    const previous = (page: PageThumb) => (page.column ? previousOf.get(page.column.id) : undefined);
     const batch = ++batches;
     /** 這次擷取畫面上的 Page（已認得的＋新的）；等它們的工作都結束才 resolve。 */
     const visibleRecords = new Set<PageRecord>();
@@ -573,11 +689,13 @@ export function createTranscriber(deps: TranscriberDeps) {
       const record: PageRecord = {
         pageHash: page.pageHash,
         seriesId: undefined,
-        request: analyzeRequestOf(page, capture!),
+        request: analyzeRequestOf(page, capture!, previous(page)),
         transcript: { state: 'analyzing' },
         settled: Promise.resolve(),
         ...(restarted.has(page.anchorId) ? { ignoreCache: true as const } : {}),
-        ...(page.visible ? { long: { anchorId: page.anchorId, stripes: page.stripes ?? [], slice: sliceOf(page.rect, page.visible) } } : {}),
+        ...(page.visible
+          ? { long: { anchorId: page.anchorId, stripes: page.stripes ?? [], slice: sliceOf(page.rect, analyzedRect(page)!), ...(page.column ? { column: page.column.id } : {}) } }
+          : {}),
       };
       tab.records.push(record);
       visibleRecords.add(record);
@@ -597,7 +715,7 @@ export function createTranscriber(deps: TranscriberDeps) {
         enqueueLocal(job);
         return job;
       });
-      for (const { record, page, index } of slices) requestSlice(record, page, capture!, { tab, batch, index, group: groupOf(record) });
+      for (const { record, page, index } of slices) requestSlice(record, page, capture!, previous(page), { tab, batch, index, group: groupOf(record) });
       // 這一批記成最近看過的（之後的頁拿來當 Prior Pages）。上面排程時 Prior Pages 的位置取自 Series 決定前的紀錄；
       // 猜到另一部時 see() 換成新的紀錄，不在裡面的（上一部的頁）就不帶（#222）。這個 then 比 seriesDecided 的 await
       // 先接上，所以 ① 送出前就篩好了。tab 已停止時紀錄是空的、全部篩掉也無妨：那些工作不會送出。
@@ -637,7 +755,7 @@ export function createTranscriber(deps: TranscriberDeps) {
         finish(job, undefined);
       } else enqueueLocal(job);
     }
-    for (const { record, page, index } of slices) requestSlice(record, page, capture!, { tab, batch, index, group: groupOf(record) });
+    for (const { record, page, index } of slices) requestSlice(record, page, capture!, previous(page), { tab, batch, index, group: groupOf(record) });
     if (newPages.some(({ record }) => record.long)) publish(tab);
     await Promise.all([...visibleRecords].map((r) => r.settled));
   }
@@ -728,7 +846,12 @@ export function createTranscriber(deps: TranscriberDeps) {
   }
 
   function get(tabId: number): PageView[] {
-    return views.get(tabId) ?? [];
+    return views.get(tabId)?.pages ?? [];
+  }
+
+  /** 這個 tab 畫面上的 Strip（條漫，#282）目前的計費累計；不是 Strip 時 undefined。 */
+  function getStrip(tabId: number): StripStatus | undefined {
+    return views.get(tabId)?.strip;
   }
 
   /**
@@ -804,6 +927,7 @@ export function createTranscriber(deps: TranscriberDeps) {
     translateUntranslated,
     retranslate,
     get,
+    getStrip,
     resetPages,
     reassignSeries,
     notesChanged,

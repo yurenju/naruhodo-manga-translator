@@ -92,6 +92,66 @@ function visibleRange(viewport: Size, clips: readonly Rect[]): Rect {
   return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
 }
 
+/** 直式排版的一串（#282）裡，上下兩個元素的間距、x 與寬度各差這麼多 CSS px 以內才算相接、同一欄。 */
+export const COLUMN_TOLERANCE = 1.5;
+
+/**
+ * 直式排版（#282、ADR 0004）：哪些元素是上下緊貼、同寬、同 x 座標、在同一個上下捲動範圍裡的一串。
+ * 只看幾何：真實網站上每個元素各自包在不同的父元素裡，看不出兄弟關係。scroller＝元素所在的捲動範圍
+ * （上下可以捲的祖先，或整份文件）；undefined＝不在任何可以上下捲的範圍裡，不算。
+ * 回傳跟 items 同順序：同一串的元素拿到同一個編號，不屬於任何一串（包含只有自己一個）是 undefined。
+ * 元素之間有間距的（一頁接一頁、中間留白的網站）不算一串，照一般 Page 的規則。
+ */
+export function verticalColumns(items: readonly { rect: Rect; scroller: unknown }[]): (number | undefined)[] {
+  const parent = items.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  const near = (a: number, b: number) => Math.abs(a - b) <= COLUMN_TOLERANCE;
+  for (const [i, { rect: upper, scroller }] of items.entries()) {
+    if (scroller === undefined || upper.width < MIN_PAGE_SIDE || upper.height < MIN_PAGE_SIDE) continue;
+    for (const [j, { rect: lower, scroller: other }] of items.entries()) {
+      if (i === j || other !== scroller || lower.height < MIN_PAGE_SIDE) continue;
+      if (near(upper.y + upper.height, lower.y) && near(upper.x, lower.x) && near(upper.width, lower.width)) parent[find(j)] = find(i);
+    }
+  }
+  const sizes = new Map<number, number>();
+  for (const i of items.keys()) sizes.set(find(i), (sizes.get(find(i)) ?? 0) + 1);
+  return items.map((_, i) => (sizes.get(find(i))! > 1 ? find(i) : undefined));
+}
+
+/**
+ * 直式排版的一串裡的一個元素看得到的那一截（rect ∩ viewport ∩ 裁切祖先）；整個在可見範圍外、或寬度放不下時 undefined。
+ * 不像 longPageVisible 要求比可見範圍高、露出夠多：一串是一起辨識的，只露出一點的元素也算在這一串的可見範圍裡。
+ */
+export function columnMemberVisible(rect: Rect, viewport: Size, clips: readonly Rect[] = []): Rect | undefined {
+  const range = visibleRange(viewport, clips);
+  if (rect.x < range.x - VIEWPORT_TOLERANCE || rect.x + rect.width > range.x + range.width + VIEWPORT_TOLERANCE) return undefined;
+  const top = Math.max(rect.y, range.y);
+  const bottom = Math.min(rect.y + rect.height, range.y + range.height);
+  if (bottom - top < 1) return undefined;
+  return { x: rect.x, y: top, width: rect.width, height: bottom - top };
+}
+
+/**
+ * 一串裡看得到的元素合起來的範圍（它們上下相接，所以是一整塊），以及這一塊的上下緣是不是被可見範圍切掉的
+ * （外面還有這一串的內容）：被切的那一緣上的框先不收，用相鄰兩次截圖拼接後再辨識。
+ * members：這一串裡看得到的元素，各自的整個 rect 與看得到的那一截。
+ * hidden：這一串裡整個在可見範圍外的元素的 rect：可見範圍剛好停在交界上時，交界另一邊還有內容，那一緣也算被切。
+ */
+export function columnRegion(
+  members: readonly { rect: Rect; visible: Rect }[],
+  hidden: readonly Rect[] = [],
+): { region: Rect; cutTop: boolean; cutBottom: boolean } {
+  const top = Math.min(...members.map((m) => m.visible.y));
+  const bottom = Math.max(...members.map((m) => m.visible.y + m.visible.height));
+  const first = members.reduce((a, b) => (b.rect.y < a.rect.y ? b : a));
+  const last = members.reduce((a, b) => (b.rect.y + b.rect.height > a.rect.y + a.rect.height ? b : a));
+  return {
+    region: { x: first.rect.x, y: top, width: first.rect.width, height: bottom - top },
+    cutTop: first.rect.y < top - VIEWPORT_TOLERANCE || hidden.some((r) => r.y < first.rect.y),
+    cutBottom: last.rect.y + last.rect.height > bottom + VIEWPORT_TOLERANCE || hidden.some((r) => r.y > last.rect.y),
+  };
+}
+
 /**
  * 直式捲動的長 Page（ADR 0004、spec #142）：比可見範圍高、寬度完整放得下的 img／canvas，回傳看得到的那一截
  * （anchor rect ∩ viewport ∩ 裁切祖先）；不是長 Page 時 undefined，照「完整可見」的規則判斷。

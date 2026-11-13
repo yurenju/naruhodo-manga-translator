@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Quota } from './hosted-api.ts';
-import { quotaIndicator } from './quota-indicator.ts';
+import { quotaIndicator, stripTitle } from './quota-indicator.ts';
 
 const free = (remaining: number): Quota => ({ plan: 'free', remaining });
 const subscribed = (remaining: number): Quota => ({
@@ -51,5 +51,11 @@ describe('圖示 hover 提示、右鍵選單與「快用完」（#237）', () =>
       lowQuota: true,
     });
     expect(quotaIndicator(free(0))).toMatchObject({ title: 'Naruhodo 漫畫翻譯\n免費額度用完了', menuTitle: '帳號與訂閱・額度用完了' });
+  });
+});
+
+describe('正在讀 Strip（條漫）的分頁（#282）', () => {
+  it('hover 提示在剩餘頁數底下多一行計費方式', () => {
+    expect(stripTitle(quotaIndicator(free(37)).title)).toBe('Naruhodo 漫畫翻譯\n免費額度剩 37 頁\n條漫：每 8 句計 1 頁');
   });
 });

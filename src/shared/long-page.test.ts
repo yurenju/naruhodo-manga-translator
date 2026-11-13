@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resize, type GrayImage } from '../testing/image-degrade.ts';
 import { cropGray, readGray } from '../testing/synthetic.ts';
-import { addLines, matchingStripe, rejectInSlice, sameLongPage, sliceOf, stripeFingerprint, toPageBox, toPageText } from './long-page.ts';
+import { addLines, cutEdges, matchingStripe, rejectInSlice, sameLongPage, sliceOf, stripeFingerprint, toPageBox, toPageText, withoutEdgeHalves } from './long-page.ts';
 import type { BalloonText, LooseText, PageText, RatioRect } from './page-text.ts';
 
 /** 合成頁上下接成一張長圖（像直式捲動漫畫那樣，接縫看不出來）。 */
@@ -228,5 +228,50 @@ describe('toPageText（一截的結果換成 Page 座標）', () => {
     expect(onPage!.erase!.box.y).toBeCloseTo(0.57);
     expect(onPage!.erase!.box.h).toBeCloseTo(0.06);
     expect(onPage!.erase!.image).toBe('data:image/png;base64,AAAA');
+  });
+});
+
+describe('直式排版的一串裡收不收一個框（#282）', () => {
+  // 整串看得到的範圍高 800 px，這個 Page 高 1000 px、上緣在範圍上面 600 px：範圍的下半（400 px 以下）是下一個 Page
+  const slice = { top: 0.6, bottom: 1.4 };
+  const cutBoth = { top: true, bottom: true };
+  const reject = (box: RatioRect, collected: RatioRect[] = [], edges = cutBoth) => rejectInSlice(box, slice, 800, collected, edges);
+
+  it('跨過兩個元素交界的框照常收：中心在這個 Page 裡就歸它', () => {
+    // 範圍裡 y 0.4～0.55（Page 座標 0.92～1.04），中心 0.98 在這個 Page 裡
+    expect(reject({ x: 0.1, y: 0.4, w: 0.3, h: 0.15 })).toBeUndefined();
+  });
+
+  it('中心落在下一個 Page 裡的框由那個 Page 收', () => {
+    expect(reject({ x: 0.1, y: 0.45, w: 0.3, h: 0.15 })).toBe('otherPage');
+    expect(reject({ x: 0.1, y: 0.7, w: 0.3, h: 0.1 })).toBe('otherPage');
+  });
+
+  it('貼著被切的那一緣的框先不收；那一緣不是被切的（這一串的開頭、結尾）就照收', () => {
+    const atTop = { x: 0.1, y: 0, w: 0.3, h: 0.2 };
+
+    expect(reject(atTop)).toBe('cut');
+    expect(reject(atTop, [], { top: false, bottom: true })).toBeUndefined();
+    expect(cutEdges(atTop, 800, cutBoth)).toEqual({ top: true, bottom: false });
+    expect(reject({ x: 0.1, y: 0, w: 0.3, h: 1 })).toBe('tooTall');
+  });
+
+  it('跟這個 Page 已收的 Line 重疊的不收', () => {
+    expect(reject({ x: 0.1, y: 0.1, w: 0.3, h: 0.1 }, [{ x: 0.1, y: 0.7, w: 0.3, h: 0.05 }])).toBe('overlap');
+  });
+});
+
+describe('一串裡的元素：#282 之前被交界切成兩半的 Line', () => {
+  const loose = (id: string, bbox: RatioRect): LooseText => ({ id, order: 1, bbox, orientation: 'vertical', 原文: 'あ', 讀音: 'あ', 讀音來源: 'kuromoji', 譯文: '', unreadable: true });
+
+  it('貼著元素上緣或下緣的丟掉（真實網站快取裡的值），其他的留著', () => {
+    // 同一句話跨在兩張圖的交界上：上面那張存了 0.705～1.000，下面那張存了 0～0.223
+    const upperHalf = loose('l1', { x: 0.274, y: 0.705, w: 0.489, h: 0.295 });
+    const lowerHalf = loose('l2', { x: 0.372, y: 0, w: 0.4, h: 0.223 });
+    const inside = loose('l3', { x: 0.1, y: 0.3, w: 0.2, h: 0.2 });
+    // 以整串為單位收的、跨過交界的框超出 0～1，不是被切的
+    const crossing = loose('l4', { x: 0.274, y: 0.705, w: 0.489, h: 0.52 });
+
+    expect(withoutEdgeHalves({ balloons: [], looseText: [upperHalf, lowerHalf, inside, crossing] }).looseText.map((l) => l.id)).toEqual(['l3', 'l4']);
   });
 });

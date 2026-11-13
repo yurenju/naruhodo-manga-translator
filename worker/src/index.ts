@@ -8,6 +8,7 @@ import { createClaudeTranslator } from '../../src/offscreen/claude-translator.ts
 import { BilledFailure } from '../../src/shared/claude-request.ts';
 import { createFakeTranslator } from '../../src/shared/fake-translator.ts';
 import { isPracticeSpreadPage, type PracticeSpreadText } from '../../src/shared/practice-spread.ts';
+import { stripPages, stripPagesAdded } from '../../src/shared/strip.ts';
 import practiceSpread from '../../practice-spread/ocr.json' with { type: 'json' };
 import {
   ACCOUNT_PATH,
@@ -47,6 +48,8 @@ import {
   monthlyLimit,
   quota,
   recordUsage,
+  stripLines,
+  stripLinesBefore,
   setDailyFreePages,
   setFreePages,
   type QuotaContext,
@@ -149,6 +152,12 @@ const quotaContext = (env: Env, now: number): QuotaContext => ({ now, limit: mon
  * Notes 那筆記下同一頁翻譯那筆的 id。
  * Practice Spread（#169）：認出試翻頁的文字就不看額度、不扣頁（額度用完也能試翻），用量照記並標成試翻。
  */
+/** Strip（條漫，#282）的翻譯請求：這次翻幾句、接著哪一串累計（client 帶來的那一串第一筆的 id）。 */
+interface StripInput {
+  lines: number;
+  root?: number;
+}
+
 const llm =
   <I,>(
     kind: UsageKind,
@@ -156,13 +165,16 @@ const llm =
     run: (t: Translator, input: I) => Promise<CallInfo>,
     pageRecord: (input: I) => number | undefined = () => undefined,
     practice: (input: I) => boolean = () => false,
+    strip: (input: I) => StripInput | undefined = () => undefined,
   ): AuthedHandler =>
   async ({ request, env, now }, accountId) => {
     const input = parse(await jsonBody(request));
     if (input === undefined) return invalid();
     const isPractice = practice(input);
     const charged = kind === 'translate' && !isPractice;
-    const page = isPractice ? undefined : pageRecord(input);
+    // Strip（#282）照句數計頁，不走長 Page 的接續
+    const stripInput = charged ? strip(input) : undefined;
+    const page = isPractice ? undefined : stripInput ? stripInput.root : pageRecord(input);
     if (charged) {
       const before = await quota(env.DB, accountId, quotaContext(env, now));
       // 只靠 Free Pages 的 Account，今天全站送出的 Free Pages 到了上限（#241）也擋；要在呼叫 Anthropic 之前，呼叫完錢就花了
@@ -174,7 +186,12 @@ const llm =
             : undefined;
       // 擋下時，條件內的長 Page 接續照樣翻（刻意的）：一張長圖只扣一個 Translated Page，這一頁已經扣過，
       // 擋下來會讓讀者付過的頁翻到一半。濫用的空間由接續條件限住（同一個 Account、1 小時內、最多 10 次，quota.ts）
-      if (blocked && !(page !== undefined && (await continuable(env.DB, accountId, page, now)))) return blocked;
+      // Strip 擋下時，這次的句數還落在已經計過的那一頁裡（不會多計頁）也照樣翻
+      const free = async () =>
+        stripInput
+          ? stripInput.root !== undefined && stripPagesAdded((await stripLines(env.DB, accountId, stripInput.root, now)) ?? Infinity, stripInput.lines) === 0
+          : page !== undefined && (await continuable(env.DB, accountId, page, now));
+      if (blocked && !(await free())) return blocked;
     }
     let output: CallInfo;
     try {
@@ -182,7 +199,20 @@ const llm =
     } catch (e) {
       return anthropicFailed(kind, e);
     }
-    const record = await recordUsage(env.DB, accountId, kind, output, now, page, isPractice);
+    const record = await recordUsage(env.DB, accountId, kind, output, now, page, isPractice, stripInput?.lines);
+    if (stripInput) {
+      // 這一串排在這筆前面的句數加上這次的，跨過幾個 8 句就扣幾頁；第一頁就扣不到回 402（譯文丟掉），之後扣不到的照樣回譯文
+      const root = record.pageRecordId ?? record.id;
+      const before = record.pageRecordId === undefined ? 0 : await stripLinesBefore(env.DB, root, record.id);
+      const owed = stripPagesAdded(before, stripInput.lines);
+      for (let i = 0; i < owed; i++) {
+        if (await deductPage(env.DB, accountId, quotaContext(env, now))) continue;
+        if (i === 0) return exhausted((await quota(env.DB, accountId, quotaContext(env, now))).plan);
+        break;
+      }
+      const lines = before + stripInput.lines;
+      return Response.json({ ...output, usageRecordId: root, strip: { lines, pages: stripPages(lines) } });
+    }
     // 翻譯記到了被接續的那一頁＝長 Page 的接續，不扣頁；其他翻譯（含超過接續上限的）扣一頁
     const continued = record.pageRecordId !== undefined;
     if (charged && !continued && !(await deductPage(env.DB, accountId, quotaContext(env, now)))) {
@@ -253,6 +283,7 @@ const ROUTES: Record<string, Handler> = {
       async (t, input) => withEmptyReadings(await t.translatePage(input)),
       (input) => input.pageUsageRecordId,
       (input) => isPracticeSpreadPage(input.items.map((item) => item.原文), practiceSpread as PracticeSpreadText),
+      (input) => (input.strip ? { lines: input.items.length, ...(input.stripUsageRecordId === undefined ? {} : { root: input.stripUsageRecordId }) } : undefined),
     ),
   ),
   [`POST ${NOTES_PATH}`]: authed(llm('notes', parseNotesInput, (t, input) => t.proposeNotes(input), (input) => input.pageUsageRecordId)),

@@ -23,7 +23,7 @@ export type Message =
   /** side panel → SW：目前這個 tab 的 Page。回應 PagesResponse。 */
   | { type: 'panel:getPages'; tabId: number }
   /** SW → side panel：某個 tab 的 Page（縮圖＋逐字稿）更新了。 */
-  | { type: 'pages:updated'; tabId: number; pages: PageView[] }
+  | { type: 'pages:updated'; tabId: number; pages: PageView[]; strip?: StripStatus }
   /** SW → content script：量畫面上完整可見的 Page 候選。回應 PageCandidatesResponse。 */
   | { type: 'content:findPageCandidates' }
   /** SW → offscreen：依候選裁切截圖並做縮圖。回應 CropResponse。 */
@@ -253,7 +253,29 @@ export interface PageCandidate {
   covered?: Rect[];
   /** 這個 anchor 上正顯示著覆蓋層的 Page（pageHash）；沒有覆蓋層時省略。 */
   overlaid?: string[];
+  /**
+   * 直式排版的一串（#282：上下緊貼、同寬、同 x、在同一個捲動範圍裡的 img／canvas）裡的一個才有。
+   * 這種候選一律有 visible（自己看得到的那一截），辨識時以整串看得到的範圍為單位，跨元素交界的框照常收。
+   */
+  column?: ColumnView;
 }
+
+/** 直式排版的一串在這次量測時的樣子（content/page-candidates.ts 的 columnRegion）。 */
+export interface ColumnView {
+  /** 這一串的 id：同一個捲動範圍、同一欄就是同一個；重新整理後重編。 */
+  id: string;
+  /** 這一串看得到的元素合起來的範圍（畫面 CSS px）。 */
+  region: Rect;
+  /** region 的上緣／下緣是被可見範圍切掉的（外面還有這一串的內容）。 */
+  cutTop: boolean;
+  cutBottom: boolean;
+}
+
+/**
+ * 一串裡上下兩個元素的交界在截圖上的樣子（shared/strip.ts 的 junctionVerdict）：continuous＝兩邊的像素接得起來、
+ * 而且不是空白，是同一張圖被切開（Strip）；break＝接不起來（真的頁）；blank＝兩邊都是空白，看不出來。
+ */
+export type JunctionVerdict = 'continuous' | 'break' | 'blank';
 
 export interface PageCandidatesResponse {
   /** 量 rect 當下的 viewport（CSS px），裁切時用來換算截圖倍率。 */
@@ -280,6 +302,8 @@ export interface PageThumb extends PageCandidate {
   pageHash: string;
   /** 長 Page 才有：這一截裡完整看得到、有內容的橫條（shared/long-page.ts）。 */
   stripes?: Stripe[];
+  /** 直式排版的一串裡、跟上面那個元素的交界出現在截圖上時才有：這個交界看起來是哪一種（#282）。 */
+  junctionAbove?: JunctionVerdict;
 }
 
 /** frame：截圖是不是準備好之後的（shared/frame-mark.ts）；不是 fresh 時 pages 照樣算，由 SW 決定要不要重截。 */
@@ -323,6 +347,16 @@ export interface PageView extends PageThumb {
 
 export interface PagesResponse {
   pages: PageView[];
+  strip?: StripStatus;
+}
+
+/**
+ * 這個 tab 正在讀的是 Strip（條漫，#282）、而且用的是 Hosted Translation 時才有：side panel 說明計費方式改了，
+ * 並顯示這一話（同一串元素）到目前計了幾頁、幾句。
+ */
+export interface StripStatus {
+  lines: number;
+  pages: number;
 }
 
 /** 只有 e2e 會設定；正式 build 一律從 Hugging Face 下載、自動選 WebGPU／wasm。 */
@@ -348,10 +382,28 @@ export interface AnalyzeRequest {
   subRect?: RatioRect;
   /** 長 Page（candidate.visible）才有：已收 Line 的外框（Page 座標），這一截裡跟它們重疊的框不做 OCR。 */
   collected?: RatioRect[];
+  /**
+   * 直式排版的一串裡的一個 Page（#282）才有：candidate.visible 是整串看得到的範圍，只收中心落在這個 Page 裡的框。
+   * previous：同一串上一次的截圖，被可見範圍邊緣切到的框用兩次截圖拼接後辨識；沒有上一次、或兩次接不起來時省略。
+   */
+  column?: { cutTop: boolean; cutBottom: boolean; previous?: PreviousCapture };
   /** 這頁 Series 的 Notes 條目原文：OCR 讀成形近字的名字換回來（#228）。Series 還在猜時沒有。 */
   notesNames?: string[];
   /** e2e build 才會帶。 */
   pipeline?: PipelineConfig;
+}
+
+/** 同一串上一次的截圖（AnalyzeRequest.column.previous）。 */
+export interface PreviousCapture {
+  screenshot: string;
+  frameMark: FrameMark;
+  viewport: Size;
+  /** 那次整串看得到的範圍（那張截圖的 CSS px）與上下緣是不是被切的。 */
+  region: Rect;
+  cutTop: boolean;
+  cutBottom: boolean;
+  /** 同樣的內容在那張截圖裡的 y 比這次多多少 CSS px（讀者往下捲了多少；往上捲是負的）。 */
+  dy: number;
 }
 
 export type AnalyzeResponse = { text: PageText } | { error: string };

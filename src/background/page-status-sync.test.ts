@@ -13,15 +13,18 @@ const analyzing = (anchorId: string, pageHash: string): PageView => ({
 
 const done = (page: PageView): PageView => ({ ...page, transcript: { state: 'done', text: { balloons: [], looseText: [] }, translated: true } });
 
-function setup() {
+function setup({ hosted = true } = {}) {
   const sent: [number, AnchorStatus[]][] = [];
   const badges: [number, ActionBadge | undefined][] = [];
+  const strips: [number, boolean][] = [];
   const sync = createPageStatusSync({
     send: (tabId, anchors) => void sent.push([tabId, anchors]),
     setBadge: (tabId, badge) => void badges.push([tabId, badge]),
     accessProblem: async () => undefined,
+    stripBilled: async () => hosted,
+    setStrip: (tabId, strip) => void strips.push([tabId, strip]),
   });
-  return { sync, sent, badges };
+  return { sync, sent, badges, strips };
 }
 
 describe('Page 狀態送到 content script 與圖示 badge', () => {
@@ -113,5 +116,36 @@ describe('額度快用完（#237）', () => {
     await sync.quotaChanged(false);
 
     expect(badges.at(-1)).toEqual([1, 'on']);
+  });
+
+  it('正在讀 Strip、用內建翻譯：badge 換成「條」，hover 提示多一行；快用完是橘色底的「條」；停止時拿掉提示（#282）', async () => {
+    const { sync, badges, strips } = setup();
+    const page = done(analyzing('a1', 'h1'));
+    await sync.activated(1);
+
+    await sync.pagesUpdated(1, [page], true);
+    await sync.quotaChanged(true);
+    sync.clear(1);
+
+    expect(badges).toEqual([
+      [1, 'on'],
+      [1, 'strip'],
+      [1, 'stripLowQuota'],
+      [1, undefined],
+    ]);
+    expect(strips).toEqual([
+      [1, true],
+      [1, false],
+    ]);
+  });
+
+  it('自備金鑰讀 Strip：沒有頁數可計，badge 與 hover 提示照舊（#282）', async () => {
+    const { sync, badges, strips } = setup({ hosted: false });
+    await sync.activated(1);
+
+    await sync.pagesUpdated(1, [done(analyzing('a1', 'h1'))], true);
+
+    expect(badges).toEqual([[1, 'on']]);
+    expect(strips).toEqual([]);
   });
 });

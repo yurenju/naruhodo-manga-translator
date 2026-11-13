@@ -18,8 +18,11 @@ export interface AnchorStatus {
   problem?: { text: string; action: StatusAction; pageHash: string };
 }
 
-/** 圖示 badge：翻譯中 …、有問題 !、已啟動沒事是一個綠點，額度快用完（#237）是橘點。 */
-export type ActionBadge = 'busy' | 'problem' | 'lowQuota' | 'on';
+/**
+ * 圖示 badge：翻譯中 …、有問題 !、已啟動沒事是一個綠點，額度快用完（#237）是橘點。
+ * 正在讀照句數計頁的 Strip（條漫，#282）時，圓點換成「條」字（strip），快用完一樣換成橘色底（stripLowQuota）。
+ */
+export type ActionBadge = 'busy' | 'problem' | 'lowQuota' | 'on' | 'strip' | 'stripLowQuota';
 
 export interface PageStatusInput {
   /** 這個 tab 畫面上的 Page。 */
@@ -31,6 +34,8 @@ export interface PageStatusInput {
   access: Exclude<RequestedStep, 'plan'> | undefined;
   /** 內建翻譯的額度快用完（shared/quota-indicator.ts）；額度是全域的，每個 tab 都一樣。 */
   lowQuota: boolean;
+  /** 這個 tab 正在讀 Strip、而且用內建翻譯（照句數計頁，#282）。 */
+  strip?: boolean;
 }
 
 type Status = Omit<AnchorStatus, 'anchorId'>;
@@ -98,6 +103,6 @@ export function pageStatus(input: PageStatusInput): { anchors: AnchorStatus[]; b
   return {
     anchors: [...byAnchor].map(([anchorId, status]) => ({ anchorId, ...status })),
     // 出問題 > 翻譯中 > 快用完 > 平常：翻譯中先顯示藍色，翻完再變回橘色
-    badge: problems ? 'problem' : busy ? 'busy' : input.lowQuota ? 'lowQuota' : 'on',
+    badge: problems ? 'problem' : busy ? 'busy' : input.strip ? (input.lowQuota ? 'stripLowQuota' : 'strip') : input.lowQuota ? 'lowQuota' : 'on',
   };
 }

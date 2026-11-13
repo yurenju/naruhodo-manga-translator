@@ -4,7 +4,7 @@ import type { PageView } from '../shared/messages.ts';
 import type { RatioRect } from '../shared/page-text.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
 import type { SeriesOption } from '../shared/series.ts';
-import { accountPageView, accountPlanView, canTranslate, parentPage, quotaView, refundDialogView, seriesActions, setupNotices, sidePanelScreen, sidePanelView, subscribedNoticeText, translateAction, type SubscribedQuota } from './view.ts';
+import { accountPageView, accountPlanView, canTranslate, parentPage, quotaView, refundDialogView, seriesActions, setupNotices, sidePanelScreen, sidePanelView, stripView, subscribedNoticeText, translateAction, type SubscribedQuota } from './view.ts';
 
 type Transcript = PageView['transcript'];
 type Done = Extract<Transcript, { state: 'done' }>;
@@ -774,5 +774,24 @@ describe('申請退款的確認對話框（#260）', () => {
 
   it('訂閱前的 Free Pages 已經用完：說訂閱結束後沒有免費額度', () => {
     expect(refundDialogView(subscribed({ freePages: 0 }) as SubscribedQuota, refund).points[2]).toBe('訂閱前的免費額度已經用完，訂閱結束後就不能再翻新的頁。');
+  });
+});
+
+describe('Strip（條漫）改照句數計頁的說明（#282）', () => {
+  it('內建翻譯、已登入、正在讀 Strip：逐字稿上方一則說明，底部多一行這一話計了幾頁', () => {
+    expect(stripView(signedIn, { lines: 21, pages: 3 })).toEqual({
+      notice: '偵測到條漫（一長條切成多張圖）。這類作品改為每翻譯 8 句計 1 頁，留白不計。',
+      line: '本話已計 3 頁（21 句）',
+    });
+  });
+
+  it('還沒計過頁（剛偵測到、或都命中快取）只有說明，沒有那一行', () => {
+    expect(stripView(signedIn, { lines: 0, pages: 0 })).toMatchObject({ line: undefined });
+  });
+
+  it('不是 Strip（真的頁疊成直式也算）、自備金鑰、沒登入都不顯示', () => {
+    expect(stripView(signedIn, undefined)).toBeUndefined();
+    expect(stripView({ mode: 'ownKey', hasKey: true }, { lines: 21, pages: 3 })).toBeUndefined();
+    expect(stripView({ mode: 'hosted', signedIn: false }, { lines: 21, pages: 3 })).toBeUndefined();
   });
 });

@@ -65,6 +65,9 @@ export function parseTranslateInput(body: unknown): TranslateInput | undefined {
   if (!seriesNotes || !priorPages || !items) return undefined;
   // 接續哪一頁只影響扣不扣頁，不對就當作沒帶（照常扣）
   const page = body.pageUsageRecordId;
+  // Strip（#282）：照句數計頁；接著哪一串累計不對也當作沒帶（從頭計）
+  const strip = body.strip === true;
+  const stripRecord = body.stripUsageRecordId;
   return {
     ...(seriesName === undefined ? {} : { seriesName }),
     ...(seriesZhTitle === undefined ? {} : { seriesZhTitle }),
@@ -72,6 +75,8 @@ export function parseTranslateInput(body: unknown): TranslateInput | undefined {
     priorPages,
     items,
     ...(Number.isSafeInteger(page) ? { pageUsageRecordId: page as number } : {}),
+    ...(strip ? { strip: true as const } : {}),
+    ...(strip && Number.isSafeInteger(stripRecord) ? { stripUsageRecordId: stripRecord as number } : {}),
   };
 }
 

@@ -13,10 +13,18 @@ export interface PageStatusSyncDeps {
   setBadge(tabId: number, badge: ActionBadge | undefined): void;
   /** 現在不能翻譯的原因；只在有 Page 沒翻譯、也沒有別的原因時才問。 */
   accessProblem(): Promise<PageStatusInput['access']>;
+  /** 現在是不是用內建翻譯、已登入（Strip 才會照句數計頁，#282）；只在 tab 正在讀 Strip 時才問。 */
+  stripBilled(): Promise<boolean>;
+  /** 這個 tab 開始／不再是照句數計頁的 Strip：圖示的 hover 提示多／少一行。 */
+  setStrip(tabId: number, strip: boolean): void;
 }
 
 interface TabStatus {
   pages: PageView[];
+  /** 畫面上的這一串是 Strip（條漫，#282）。 */
+  strip: boolean;
+  /** 上次告訴 SW 的：這個 tab 是不是照句數計頁的 Strip。 */
+  stripShown: boolean;
   /** 已經送出 LLM、還沒做完的 Page。 */
   translating: Set<string>;
   /** 上次送出的內容與 badge；undefined＝還沒送過（或 content script 換新的了）。 */
@@ -34,9 +42,14 @@ export function createPageStatusSync(deps: PageStatusSyncDeps) {
     const tab = tabs.get(tabId);
     if (!tab) return;
     const access = tab.pages.some(untranslatedWithoutReason) ? await deps.accessProblem() : undefined;
+    const strip = tab.strip && (await deps.stripBilled());
     // 期間停止了
     if (tabs.get(tabId) !== tab) return;
-    const { anchors, badge } = pageStatus({ pages: tab.pages, model, translating: tab.translating, access, lowQuota });
+    const { anchors, badge } = pageStatus({ pages: tab.pages, model, translating: tab.translating, access, lowQuota, strip });
+    if (strip !== tab.stripShown) {
+      tab.stripShown = strip;
+      deps.setStrip(tabId, strip);
+    }
     const sent = JSON.stringify(anchors);
     if (sent !== tab.sent) {
       tab.sent = sent;
@@ -50,10 +63,11 @@ export function createPageStatusSync(deps: PageStatusSyncDeps) {
 
   return {
     /** 沒啟動的 tab 不算（停止時 transcriber 還會 publish 一次空的）。 */
-    pagesUpdated(tabId: number, pages: PageView[]): Promise<void> {
+    pagesUpdated(tabId: number, pages: PageView[], strip = false): Promise<void> {
       const tab = tabs.get(tabId);
       if (!tab) return Promise.resolve();
       tab.pages = pages;
+      tab.strip = strip;
       return refresh(tabId);
     },
     jobEvent({ tabId, event, pageHash }: JobEvent): Promise<void> {
@@ -79,7 +93,7 @@ export function createPageStatusSync(deps: PageStatusSyncDeps) {
     },
     /** 啟動：badge 是小點。 */
     activated(tabId: number): Promise<void> {
-      if (!tabs.has(tabId)) tabs.set(tabId, { pages: [], translating: new Set() });
+      if (!tabs.has(tabId)) tabs.set(tabId, { pages: [], strip: false, stripShown: false, translating: new Set() });
       return refresh(tabId);
     },
     /** 重新整理、換頁：content script 是新的（圖示的 tab 專屬 badge 也被 Chrome 清掉），之後的狀態都重送。 */
@@ -88,12 +102,16 @@ export function createPageStatusSync(deps: PageStatusSyncDeps) {
       if (!tab) return;
       tab.sent = undefined;
       tab.badge = undefined;
+      // 圖示在這個 tab 的 hover 提示也被 Chrome 清掉了
+      tab.stripShown = false;
       tab.translating.clear();
     },
     /** 停止或關 tab。 */
     clear(tabId: number): void {
-      if (!tabs.delete(tabId)) return;
+      const tab = tabs.get(tabId);
+      if (!tab || !tabs.delete(tabId)) return;
       deps.setBadge(tabId, undefined);
+      if (tab.stripShown) deps.setStrip(tabId, false);
     },
   };
 }
