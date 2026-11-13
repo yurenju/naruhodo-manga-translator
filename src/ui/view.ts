@@ -1,4 +1,4 @@
-import { FREE_PAGES, MONTHLY_PAGES, REFUND_WINDOW_DAYS, lowQuota, pageCount, type BillingPeriod, type Quota, type RefundInfo } from '../shared/hosted-api.ts';
+import { FREE_PAGES, MONTHLY_PAGES, REFUND_WINDOW_DAYS, STRIP_LINES_PER_PAGE, lowQuota, pageCount, type BillingPeriod, type Quota, type RefundInfo } from '../shared/hosted-api.ts';
 import type { PageView } from '../shared/messages.ts';
 import type { SeriesOption } from '../shared/series.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
@@ -218,6 +218,26 @@ const fullDate = (ms: number) => `${new Date(ms).getFullYear()} 年 ${monthDay(m
  * 內建翻譯的額度在 side panel 上怎麼顯示（#92、#94 畫面定案；spec #254 的購買流程設計稿）。
  * 購買入口都叫「查看方案」、打開帳號頁（跟 Page 上的紅色標籤一致），side panel 自己不建立 checkout。
  */
+/** Strip（條漫，#282）改照句數計頁時 side panel 多顯示的東西。 */
+export interface StripView {
+  /** 譯文列表上方的說明，離開這部作品之前一直在。 */
+  notice: string;
+  /** 底部狀態列多的一行：這一話（同一串圖）到目前計了幾頁；還沒計過頁時 undefined。 */
+  line: string | undefined;
+}
+
+/**
+ * 只在內建翻譯、已登入、而且這個分頁正在讀 Strip 時才有：自備金鑰沒有頁數可計，真的頁疊成直式的照舊一頁計一頁。
+ * 文案用「條漫」不用「直式漫畫」：真的頁疊成直式時不會出現這則說明。
+ */
+export function stripView(access: TranslationAccess, strip: { lines: number; pages: number } | undefined): StripView | undefined {
+  if (!strip || access.mode !== 'hosted' || !access.signedIn) return undefined;
+  return {
+    notice: `偵測到條漫（一長條切成多張圖）。這類作品改為每翻譯 ${STRIP_LINES_PER_PAGE} 句計 1 頁，留白不計。`,
+    line: strip.lines > 0 ? `本話已計 ${pageCount(strip.pages)} 頁（${pageCount(strip.lines)} 句）` : undefined,
+  };
+}
+
 export interface QuotaView {
   /** 底部狀態列（系列與翻譯狀態之間）多的那一行；plansLink＝右邊的「查看方案」小字連結。undefined＝不顯示。 */
   line: { text: string; warn: boolean; plansLink: boolean } | undefined;

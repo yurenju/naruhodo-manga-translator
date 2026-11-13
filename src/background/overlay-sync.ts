@@ -2,9 +2,10 @@
  * 翻好的 Page → content script 原地覆蓋（spec #27 第 3 節最後一步）。
  * 沒有譯文（沒有 API key）時不覆蓋（第 5 節）；unreadable 與 Loose Text 由 content script 略過。
  */
+import { spilledLines } from '../shared/long-page.ts';
 import type { PageCandidate, PageOnAnchor, PageView } from '../shared/messages.ts';
 import { findSamePage } from '../shared/page-hash.ts';
-import type { PageText, RatioRect } from '../shared/page-text.ts';
+import { overlaidTexts, type PageText, type RatioRect } from '../shared/page-text.ts';
 
 /** 一個翻好的 Page 要覆蓋到哪：anchor（元素）＋ subRect（Page 在 anchor 裡的範圍）＋ pageHash（Page 身分，hover 同步用）。 */
 export interface OverlayShow extends PageOnAnchor {
@@ -25,7 +26,32 @@ export interface OverlaySyncDeps {
 interface Sent extends PageOnAnchor {
   text: PageText;
   subRect?: RatioRect;
+  /** 隔壁元素伸過來的 Line（直式排版的一串，#282）：內容一樣就不重送。 */
+  spill: string;
 }
+
+const EMPTY: PageText = { balloons: [], looseText: [] };
+
+/**
+ * 直式排版的一串（#282）裡，同一串其他元素翻好、要覆蓋的 Line 伸到這個元素上的部分（這個元素的座標）。
+ * 不在一串裡、或沒有伸過來的是空的。
+ */
+export function spillOnto(page: PageView, pages: readonly PageView[]): PageText {
+  const spill: PageText = { balloons: [], looseText: [] };
+  if (!page.column) return spill;
+  for (const other of pages) {
+    const { transcript } = other;
+    if (other === page || other.column?.id !== page.column.id || transcript.state !== 'done' || !transcript.translated) continue;
+    const lines = spilledLines(overlaidTexts(transcript.text), other.rect, page.rect, `@${other.anchorId}`);
+    spill.balloons.push(...lines.balloons);
+    spill.looseText.push(...lines.looseText);
+  }
+  return spill;
+}
+
+/** 伸過來的 Line 的內容（不含擦除小圖）：位置或譯文變了才重送。 */
+const spillKey = ({ balloons, looseText }: PageText) =>
+  JSON.stringify([...balloons.map((b) => [b.id, b.譯文, b.balloonBbox]), ...looseText.map((l) => [l.id, l.譯文, l.bbox])]);
 
 /**
  * 同一個範圍。視窗大小一變，合成圖重畫前後的截圖會量到不一樣的 subRect（同一頁、hash 一樣）；
@@ -45,11 +71,18 @@ export function createOverlaySync(deps: OverlaySyncDeps) {
     const list = sent.get(tabId) ?? [];
     for (const page of pages) {
       const { transcript } = page;
-      if (transcript.state !== 'done' || !transcript.translated) continue;
-      if (list.some((s) => s.text === transcript.text && isSamePage(s, page) && sameSubRect(s.subRect, page.subRect))) continue;
+      const spill = spillOnto(page, pages);
+      const spilled = spill.balloons.length + spill.looseText.length > 0;
+      const translated = transcript.state === 'done' && transcript.translated;
+      // 自己還沒翻好、但隔壁有 Line 伸過來的元素也要畫（只畫伸過來的）
+      if (!translated && !spilled) continue;
+      const own = translated ? transcript.text : EMPTY;
+      const key = spillKey(spill);
+      if (list.some((s) => s.text === own && s.spill === key && isSamePage(s, page) && sameSubRect(s.subRect, page.subRect))) continue;
       const others = list.filter((s) => !isSamePage(s, page));
-      list.splice(0, list.length, ...others, { anchorId: page.anchorId, pageHash: page.pageHash, text: transcript.text, subRect: page.subRect });
-      deps.show({ tabId, anchorId: page.anchorId, pageHash: page.pageHash, subRect: page.subRect, text: transcript.text });
+      list.splice(0, list.length, ...others, { anchorId: page.anchorId, pageHash: page.pageHash, text: own, subRect: page.subRect, spill: key });
+      const text = spilled ? { balloons: [...own.balloons, ...spill.balloons], looseText: [...own.looseText, ...spill.looseText] } : own;
+      deps.show({ tabId, anchorId: page.anchorId, pageHash: page.pageHash, subRect: page.subRect, text });
     }
     sent.set(tabId, list);
   }

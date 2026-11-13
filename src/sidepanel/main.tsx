@@ -13,6 +13,7 @@ import type {
   PageView,
   SeriesResponse,
   StatusResponse,
+  StripStatus,
   TestConnectionResponse,
 } from '../shared/messages.ts';
 import { accountUrl } from '../shared/account-page.ts';
@@ -618,6 +619,7 @@ function App({ tabId }: { tabId: number | undefined }) {
   // undefined＝還在問 SW
   const [active, setActive] = useState<boolean | undefined>(tabId === undefined ? false : undefined);
   const [pages, setPages] = useState<PageView[]>([]);
+  const [strip, setStrip] = useState<StripStatus | undefined>(undefined);
   const [modelStatus, setModelStatus] = useState<ModelStatus>({ state: 'idle' });
   const [hasKey, setHasKey] = useState(true);
   const [pageMode, choosePageMode] = usePageMode();
@@ -648,12 +650,18 @@ function App({ tabId }: { tabId: number | undefined }) {
         if (message.active) setSeriesDeleted(false);
       }
       if (message.type === 'series:deleted' && message.tabIds.includes(tabId)) setSeriesDeleted(true);
-      if (message.type === 'pages:updated' && message.tabId === tabId) setPages(message.pages);
+      if (message.type === 'pages:updated' && message.tabId === tabId) {
+        setPages(message.pages);
+        setStrip(message.strip);
+      }
       if (message.type === 'models:status') setModelStatus(message.status);
     };
     chrome.runtime.onMessage.addListener(onMessage);
     void send<StatusResponse>({ type: 'panel:getStatus', tabId }).then((r) => setActive(r.active));
-    void send<PagesResponse>({ type: 'panel:getPages', tabId }).then((r) => setPages(r.pages));
+    void send<PagesResponse>({ type: 'panel:getPages', tabId }).then((r) => {
+      setPages(r.pages);
+      setStrip(r.strip);
+    });
     void send<ModelStatusResponse>({ type: 'panel:getModelStatus' }).then((r) => setModelStatus(r.status));
     return () => chrome.runtime.onMessage.removeListener(onMessage);
   }, [tabId]);
@@ -688,6 +696,7 @@ function App({ tabId }: { tabId: number | undefined }) {
       hostedHint={hostedHint}
       onDismissHostedHint={() => void dismissHostedHint()}
       quota={translationMode === 'hosted' ? quota : undefined}
+      strip={strip}
       // 跟 Page 上的紅色標籤一樣帶著漫畫分頁打開帳號頁：付完款按「回到漫畫」接著翻
       onViewPlans={() => void chrome.tabs.create({ url: accountUrl(tabId) })}
       subscribedNotice={subscribedNotice}

@@ -2072,3 +2072,210 @@ describe('OCR 用 Series Notes 的名字修形近字（#228）', () => {
     expect(vi.mocked(deps.analyze).mock.calls[0]![0].notesNames).toBeUndefined();
   });
 });
+
+describe('直式排版的一串與 Strip（#282）', () => {
+  const VIEW = 600;
+  const balloonAt = (y: number, 原文: string): PageText['balloons'][number] => ({
+    ...pageText.balloons[0]!,
+    balloonBbox: { x: 0.1, y, w: 0.3, h: 0.05 },
+    textBbox: { x: 0.15, y, w: 0.2, h: 0.05 },
+    原文,
+  });
+  const sliceText = (...balloons: PageText['balloons']): PageText => ({ balloons: balloons.map((b, i) => ({ ...b, id: `b${i + 1}`, order: i + 1 })), looseText: [] });
+
+  /**
+   * 一串裡高 1000 的元素，上緣在畫面的 y；可見範圍是 0～600，整串看得到的範圍就是整個可見範圍。
+   * junctionAbove：跟上面那個元素的交界出現在截圖上時量到的樣子。
+   */
+  const member = (anchorId: string, y: number, hash: string, junctionAbove?: PageThumb['junctionAbove']): PageThumb => {
+    const top = Math.max(0, y);
+    return {
+      anchorId,
+      rect: { x: 0, y, width: 400, height: 1000 },
+      visible: { x: 0, y: top, width: 400, height: Math.min(VIEW, y + 1000) - top },
+      thumbnail: `data:${anchorId}`,
+      pageHash: hash,
+      stripes: [{ index: 0, hash }],
+      column: { id: 'c1', region: { x: 0, y: 0, width: 400, height: VIEW }, cutTop: true, cutBottom: true },
+      ...(junctionAbove ? { junctionAbove } : {}),
+    };
+  };
+
+  /** Worker 的 Strip 計費：照句數累計，回這一串第一筆的 id；不是 Strip 的請求照長 Page 的接續。 */
+  function hostedTranslator(calls: TranslateInput[]): Translator {
+    const base = translatorReturning('譯', calls);
+    let records = 0;
+    const chains = new Map<number, number>();
+    return {
+      ...base,
+      async translatePage(input) {
+        const output = await base.translatePage(input);
+        if (!input.strip) return { ...output, usageRecordId: input.pageUsageRecordId ?? ++records };
+        const root = input.stripUsageRecordId !== undefined && chains.has(input.stripUsageRecordId) ? input.stripUsageRecordId : ++records;
+        const lines = (chains.get(root) ?? 0) + input.items.length;
+        chains.set(root, lines);
+        return { ...output, usageRecordId: root, strip: { lines, pages: Math.ceil(lines / 8) } };
+      },
+    };
+  }
+
+  it('一串裡的元素送去辨識的是整串看得到的範圍；捲動後帶上一次的截圖與捲了多少，讓 offscreen 拼接被切到的框', async () => {
+    const analyze = vi.fn<(request: AnalyzeRequest) => Promise<PageText>>().mockResolvedValue({ balloons: [], looseText: [] });
+    const { transcriber } = setup({ analyze });
+    const first: Capture = { ...capture, screenshot: 'data:first' };
+    const second: Capture = { ...capture, screenshot: 'data:second' };
+
+    await transcriber.update(1, [member('a1', -500, HASHES.a1!), member('a2', 500, HASHES.a2!)], first);
+    // 讀者往下捲了 300
+    await transcriber.update(1, [member('a1', -800, HASHES.a1!), member('a2', 200, HASHES.a2!)], second);
+
+    const requests = analyze.mock.calls.map(([r]) => r);
+    expect(requests.map((r) => [r.candidate.anchorId, r.candidate.visible, r.column?.cutTop, r.column?.cutBottom])).toEqual([
+      ['a1', { x: 0, y: 0, width: 400, height: VIEW }, true, true],
+      ['a2', { x: 0, y: 0, width: 400, height: VIEW }, true, true],
+      ['a1', { x: 0, y: 0, width: 400, height: VIEW }, true, true],
+      ['a2', { x: 0, y: 0, width: 400, height: VIEW }, true, true],
+    ]);
+    expect(requests.slice(0, 2).map((r) => r.column?.previous)).toEqual([undefined, undefined]);
+    for (const request of requests.slice(2))
+      expect(request.column?.previous).toEqual({
+        screenshot: 'data:first',
+        frameMark: 0,
+        viewport: capture.viewport,
+        region: { x: 0, y: 0, width: 400, height: VIEW },
+        cutTop: true,
+        cutBottom: true,
+        dy: 300,
+      });
+  });
+
+  it('同一個位置又截了一次：不拼接，下一次捲動還是跟捲動前那次拼', async () => {
+    const analyze = vi.fn<(request: AnalyzeRequest) => Promise<PageText>>().mockResolvedValue({ balloons: [], looseText: [] });
+    const { transcriber } = setup({ analyze });
+
+    await transcriber.update(1, [member('a1', -500, HASHES.a1!)], { ...capture, screenshot: 'data:first' });
+    await transcriber.update(1, [member('a1', -500, HASHES.a1!)], { ...capture, screenshot: 'data:again' });
+    await transcriber.update(1, [member('a1', -600, HASHES.a1!)], { ...capture, screenshot: 'data:third' });
+
+    expect(analyze.mock.calls.map(([r]) => r.column?.previous?.screenshot)).toEqual([undefined, 'data:first']);
+  });
+
+  it('真的頁疊成直式（交界接不起來）：每個元素照長 Page 計費，接續帶自己那一頁的 usageRecordId，不通知 Strip', async () => {
+    const calls: TranslateInput[] = [];
+    const strips: unknown[] = [];
+    const analyze = vi
+      .fn<(request: AnalyzeRequest) => Promise<PageText>>()
+      .mockResolvedValueOnce(sliceText(balloonAt(0.6, 'うえ')))
+      .mockResolvedValueOnce(sliceText(balloonAt(0.1, 'した')))
+      .mockResolvedValueOnce(sliceText(balloonAt(0.9, 'うえ2')))
+      .mockResolvedValue({ balloons: [], looseText: [] });
+    const translator = hostedTranslator(calls);
+    const { transcriber } = setup({ analyze, getTranslator: () => translator, publish: (_tabId, _pages, strip) => strips.push(strip) });
+
+    await transcriber.update(1, [member('a1', -500, HASHES.a1!), member('a2', 500, HASHES.a2!, 'break')], capture);
+    await transcriber.update(1, [member('a1', -800, HASHES.a1!), member('a2', 200, HASHES.a2!, 'blank')], capture);
+
+    expect(calls.map((c) => [c.items[0]!.原文, c.strip, c.pageUsageRecordId])).toEqual([
+      ['うえ', undefined, undefined],
+      ['した', undefined, undefined],
+      ['うえ2', undefined, 1],
+    ]);
+    expect(strips.every((s) => s === undefined)).toBe(true);
+  });
+
+  it('看到接得起來的交界就是 Strip：之後的翻譯照句數計頁，接著同一串累計，並告訴 side panel 目前計了幾句、幾頁', async () => {
+    const calls: TranslateInput[] = [];
+    const strips: unknown[] = [];
+    const analyze = vi
+      .fn<(request: AnalyzeRequest) => Promise<PageText>>()
+      .mockResolvedValueOnce(sliceText(balloonAt(0.6, 'うえ')))
+      .mockResolvedValueOnce(sliceText(balloonAt(0.1, 'した'), balloonAt(0.2, 'した2')))
+      .mockResolvedValueOnce(sliceText(balloonAt(0.9, 'うえ2')))
+      .mockResolvedValue({ balloons: [], looseText: [] });
+    const translator = hostedTranslator(calls);
+    const { transcriber } = setup({ analyze, getTranslator: () => translator, publish: (_tabId, _pages, strip) => strips.push(strip) });
+
+    await transcriber.update(1, [member('a1', -500, HASHES.a1!), member('a2', 500, HASHES.a2!, 'continuous')], capture);
+    await transcriber.update(1, [member('a1', -800, HASHES.a1!), member('a2', 200, HASHES.a2!)], capture);
+
+    expect(calls.map((c) => [c.items.map((i) => i.原文), c.strip, c.stripUsageRecordId, c.pageUsageRecordId])).toEqual([
+      [['うえ'], true, undefined, undefined],
+      [['した', 'した2'], true, 1, undefined],
+      [['うえ2'], true, 1, undefined],
+    ]);
+    expect(strips[0]).toEqual({ lines: 0, pages: 0 });
+    expect(strips.at(-1)).toEqual({ lines: 4, pages: 1 });
+    expect(transcriber.getStrip(1)).toEqual({ lines: 4, pages: 1 });
+  });
+
+  it('認定 Strip 之前照一個元素一頁扣的不動；認定之後才改照句數', async () => {
+    const calls: TranslateInput[] = [];
+    const analyze = vi
+      .fn<(request: AnalyzeRequest) => Promise<PageText>>()
+      .mockResolvedValueOnce(sliceText(balloonAt(0.6, 'うえ')))
+      .mockResolvedValueOnce(sliceText(balloonAt(0.9, 'うえ2')))
+      .mockResolvedValue({ balloons: [], looseText: [] });
+    const translator = hostedTranslator(calls);
+    const { transcriber } = setup({ analyze, getTranslator: () => translator });
+
+    // 交界還沒出現在畫面上
+    await transcriber.update(1, [member('a1', 0, HASHES.a1!)], capture);
+    await transcriber.update(1, [member('a1', -500, HASHES.a1!), member('a2', 500, HASHES.a2!, 'continuous')], capture);
+
+    expect(calls.map((c) => [c.items[0]!.原文, c.strip, c.stripUsageRecordId, c.pageUsageRecordId])).toEqual([
+      ['うえ', undefined, undefined, undefined],
+      ['うえ2', true, undefined, undefined],
+    ]);
+  });
+
+  it('Strip 的累計存進每個元素的快取：重新整理（或 SW 被回收）後從快取認出是 Strip，接著同一串累計', async () => {
+    const calls: TranslateInput[] = [];
+    const translator = hostedTranslator(calls);
+    const analyze = vi
+      .fn<(request: AnalyzeRequest) => Promise<PageText>>()
+      .mockResolvedValueOnce(sliceText(balloonAt(0.6, 'うえ')))
+      .mockResolvedValueOnce({ balloons: [], looseText: [] })
+      .mockResolvedValueOnce(sliceText(balloonAt(0.9, 'うえ2')))
+      .mockResolvedValue({ balloons: [], looseText: [] });
+    const { transcriber, deps } = setup({ analyze, getTranslator: () => translator });
+    await transcriber.update(1, [member('a1', -500, HASHES.a1!), member('a2', 500, HASHES.a2!, 'continuous')], capture);
+    expect((deps.cache as ReturnType<typeof memoryCache>).saved[0]!.strip).toMatchObject({ usageRecordId: 1, lines: 1, pages: 1 });
+
+    transcriber.resetPages(1);
+    // 重新整理後交界不在畫面上，anchor 與這一串的 id 也都換了
+    const again = { ...member('b1', -700, HASHES.a1!), column: { ...member('b1', -700, HASHES.a1!).column!, id: 'c9' } };
+    await transcriber.update(1, [again], capture);
+
+    expect(calls.at(-1)).toMatchObject({ strip: true, stripUsageRecordId: 1 });
+    expect(transcriber.getStrip(1)).toEqual({ lines: 2, pages: 1 });
+  });
+
+  it('快取裡 #282 之前被交界切成兩半的 Line 不要：這一截辨識時不拿它們擋完整的框，收到的那一句照常翻譯', async () => {
+    const calls: TranslateInput[] = [];
+    const cache = memoryCache();
+    const half = { ...balloonAt(0.705, 'はんぶん'), balloonBbox: { x: 0.27, y: 0.705, w: 0.49, h: 0.295 }, unreadable: true };
+    await cache.save({
+      balloons: [half],
+      looseText: [],
+      seriesId: 'series-1',
+      pageHash: HASHES.a1!,
+      stripes: [{ index: 0, hash: HASHES.a1! }],
+      usedNotes: [],
+      model: 'claude-haiku-5-5',
+      promptVersion: '',
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 },
+      latencyMs: 0,
+      translatedAt: 0,
+    });
+    const whole = { ...balloonAt(0.705, 'ぜんぶ'), balloonBbox: { x: 0.27, y: 0.705, w: 0.49, h: 0.52 } };
+    const analyze = vi.fn<(request: AnalyzeRequest) => Promise<PageText>>().mockResolvedValueOnce(sliceText(whole));
+    const { transcriber, published } = setup({ analyze, cache, getTranslator: () => translatorReturning('譯', calls) });
+
+    await transcriber.update(1, [member('a1', -500, HASHES.a1!)], capture);
+
+    expect(analyze.mock.calls[0]![0].collected).toEqual([]);
+    expect(calls.map((c) => c.items.map((i) => i.原文))).toEqual([['ぜんぶ']]);
+    const { transcript } = published.at(-1)![0]!;
+    expect(transcript.state === 'done' && transcript.text.balloons.map((b) => b.原文)).toEqual(['ぜんぶ']);
+  });
+});

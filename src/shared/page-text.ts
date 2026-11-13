@@ -135,10 +135,19 @@ export interface PageCharge {
 }
 
 /**
- * 只留在本機快取、不進備份的 Page 欄位：扣頁紀錄只對這個 Account、1 小時內有用，換台裝置還原也接不上。
+ * Strip（條漫，#282）的計費累計：這一串第一次翻譯的用量紀錄（Worker 把累計記在它底下）、拿到它的時間，
+ * 以及 Worker 回的這一串到目前累計的句數與頁數。之後的翻譯帶上 id 接著累計；超過 STRIP_WINDOW_MS 就不帶，從頭計。
+ */
+export interface StripCharge extends PageCharge {
+  lines: number;
+  pages: number;
+}
+
+/**
+ * 只留在本機快取、不進備份的 Page 欄位：扣頁紀錄只對這個 Account、一段時間內有用，換台裝置還原也接不上。
  * 擦除資料另外在 LOCAL_ERASE_KEYS（在每個 Balloon／Loose Text 上）。
  */
-const LOCAL_PAGE_KEYS = ['charge'] as const satisfies readonly (keyof PageTranslation)[];
+const LOCAL_PAGE_KEYS = ['charge', 'strip'] as const satisfies readonly (keyof PageTranslation)[];
 
 /** 備份裡的一頁：拿掉只留在本機的欄位與擦除資料（不改到傳進來的物件）。 */
 export function forBackup(page: PageTranslation): PageTranslation {
@@ -159,6 +168,11 @@ export interface PageTranslation extends PageText {
   stripes?: Stripe[];
   /** 長 Page 用 Hosted Translation 翻過才有：扣頁那次的用量紀錄，之後的截接續時帶上。只在本機快取，不進備份。 */
   charge?: PageCharge;
+  /**
+   * Strip（條漫，#282）的一個元素用 Hosted Translation 翻過才有：那時這一串的計費累計。SW 重新啟動、重新整理後
+   * 再看到這個元素時，這一串從它接著累計。只在本機快取，不進備份。
+   */
+  strip?: StripCharge;
   /** 判斷過時用（#38）。 */
   usedNotes: UsedNote[];
   model: string;

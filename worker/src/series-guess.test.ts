@@ -61,6 +61,8 @@ describe('猜作品原名', () => {
         model: CLAUDE_MODEL,
         page_record_id: null,
         practice: 0,
+        strip: 0,
+        lines: null,
       },
     ]);
     for (const content of ['範例作品', '作者', '網站']) expect(JSON.stringify(results)).not.toContain(content);

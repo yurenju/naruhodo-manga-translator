@@ -193,3 +193,64 @@ describe('overlay sync', () => {
     });
   });
 });
+
+describe('直式排版的一串：跨過交界的 Line 兩邊的元素都畫（#282）', () => {
+  // 真實網站量到的版面：canvas 800×1000 上下緊貼；對白框歸下面那個元素，上緣伸到上面那個元素裡
+  const column = { id: 'c1', region: { x: 209, y: 0, width: 800, height: 924 }, cutTop: true, cutBottom: true };
+  const crossing: PageText = {
+    balloons: [
+      {
+        id: 'b1',
+        order: 1,
+        balloonBbox: { x: 0.4, y: -0.145, w: 0.22, h: 0.367 },
+        textBbox: { x: 0.45, y: -0.1, w: 0.12, h: 0.3 },
+        orientation: 'vertical',
+        原文: 'おはよう',
+        讀音: '',
+        讀音來源: 'kuromoji',
+        譯文: '早安',
+        unreadable: false,
+      },
+    ],
+    looseText: [],
+  };
+  const member = (anchorId: string, y: number, hash: string, transcript: PageView['transcript']): PageView => ({
+    anchorId,
+    rect: { x: 209, y, width: 800, height: 1000 },
+    visible: { x: 209, y: Math.max(0, y), width: 800, height: 400 },
+    thumbnail: 'data:',
+    pageHash: hash,
+    column,
+    transcript,
+  });
+
+  it('上面那個元素還沒有自己的譯文也畫伸過來的那一句，位置換成它自己的座標；內容沒變不重送', () => {
+    const { sync, shown } = setup();
+    const pages = [
+      member('a7', -600, '0'.repeat(64), { state: 'done', text: TEXT, translated: false }),
+      member('a8', 400, 'f'.repeat(64), { state: 'done', text: crossing, translated: true }),
+    ];
+
+    sync.publish(1, pages);
+    sync.publish(1, pages);
+
+    expect(shown.map(([, anchorId]) => anchorId)).toEqual(['a7', 'a8']);
+    const [onUpper] = shown[0]![2].balloons;
+    expect(onUpper).toMatchObject({ id: 'b1@a8', 譯文: '早安' });
+    expect(onUpper!.balloonBbox.y).toBeCloseTo(0.855);
+    expect(onUpper!.balloonBbox.h).toBeCloseTo(0.367);
+    expect(shown[1]![2]).toBe(crossing);
+  });
+
+  it('沒有伸到隔壁的 Line、不在一串裡的 Page 照舊', () => {
+    const { sync, shown } = setup();
+    const inside: PageText = { ...crossing, balloons: [{ ...crossing.balloons[0]!, balloonBbox: { x: 0.4, y: 0.3, w: 0.2, h: 0.2 } }] };
+
+    sync.publish(1, [
+      member('a7', -600, '0'.repeat(64), { state: 'done', text: TEXT, translated: false }),
+      member('a8', 400, 'f'.repeat(64), { state: 'done', text: inside, translated: true }),
+    ]);
+
+    expect(shown.map(([, anchorId]) => anchorId)).toEqual(['a8']);
+  });
+});

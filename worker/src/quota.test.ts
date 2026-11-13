@@ -93,6 +93,98 @@ describe('Free Pages', () => {
   });
 });
 
+describe('Strip（條漫）照句數計頁（#282）', () => {
+  /** n 句的 Strip 翻譯；root＝接著哪一串累計（那一串第一次翻譯回的 usageRecordId）。 */
+  async function translateStrip(token: string, n: number, root?: number) {
+    fakeAnthropic([ok]);
+    const items = Array.from({ length: n }, (_, i) => ({ ...input.items[0]!, id: `b${i + 1}` }));
+    const response = await post(TRANSLATE_PATH, { ...input, items, strip: true, ...(root === undefined ? {} : { stripUsageRecordId: root }) }, { token });
+    const body = (await response.json()) as { usageRecordId?: number; strip?: { lines: number; pages: number }; reason?: string };
+    return { status: response.status, ...body };
+  }
+
+  it('第 1 句就計第 1 頁，之後每累計滿 8 句再計 1 頁；回應帶這一串的累計', async () => {
+    const token = await signIn();
+
+    const first = await translateStrip(token, 3);
+    expect(first).toMatchObject({ status: 200, strip: { lines: 3, pages: 1 } });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
+
+    // 3＋5＝8 句，還在第 1 頁裡：不再扣
+    const second = await translateStrip(token, 5, first.usageRecordId);
+    expect(second).toMatchObject({ status: 200, usageRecordId: first.usageRecordId, strip: { lines: 8, pages: 1 } });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
+
+    // 第 9 句開始第 2 頁
+    const third = await translateStrip(token, 1, first.usageRecordId);
+    expect(third).toMatchObject({ usageRecordId: first.usageRecordId, strip: { lines: 9, pages: 2 } });
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 98 });
+  });
+
+  it('一次翻很多句：跨過幾個 8 句就扣幾頁', async () => {
+    const token = await signIn();
+
+    expect(await translateStrip(token, 20)).toMatchObject({ status: 200, strip: { lines: 20, pages: 3 } });
+
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 97 });
+  });
+
+  it('接著的那一串不是自己的 Strip 第一筆（別人的、一般翻譯的、不存在的）：當成新的一串，從頭計', async () => {
+    const token = await signIn();
+    const other = await translateStrip(await signIn(), 3);
+    fakeAnthropic([ok]);
+    const plain = (await (await translate(token)).json()) as { usageRecordId: number };
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 99 });
+
+    for (const root of [other.usageRecordId!, plain.usageRecordId, 999_999]) {
+      const result = await translateStrip(token, 2, root);
+      expect(result.strip).toEqual({ lines: 2, pages: 1 });
+      expect(result.usageRecordId).not.toBe(root);
+    }
+
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 96 });
+  });
+
+  it('Strip 的紀錄不能拿來當長 Page 的接續（不然接續的請求都不扣頁）', async () => {
+    const token = await signIn();
+    const strip = await translateStrip(token, 1);
+    fakeAnthropic([ok]);
+
+    const response = await post(TRANSLATE_PATH, { ...input, pageUsageRecordId: strip.usageRecordId }, { token });
+
+    expect(((await response.json()) as { usageRecordId: number }).usageRecordId).not.toBe(strip.usageRecordId);
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 98 });
+  });
+
+  it('額度用完：這次的句數還落在已經計過的那一頁裡照樣翻，要多計一頁就拒絕（不呼叫 Anthropic）', async () => {
+    const token = await signInWith(1);
+    const first = await translateStrip(token, 3);
+    expect(await quota(token)).toEqual({ plan: 'free', remaining: 0 });
+
+    expect(await translateStrip(token, 5, first.usageRecordId)).toMatchObject({ status: 200, strip: { lines: 8, pages: 1 } });
+
+    // 前面兩次翻譯已經呼叫過，只看這一次有沒有再呼叫
+    const anthropic = vi.spyOn(globalThis, 'fetch').mockClear();
+    const blocked = await post(TRANSLATE_PATH, { ...input, strip: true, stripUsageRecordId: first.usageRecordId }, { token });
+    expect(blocked.status).toBe(402);
+    expect(await blocked.json()).toMatchObject({ reason: 'freePagesExhausted' });
+    expect(anthropic).not.toHaveBeenCalled();
+  });
+
+  it('用量紀錄只多記句數與這是 Strip，接著累計的那筆指到第一筆', async () => {
+    const token = await signIn();
+    const first = await translateStrip(token, 3);
+    await translateStrip(token, 5, first.usageRecordId);
+
+    const { results } = await env.DB.prepare('SELECT strip, lines, page_record_id FROM usage_records WHERE id >= ? ORDER BY id').bind(first.usageRecordId).all();
+
+    expect(results).toEqual([
+      { strip: 1, lines: 3, page_record_id: null },
+      { strip: 1, lines: 5, page_record_id: first.usageRecordId },
+    ]);
+  });
+});
+
 describe('長 Page 的接續翻譯（spec #142「計費」）', () => {
   /** 翻一次，回傳回應的 usageRecordId；pageUsageRecordId 有值就是同一個 Page 的接續請求。 */
   async function translateAs(token: string, pageUsageRecordId?: number): Promise<{ status: number; usageRecordId?: number }> {
@@ -215,6 +307,8 @@ describe('用量紀錄', () => {
       model: CLAUDE_MODEL,
       page_record_id: null,
       practice: 0,
+      strip: 0,
+      lines: null,
     });
     expect(results).toEqual([record('translate'), record('notes')]);
     const stored = JSON.stringify(results);

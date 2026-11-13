@@ -8,7 +8,7 @@
 import { matchingStripe, type Stripe } from '../shared/long-page.ts';
 import type { HostedErrorReason } from '../shared/hosted-api.ts';
 import type { PageView, QuotaExhausted } from '../shared/messages.ts';
-import { pageLines, type PageCharge, type PageText, type PageTranslation } from '../shared/page-text.ts';
+import { pageLines, type PageCharge, type PageText, type PageTranslation, type StripCharge } from '../shared/page-text.ts';
 import { staleReason, usedNotes, type StaleReason, type TranslatorVersion } from '../shared/series-notes.ts';
 import { seriesNameForLlm, seriesZhTitleForLlm, type Series } from '../shared/series.ts';
 import { createTrace } from '../shared/trace.ts';
@@ -63,6 +63,16 @@ export interface LongPageRequest {
   charge?: PageCharge;
   /** 翻好時這個 Page 扣頁的那次（Hosted Translation 才有），也跟著存進快取；下一截接續時帶。 */
   charged?(charge: PageCharge): void;
+  /** 這個 Page 在 Strip（條漫，#282）裡才有：照句數計頁，不看 charge。 */
+  strip?: StripRequest;
+}
+
+/** Strip 的一次翻譯怎麼計費：接著這一串的累計，回來時記下新的累計。 */
+export interface StripRequest {
+  /** 這一串到目前的累計（還能接續時才給）；這一串的第一次、或超過期限時沒有，Worker 從頭計。 */
+  charge?: StripCharge;
+  /** Worker 回的新累計（Hosted Translation 才會呼叫），也跟著存進這個 Page 的快取。 */
+  charged(charge: StripCharge): void;
 }
 
 const trace = createTrace('sw');
@@ -109,6 +119,12 @@ function applyTranslation(text: PageText, output: TranslateOutput): PageText {
 function chargeOf(previous: PageCharge | undefined, usageRecordId: number | undefined): PageCharge | undefined {
   if (usageRecordId === undefined) return undefined;
   return previous?.usageRecordId === usageRecordId ? previous : { usageRecordId, chargedAt: Date.now() };
+}
+
+/** Worker 回的 Strip 累計；接著原本那一串時時間照舊，換了一串（Worker 當成新的）就從現在算。自備金鑰、舊版 Worker 不回，是 undefined。 */
+function stripChargeOf(previous: StripCharge | undefined, { usageRecordId, strip }: TranslateOutput): StripCharge | undefined {
+  if (usageRecordId === undefined || !strip) return undefined;
+  return { usageRecordId, chargedAt: previous?.usageRecordId === usageRecordId ? previous.chargedAt : Date.now(), ...strip };
 }
 
 export function createPageTranslation({ cache, ledger, getSeries, translatorVersion, kuromojiReadings }: PageTranslationDeps) {
@@ -162,13 +178,27 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
     let output: TranslateOutput;
     const startedAt = Date.now();
     try {
-      const continues = long?.charge?.usageRecordId;
+      // Strip 照句數計頁，不走長 Page 的接續
+      const strip = long?.strip;
+      const continues = strip ? undefined : long?.charge?.usageRecordId;
+      const stripContinues = strip?.charge?.usageRecordId;
       output = await translator.translatePage({
         ...seriesName(series),
         ...toTranslateInput(text, seriesNotes, priorPages),
         ...(continues === undefined ? {} : { pageUsageRecordId: continues }),
+        ...(strip ? { strip: true as const } : {}),
+        ...(stripContinues === undefined ? {} : { stripUsageRecordId: stripContinues }),
       });
-      trace('translate:done', { pageHash, ms: Date.now() - startedAt, model: output.model, usage: output.usage, priorPages: priorPages.length, continues, usageRecordId: output.usageRecordId });
+      trace('translate:done', {
+        pageHash,
+        ms: Date.now() - startedAt,
+        model: output.model,
+        usage: output.usage,
+        priorPages: priorPages.length,
+        continues,
+        usageRecordId: output.usageRecordId,
+        ...(strip ? { strip: { continues: stripContinues, lines: text.balloons.length + text.looseText.length, total: output.strip } } : {}),
+      });
     } catch (e) {
       trace('translate:error', { pageHash, ms: Date.now() - startedAt, error: e });
       // 額度用完不是失敗：跟沒有 Translator 一樣只顯示原文與讀音，用完的提示在 side panel 頂端與 Page 右上角（#185）
@@ -177,8 +207,12 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
       console.warn('translate failed', e);
       return { state: 'done', text: whole(text), translated: false, translateError: e instanceof Error ? e.message : String(e) };
     }
-    const charge = long && chargeOf(long.charge, output.usageRecordId);
-    if (charge) long.charged?.(charge);
+    const strip = long?.strip;
+    const stripCharge = strip && stripChargeOf(strip.charge, output);
+    if (stripCharge) strip.charged(stripCharge);
+    // Strip 的請求回的 usageRecordId 是那一串的第一筆，不是這個 Page 的扣頁紀錄
+    const charge = long && !long.strip ? chargeOf(long.charge, output.usageRecordId) : undefined;
+    if (charge) long?.charged?.(charge);
     const translated = applyTranslation(text, output);
     const page = whole(translated);
     const { model, latencyMs, usage } = output;
@@ -192,6 +226,7 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
         pageHash,
         ...(long ? { stripes: long.stripes } : {}),
         ...(charge ? { charge } : {}),
+        ...(stripCharge ? { strip: stripCharge } : {}),
         usedNotes: usedNotes(seriesNotes, [...page.balloons, ...page.looseText].map((t) => t.原文)),
         model: version?.model ?? model,
         promptVersion: version?.promptVersion ?? '',

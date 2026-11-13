@@ -57,6 +57,12 @@ export interface TranslateInput {
    * Worker 在條件內只記用量、不扣頁（不進 prompt）。
    */
   pageUsageRecordId?: number;
+  /**
+   * 只有 Hosted Translation 的 Strip（條漫，#282）有：Worker 照句數計頁（不進 prompt）。stripUsageRecordId 是同一串
+   * 第一次翻譯的 TranslateOutput.usageRecordId，接著那一串累計；這一串的第一次不帶。
+   */
+  strip?: true;
+  stripUsageRecordId?: number;
 }
 
 /** ② 的輸入：這一頁的原文與 ① 的譯文（unreadable 的不送）。 */
@@ -105,6 +111,8 @@ export interface TranslateOutput extends CallInfo {
    * 長 Page 的接續請求帶回去（NotesInput／TranslateInput 的 pageUsageRecordId）。
    */
   usageRecordId?: number;
+  /** 只有 Hosted Translation 的 Strip 請求有（#282）：這一串到這次為止累計翻了幾句、計了幾個 Translated Page。 */
+  strip?: { lines: number; pages: number };
 }
 
 export interface NotesOutput extends CallInfo {

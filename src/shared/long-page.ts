@@ -109,22 +109,79 @@ export function toPageText({ balloons, looseText }: PageText, slice: Slice): Pag
 
 const overlaps = (a: RatioRect, b: RatioRect) => Math.min(a.x + a.w, b.x + b.w) > Math.max(a.x, b.x) + 1e-9 && Math.min(a.y + a.h, b.y + b.h) > Math.max(a.y, b.y) + 1e-9;
 
+/** 這一截的上緣／下緣是不是被可見範圍切掉的（外面還有內容）。 */
+export interface SliceEdges {
+  top: boolean;
+  bottom: boolean;
+}
+
+/** 框（相對這一截的比例座標）貼著這一截被切掉的哪一緣。sliceHeight：這一截在截圖上的像素高度。 */
+export function cutEdges(box: RatioRect, sliceHeight: number, edges: SliceEdges): SliceEdges {
+  const edge = EDGE_PX / sliceHeight;
+  return { top: edges.top && box.y <= edge, bottom: edges.bottom && box.y + box.h >= 1 - edge };
+}
+
 /**
  * 這一截裡偵測到的框（相對這一截的比例座標）收不收：
  * - cut：被可見範圍的上緣或下緣切到（Page 本身的上下緣不算），先不收，等它完整出現再收。
  * - tooTall：上下都被切到，比可見範圍還高，永遠收不到（已知限制，記一筆）。
+ * - otherPage：直式排版的一串（#282）才有。這一截是整串看得到的範圍，框的中心落在別的 Page 裡，由那個 Page 收。
  * - overlap：跟已收 Line（Page 座標）重疊。截圖不藏長 Page 的覆蓋層，蓋著的譯文可能被偵測成新的框，所以一律丟掉。
  * sliceHeight：這一截在截圖上的像素高度。
+ * column：直式排版的一串才給，這一截（整串看得到的範圍）哪一緣是被切的；省略＝單獨一個長 Page，
+ * 這一截沒到 Page 的上下緣就是被切的。
  */
-export function rejectInSlice(box: RatioRect, slice: Slice, sliceHeight: number, collected: readonly RatioRect[]): 'cut' | 'tooTall' | 'overlap' | undefined {
-  const edge = EDGE_PX / sliceHeight;
-  const cutTop = slice.top > 0 && box.y <= edge;
-  const cutBottom = slice.bottom < 1 && box.y + box.h >= 1 - edge;
-  if (cutTop && cutBottom) return 'tooTall';
-  if (cutTop || cutBottom) return 'cut';
+export function rejectInSlice(
+  box: RatioRect,
+  slice: Slice,
+  sliceHeight: number,
+  collected: readonly RatioRect[],
+  column?: SliceEdges,
+): 'cut' | 'tooTall' | 'otherPage' | 'overlap' | undefined {
+  const cut = cutEdges(box, sliceHeight, column ?? { top: slice.top > 0, bottom: slice.bottom < 1 });
+  if (cut.top && cut.bottom) return 'tooTall';
+  if (cut.top || cut.bottom) return 'cut';
   const onPage = toPageBox(box, slice);
+  if (column && !ownsBox(onPage)) return 'otherPage';
   if (collected.some((c) => overlaps(c, onPage))) return 'overlap';
   return undefined;
+}
+
+/** 直式排版的一串裡，框（Page 座標，可以超出 0～1）歸不歸這個 Page：看中心落在誰裡面，跨交界的框只有一個 Page 收。 */
+export function ownsBox(onPage: RatioRect): boolean {
+  const center = onPage.y + onPage.h / 2;
+  return center >= 0 && center < 1;
+}
+
+/** 框貼著 Page 的上緣或下緣（差不到這個比例）就當成是被那一緣切出來的。高 1000 px 的元素約 3 px。 */
+const PAGE_EDGE = 0.003;
+
+/**
+ * 直式排版的一串（#282）裡，貼著元素上緣或下緣的已收 Line 丟掉：以元素為單位辨識時（#282 之前），跨在兩個元素交界上的框
+ * 被切成上下兩半、各自當成一句，存進了快取；留著的話，現在偵測到的完整的框會因為跟它們重疊而不收。
+ * 以整串為單位收的框跨過交界時會超出 0～1，不會剛好停在邊上；真的剛好停在邊上的框丟掉後會再收一次。
+ */
+export function withoutEdgeHalves(page: PageText): PageText {
+  const whole = (line: BalloonText | LooseText) => {
+    const box = outerBox(line);
+    return Math.abs(box.y) > PAGE_EDGE && Math.abs(box.y + box.h - 1) > PAGE_EDGE;
+  };
+  return { balloons: page.balloons.filter(whole), looseText: page.looseText.filter(whole) };
+}
+
+/**
+ * 直式排版的一串（#282）裡，隔壁元素收的 Line 有哪些伸到這個元素上：換成這個元素的座標、id 加上 suffix（跟自己的 Line 分開）。
+ * 網站常把每個元素放在各自的堆疊環境裡，覆蓋層超出自己元素的部分會被隔壁元素蓋住；所以跨交界的 Line 兩邊都畫，
+ * 畫在同一個位置上，誰蓋誰都一樣。neighbour／own：兩個元素在畫面上的 rect（同一次量測）。
+ */
+export function spilledLines(text: PageText, neighbour: Rect, own: Rect, suffix: string): PageText {
+  const moved = toPageText(text, sliceOf(own, neighbour));
+  const onto = (line: BalloonText | LooseText) => {
+    const box = outerBox(line);
+    return box.y < 1 && box.y + box.h > 0;
+  };
+  const rename = <T extends { id: string }>(line: T): T => ({ ...line, id: `${line.id}${suffix}` });
+  return { balloons: moved.balloons.filter(onto).map(rename), looseText: moved.looseText.filter(onto).map(rename) };
 }
 
 type Line = (BalloonText & { kind: 'balloon' }) | (LooseText & { kind: 'loose' });

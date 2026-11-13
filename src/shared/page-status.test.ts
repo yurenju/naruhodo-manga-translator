@@ -130,3 +130,14 @@ describe('額度快用完（#237）', () => {
     expect(pageStatus(input([analyzing, failed], { lowQuota: true })).badge).toBe('problem');
   });
 });
+
+describe('正在讀照句數計頁的 Strip（條漫，#282）', () => {
+  const analyzing = page('a1', 'h1', { state: 'analyzing' });
+  const translated = page('a3', 'h3', { state: 'done', text, translated: true });
+
+  it('圓點換成「條」；快用完是橘色底的「條」；翻譯中、出問題照舊', () => {
+    expect(pageStatus(input([translated], { strip: true })).badge).toBe('strip');
+    expect(pageStatus(input([translated], { strip: true, lowQuota: true })).badge).toBe('stripLowQuota');
+    expect(pageStatus(input([analyzing], { strip: true })).badge).toBe('busy');
+  });
+});

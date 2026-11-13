@@ -6,6 +6,10 @@
  * （latencyMs 只算 Worker 到 Anthropic，外掛換成自己量的）。翻譯回應帶 usageRecordId，同一頁的 Notes 請求放在 pageUsageRecordId 帶回來，
  * Notes 的用量就歸到這一頁。直式捲動的長 Page（spec #142）的接續翻譯也用 pageUsageRecordId 帶回來：Worker 在條件內
  * （同一個 Account、1 小時內、接續 ≤ 10 次）只記用量、不扣頁，回應的 usageRecordId 還是那一筆；條件不符就扣一頁、回新的。
+ * Strip（條漫，#282）的翻譯：body 多帶 `strip: true`，接續同一串時再帶 `stripUsageRecordId`（這一串第一次翻譯回的 usageRecordId）。
+ * Worker 照句數計頁（每 STRIP_LINES_PER_PAGE 句 Line 一個 Translated Page，無條件進位），累計記在那一串的第一筆用量紀錄底下；
+ * 回應的 usageRecordId 是那一筆，另外帶 `strip`（這一串累計的句數與頁數）。stripUsageRecordId 不是這個 Account 的、
+ * 或超過 STRIP_WINDOW_MS 時當成新的一串，從頭計。
  * 要帶 `Authorization: Bearer <session token>`。
  *
  * 錯誤回應一律是 HostedError：401 沒登入（reason signedOut）、400 輸入格式不符或驗證碼不對、402 額度用完、
@@ -101,6 +105,17 @@ export interface VerifyCodeResponse {
 
 /** 新 Account 一次性的免費頁數（Worker 發額度、帳號頁顯示「剩 N / 100 頁」）。 */
 export const FREE_PAGES = 100;
+
+/**
+ * Strip（條漫，#282）每翻譯這麼多句 Line 計一個 Translated Page。來自本機快取裡 22 頁橫式漫畫每頁句數的中位數
+ * （平均 7.5、中間一半落在 3～11）；樣本很小，之後可能調整。Worker 用它計頁，外掛的說明文字也用它。
+ */
+export const STRIP_LINES_PER_PAGE = 8;
+/**
+ * 同一串 Strip 的累計可以接續多久：超過就從頭計（最多多計一頁的進位）。照句數計費，接續不會少付，所以不像長 Page
+ * 的接續要限制次數；期限只是不讓一筆紀錄無限期累計。
+ */
+export const STRIP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * 每個 Billing Period 的標價（美元、含稅，ADR 0012）與扣款間隔，給外掛與網站的文案用。真正扣多少是 Paddle 上的 price
