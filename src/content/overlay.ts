@@ -13,8 +13,12 @@
  *
  * Page 上的狀態（#185）也在同一個 host 裡：蓋在 anchor 上、不縮放的一層，右上角小標籤（轉圈圈＋階段），翻完就拿掉。
  * 只有出問題時的紅色小標籤可以點；截圖時一律藏起來（不能被 OCR 讀到、也不能改變 Page hash）。
+ *
+ * Page 上的外圈（#285、#283，shared/page-outlines.ts）也在同一個 host 裡、同樣不縮放、截圖時藏起來：翻譯中的句子是實線、
+ * 原地淡入淡出；被可見範圍邊緣切到、還在等的框是流動的虛線。譯文到了就整頁一次蓋上、同時收起外圈。
  */
-import type { LineRef, Rect } from '../shared/messages.ts';
+import type { LineBox, LineRef, Rect } from '../shared/messages.ts';
+import { LOOSE_OUTLINE_PAD_PX, onAnchor, PULSE_STAGGER_MS, staggerRanks } from '../shared/page-outlines.ts';
 import type { AnchorStatus, StatusAction } from '../shared/page-status.ts';
 import { findSamePage } from '../shared/page-hash.ts';
 import type { PageMode } from '../shared/page-mode.ts';
@@ -40,6 +44,17 @@ export const HOST_ATTRIBUTE = 'data-naruhodo-overlay';
 const LINE_HEIGHT = 1.15;
 /** Loose Text 譯文的反色描邊（#151）：paint-order: stroke 讓一半壓在字下面，字外側露出約字級的 1/8。 */
 const LOOSE_STROKE_EM = 0.25;
+
+/** 譯文蓋上、外圈收起的淡入淡出花這麼久（ms）。 */
+const REVEAL_FADE_MS = 200;
+/**
+ * 翻譯中的外圈從 SW 說「不在翻了」到真的拿掉最多等這麼久（ms）：譯文通常緊接著到（show 還要等字型與擦除小圖），
+ * 由它照閱讀順序收起；等不到（翻譯失敗、額度用完）才直接拿掉。
+ */
+const OUTLINE_RETIRE_MS = 1000;
+/** 外圈的線寬（畫面 px），跟高亮框一樣；Balloon 外圈的圓角是它的兩倍。 */
+const OUTLINE_SCREEN_PX = 2;
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** tooltip 與高亮框的顏色、字型取自 design tokens（跟 side panel 同一份，#71）；擦字與譯文的顏色跟著原稿算。 */
 const STYLE = `${TOKENS}
@@ -94,6 +109,20 @@ const STYLE = `${TOKENS}
   border-radius: 50%; animation: naru-rot 0.8s linear infinite; }
 @keyframes naru-rot { to { transform: rotate(360deg); } }
 :host([data-capturing]) .st, :host([data-status-hidden]) .st { display: none; }
+/* Page 上的外圈（#285、#283）：跟 anchor 一樣大、不縮放，線寬是畫面 px。t＝翻譯中（實線、原地淡入淡出），w＝等待中（虛線流動） */
+.rings { position: absolute; pointer-events: none; }
+.rg { position: absolute; overflow: visible; }
+.rg rect { fill: none; stroke: var(--naru-highlight); stroke-width: ${OUTLINE_SCREEN_PX}px; }
+.rg.t { animation: naru-pulse 1.6s ease-in-out infinite; }
+.rg.w rect { stroke-dasharray: 6 4; animation: naru-flow 1s linear infinite; }
+.rg.out { animation: naru-out ${REVEAL_FADE_MS}ms ease-out forwards; }
+@keyframes naru-pulse { 50% { opacity: 0.2; } }
+@keyframes naru-flow { to { stroke-dashoffset: -10; } }
+@keyframes naru-out { to { opacity: 0; } }
+@keyframes naru-in { from { opacity: 0; } }
+/* 截圖時用 visibility 藏（不能被 OCR 讀到）：display:none 會讓動畫從頭開始，每截一次明暗就跳一下 */
+:host([data-capturing]) .rings, :host([data-status-hidden]) .rings { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) { .rg.t, .rg.w rect { animation: none; } }
 `;
 
 const WHOLE_PAGE: RatioRect = { x: 0, y: 0, w: 1, h: 1 };
@@ -142,6 +171,31 @@ interface Entry {
   layers: Map<string, PageLayer>;
   /** Page 上的狀態（#185）；沒有＝這個 anchor 沒在翻、也沒出問題。 */
   status?: HTMLElement;
+  /** Page 上的外圈（#285、#283）；沒有＝這個 anchor 上沒有外圈。key＝outlineKey。 */
+  outlines?: { layer: HTMLElement; items: Map<string, Outline> };
+}
+
+/** 畫在 anchor 上的一個外圈。 */
+interface Outline {
+  element: SVGSVGElement;
+  state: 'translating' | 'waiting';
+  /** 所在的 Page（subKey）。 */
+  sub: string;
+  id: string;
+  order: number;
+  /** SW 說不在翻了、等譯文來收的計時（OUTLINE_RETIRE_MS）。 */
+  retire?: ReturnType<typeof setTimeout>;
+  /** 譯文到了，正在照順序收起：排好的計時。 */
+  leaving?: ReturnType<typeof setTimeout>[];
+}
+
+/** 一個 Page 上要畫的外圈（SW 送來的 PageOutlines，anchorId 已換成元素）。 */
+export interface OutlinesOnAnchor {
+  anchor: HTMLElement;
+  /** Page 在 anchor 裡的範圍；省略＝整個 anchor。 */
+  sub?: RatioRect;
+  translating: LineBox[];
+  waiting: LineBox[];
 }
 
 /** Page 上的狀態要畫在哪個 anchor 上。 */
@@ -154,6 +208,8 @@ export interface StatusOnAnchor {
 export type OnStatusAction = (action: StatusAction, pageHash: string) => void;
 
 const subKey = (sub: RatioRect) => `${sub.x},${sub.y},${sub.w},${sub.h}`;
+const outlineKey = (sub: RatioRect, state: Outline['state'], id: string) => `${subKey(sub)}|${state}|${id}`;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** canvas 的 width/height、img 的 naturalWidth/Height；其他元素不知道。 */
 export function intrinsicSize(anchor: Element): { width: number; height: number } {
@@ -218,6 +274,8 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
   let hiddenAt: number | undefined;
   /** 截圖中：Page 上的狀態藏著（截圖途中才建的 host 也要藏）。 */
   let statusHidden = false;
+  /** 所有 Page 的譯文都淡入完的時間（performance.now()）：淡入（#285）還沒結束時不算「覆蓋層畫好了」。 */
+  let revealUntil = 0;
   let stopped = false;
 
   const resizeObserver = new ResizeObserver((records) => {
@@ -231,7 +289,10 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     // 等 SW 重新擷取後送新的（同一頁就從記住的結果重送，overlay-sync.ts）
     for (const record of records) {
       const entry = record.attributeName === 'src' ? entries.get(record.target as HTMLElement) : undefined;
-      if (entry && entry.layers.size > 0) removeLayers(entry, 'anchor 的 src 換了');
+      if (!entry) continue;
+      // 外圈也是上一頁的
+      for (const key of [...(entry.outlines?.items.keys() ?? [])]) dropOutline(entry, key);
+      if (entry.layers.size > 0) removeLayers(entry, 'anchor 的 src 換了');
     }
     for (const entry of entries.values()) {
       reattach(entry);
@@ -336,11 +397,117 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
       const t = layerTransform(entry.anchor, layer.sub, layer.size);
       layer.element.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scaleX}, ${t.scaleY})`;
     }
-    if (entry.status) {
-      // 不縮放：跟 anchor 一樣大的框，小標籤的字級是畫面 px
-      const t = layerTransform(entry.anchor, WHOLE_PAGE, { width: 1, height: 1 });
-      Object.assign(entry.status.style, { left: `${t.x}px`, top: `${t.y}px`, width: `${t.scaleX}px`, height: `${t.scaleY}px` });
+    // 不縮放：跟 anchor 一樣大的框，小標籤的字級、外圈的線寬是畫面 px
+    const t = layerTransform(entry.anchor, WHOLE_PAGE, { width: 1, height: 1 });
+    for (const element of [entry.status, entry.outlines?.layer])
+      if (element) Object.assign(element.style, { left: `${t.x}px`, top: `${t.y}px`, width: `${t.scaleX}px`, height: `${t.scaleY}px` });
+  }
+
+  function dropOutline(entry: Entry, key: string): void {
+    const outline = entry.outlines?.items.get(key);
+    if (!entry.outlines || !outline) return;
+    clearTimeout(outline.retire);
+    outline.leaving?.forEach(clearTimeout);
+    outline.element.remove();
+    entry.outlines.items.delete(key);
+    if (entry.outlines.items.size > 0) return;
+    entry.outlines.layer.remove();
+    entry.outlines = undefined;
+  }
+
+  /** 畫一個外圈（已經有就只更新位置）：位置用 anchor 的百分比，anchor 縮放時跟著走；Loose Text 往外擴、圓角大一點。 */
+  function drawOutline(entry: Entry, key: string, state: Outline['state'], sub: RatioRect, line: LineBox, rank: number): void {
+    // 正在收起的同一句又要畫（重試）：換一個新的
+    if (entry.outlines?.items.get(key)?.leaving) dropOutline(entry, key);
+    if (!entry.outlines) {
+      const layer = document.createElement('div');
+      layer.className = 'rings';
+      // 放在 Page 層前面：譯文與 tooltip 蓋在外圈上面
+      entry.root.querySelector('style')!.after(layer);
+      entry.outlines = { layer, items: new Map() };
     }
+    let outline = entry.outlines.items.get(key);
+    if (!outline) {
+      const element = document.createElementNS(SVG_NS, 'svg');
+      element.setAttribute('class', `rg ${state === 'translating' ? 't' : 'w'}`);
+      element.dataset.outline = state;
+      element.dataset.lineId = line.id;
+      const rect = document.createElementNS(SVG_NS, 'rect');
+      rect.setAttribute('width', '100%');
+      rect.setAttribute('height', '100%');
+      rect.setAttribute('rx', String(line.kind === 'loose' ? LOOSE_OUTLINE_PAD_PX : 2 * OUTLINE_SCREEN_PX));
+      element.append(rect);
+      // 翻譯中的明暗照閱讀順序錯開；輪到之前是不透明的
+      if (state === 'translating') element.style.animationDelay = `${rank * PULSE_STAGGER_MS}ms`;
+      entry.outlines.layer.append(element);
+      outline = { element, state, sub: subKey(sub), id: line.id, order: line.order };
+      entry.outlines.items.set(key, outline);
+    }
+    clearTimeout(outline.retire);
+    outline.retire = undefined;
+    const { x, y, w, h } = onAnchor(line.box, sub);
+    const pad = line.kind === 'loose' ? LOOSE_OUTLINE_PAD_PX : 0;
+    Object.assign(outline.element.style, {
+      left: `calc(${x * 100}% - ${pad}px)`,
+      top: `calc(${y * 100}% - ${pad}px)`,
+      width: `calc(${w * 100}% + ${2 * pad}px)`,
+      height: `calc(${h * 100}% + ${2 * pad}px)`,
+    });
+  }
+
+  /**
+   * 換掉所有 Page 上的外圈（#285、#283）；沒列到的拿掉。等待中的馬上拿掉；翻譯中的先留著，等譯文來收（retireOutlines），
+   * 等不到才拿掉：SW 說「翻完了」跟譯文畫上去之間隔著字型與擦除小圖的載入。
+   */
+  function setOutlines(pages: OutlinesOnAnchor[]): void {
+    if (stopped) return;
+    const wanted = new Map<Entry, Map<string, () => void>>();
+    for (const { anchor, sub = WHOLE_PAGE, translating, waiting } of pages) {
+      const entry = entryFor(anchor);
+      const draws = wanted.get(entry) ?? new Map<string, () => void>();
+      wanted.set(entry, draws);
+      const ranks = staggerRanks(translating);
+      for (const line of translating) {
+        const key = outlineKey(sub, 'translating', line.id);
+        draws.set(key, () => drawOutline(entry, key, 'translating', sub, line, ranks.get(line.id) ?? 0));
+      }
+      for (const line of waiting) {
+        const key = outlineKey(sub, 'waiting', line.id);
+        draws.set(key, () => drawOutline(entry, key, 'waiting', sub, line, 0));
+      }
+    }
+    for (const entry of entries.values()) {
+      for (const [key, outline] of [...(entry.outlines?.items ?? [])]) {
+        if (wanted.get(entry)?.has(key) || outline.leaving) continue;
+        if (outline.state === 'waiting') dropOutline(entry, key);
+        else outline.retire ??= setTimeout(() => dropOutline(entry, key), OUTLINE_RETIRE_MS);
+      }
+    }
+    for (const [entry, draws] of wanted) {
+      for (const draw of draws.values()) draw();
+      place(entry);
+    }
+    if (__DEBUG__)
+      trace('overlay:outlines', {
+        pages: pages.map(({ sub, translating, waiting }) => ({ sub, translating: translating.length, waiting: waiting.length })),
+      });
+  }
+
+  /**
+   * 譯文到了：這個 Page 上這幾句翻譯中的外圈一起收起。回傳收掉外圈的句子（它們的譯文同時淡入）；
+   * 沒有外圈的句子不在裡面（直接出現：快取的頁、長 Page 之前翻好的句子）。
+   */
+  function retireOutlines(entry: Entry, sub: RatioRect, ids: ReadonlySet<string>): Set<string> {
+    const mine = [...(entry.outlines?.items ?? [])].filter(([, o]) => o.state === 'translating' && !o.leaving && o.sub === subKey(sub) && ids.has(o.id));
+    for (const [key, outline] of mine) {
+      clearTimeout(outline.retire);
+      outline.retire = undefined;
+      // 明暗錯開的延遲不能留給收起的動畫
+      outline.element.style.animationDelay = '';
+      outline.element.classList.add('out');
+      outline.leaving = [setTimeout(() => dropOutline(entry, key), REVEAL_FADE_MS)];
+    }
+    return new Set(mine.map(([, outline]) => outline.id));
   }
 
   /** 一個 anchor 上的狀態：翻譯中是轉圈圈的小標籤（模型下載的百分比在文字裡），出問題是可以點的紅色小標籤。 */
@@ -514,6 +681,21 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     entry.layers.set(subKey(sub), layer);
     // 新的譯文是 SW 依這次截圖送的：anchor 上確實是這一頁
     delete entry.host.dataset.unverified;
+    // 翻譯中的外圈（#285）一起收起，擦除與譯文同時淡入：整頁一次顯示，不照順序錯開
+    // 只收這次有結果的句子：長 Page 另一截還在翻的句子也在 text 裡（還沒有譯文），它們的外圈留著
+    const answered = lines.filter((line) => line.譯文 !== '' || line.unreadable);
+    const revealed = retireOutlines(entry, sub, new Set(answered.map((line) => line.id)));
+    for (const { line, erase, box } of items) {
+      if (!revealed.has(line.id)) continue;
+      for (const el of [erase, box]) {
+        el.style.animation = `naru-in ${REVEAL_FADE_MS}ms ease-out backwards`;
+        // 播完（或被打斷）就拿掉：留著的話，host 被網站搬動、重新顯示時動畫會從頭播，譯文又閃一次
+        const settle = () => (el.style.animation = '');
+        el.addEventListener('animationend', settle, { once: true });
+        el.addEventListener('animationcancel', settle, { once: true });
+      }
+    }
+    if (revealed.size > 0) trace('overlay:reveal', { pageHash, lines: revealed.size });
     // 先縮放再放進 DOM：Page 像素大小的層一放進去就可能超出視窗、撐出捲軸，place() 量到的就是被擠窄的 anchor；
     // 捲軸在同一段同步程式裡又消失，ResizeObserver 看不到這次變化，層就一直對在錯的位置（試翻頁右頁往左偏）
     place(entry);
@@ -590,7 +772,10 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     highlight.style.borderWidth = `${HIGHLIGHT_SCREEN_PX / screenScale}px`;
     highlight.style.borderRadius = `${(2 * HIGHLIGHT_SCREEN_PX) / screenScale}px`;
     renderHighlights();
-    // 等畫到畫面上才 resolve：呼叫端接著會截「帶覆蓋層的樣子」，太早截會截到還沒畫出來的畫面
+    // 等畫到畫面上才 resolve：呼叫端接著會截「帶覆蓋層的樣子」，太早截會截到還沒畫出來的畫面；淡入的也要等淡完
+    // 別的 Page 還在蓋（Spread 的另一頁）也等：那次截圖截的是整個畫面，會把蓋到一半的樣子記成那一頁
+    if (revealed.size > 0) revealUntil = Math.max(revealUntil, performance.now() + REVEAL_FADE_MS);
+    while (!stopped && performance.now() < revealUntil) await sleep(revealUntil - performance.now());
     await untilRepainted();
   }
 
@@ -822,7 +1007,10 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     clearTimeout(dwellTimer);
     hovered = undefined;
     panelHighlight = undefined;
-    for (const entry of entries.values()) entry.host.remove();
+    for (const entry of entries.values()) {
+      for (const key of [...(entry.outlines?.items.keys() ?? [])]) dropOutline(entry, key);
+      entry.host.remove();
+    }
     entries.clear();
     for (const [parent, position] of changedParents) parent.style.position = position;
     changedParents.clear();
@@ -833,7 +1021,7 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     return changedParents.has(element as HTMLElement);
   }
 
-  return { show, remove, confirm, highlight, setPageMode, setStatuses, hideForCapture, hideStatusForCapture, restoreAfterCapture, shownPages, coveredRects, clear, ownsStyleOf };
+  return { show, remove, confirm, highlight, setPageMode, setStatuses, setOutlines, hideForCapture, hideStatusForCapture, restoreAfterCapture, shownPages, coveredRects, clear, ownsStyleOf };
 }
 
 export type Overlay = ReturnType<typeof createOverlay>;

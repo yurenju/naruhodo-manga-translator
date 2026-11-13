@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { sameLongPage } from '../shared/long-page.ts';
-import type { AnalyzeRequest, PageThumb, PageView } from '../shared/messages.ts';
+import type { AnalyzeRequest, LineBox, PageThumb, PageView } from '../shared/messages.ts';
 import type { Capture } from './scan.ts';
 import type { PageText, PageTranslation } from '../shared/page-text.ts';
 import { editEntry, type NotesSuggestion, type SeriesNotes } from '../shared/series-notes.ts';
@@ -2277,5 +2277,82 @@ describe('直式排版的一串與 Strip（#282）', () => {
     expect(calls.map((c) => c.items.map((i) => i.原文))).toEqual([['ぜんぶ']]);
     const { transcript } = published.at(-1)![0]!;
     expect(transcript.state === 'done' && transcript.text.balloons.map((b) => b.原文)).toEqual(['ぜんぶ']);
+  });
+});
+
+describe('Page 上的外圈（#285、#283）', () => {
+  /** 等 release() 才回應的 Translator。 */
+  function gatedTranslator() {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const base = translatorReturning('譯');
+    const translator: Translator = { ...base, translatePage: async (input) => (await gate, base.translatePage(input)) };
+    return { translator, release };
+  }
+
+  const longThumb = (top: number, hash: string): PageThumb => ({
+    anchorId: 'a1',
+    rect: { x: 0, y: -top * 2000, width: 400, height: 2000 },
+    visible: { x: 0, y: 0, width: 400, height: 600 },
+    thumbnail: 'data:a1',
+    pageHash: hash,
+    stripes: [{ index: Math.round(top * 20), hash }],
+  });
+  const balloonAt = (y: number, 原文: string): PageText => ({
+    balloons: [{ ...pageText.balloons[0]!, balloonBbox: { x: 0.1, y, w: 0.3, h: 0.05 }, textBbox: { x: 0.15, y, w: 0.2, h: 0.05 }, 原文 }],
+    looseText: [],
+  });
+  const cutBox = (y: number): LineBox => ({ id: 'w1', kind: 'balloon', box: { x: 0.1, y, w: 0.3, h: 0.02 }, order: 1 });
+
+  it('送出翻譯到譯文回來之間，列出這次送去翻的句子；回來就不列', async () => {
+    const { translator, release } = gatedTranslator();
+    const { transcriber, published } = setup({ getTranslator: () => translator });
+
+    const done = transcriber.update(1, [thumb('a1')], capture);
+    await vi.waitFor(() => expect(published.at(-1)![0]!.translatingLines).toBeDefined());
+    // 還在辨識時沒有：這時還不知道框在哪
+    expect(published[0]![0]!.translatingLines).toBeUndefined();
+    expect(published.at(-1)![0]!.translatingLines!.map((l) => [l.id, l.kind, l.order])).toEqual([
+      ['b1', 'balloon', 1],
+      ['l1', 'loose', 2],
+    ]);
+
+    release();
+    await done;
+    expect(published.at(-1)![0]!.translatingLines).toBeUndefined();
+  });
+
+  it('長 Page 只列這一截新收的句子，前面翻好的不列', async () => {
+    const { translator, release } = gatedTranslator();
+    const analyze = vi
+      .fn<TranscriberDeps['analyze']>()
+      .mockResolvedValueOnce(balloonAt(0.1, 'うえ'))
+      .mockResolvedValueOnce(balloonAt(0.4, 'した'));
+    const { transcriber, published } = setup({ analyze, getTranslator: () => translator });
+    release();
+    await transcriber.update(1, [longThumb(0, HASHES.a1!)], capture);
+
+    await transcriber.update(1, [longThumb(0.3, HASHES.a2!)], capture);
+
+    const sending = published.flatMap((pages) => pages.map((p) => p.translatingLines?.map((l) => l.box.y))).filter((ys) => ys !== undefined);
+    expect(sending.at(-1)).toEqual([0.4]);
+  });
+
+  it('被可見範圍邊緣切到、先不收的框列成等待中；下一截辨識完整個換掉', async () => {
+    const analyze = vi
+      .fn<TranscriberDeps['analyze']>()
+      .mockResolvedValueOnce({ ...balloonAt(0.1, 'うえ'), waiting: [cutBox(0.29)] })
+      .mockResolvedValueOnce(balloonAt(0.29, 'した'));
+    const { transcriber, published, deps } = setup({ analyze, getTranslator: () => translatorReturning('譯') });
+
+    await transcriber.update(1, [longThumb(0, HASHES.a1!)], capture);
+    expect(published.at(-1)![0]!.waitingLines).toEqual([cutBox(0.29)]);
+    // 等待中的框不進逐字稿、也不進快取
+    const { transcript } = published.at(-1)![0]!;
+    expect(transcript.state === 'done' && transcript.text.balloons.map((b) => b.原文)).toEqual(['うえ']);
+    expect((deps.cache as ReturnType<typeof memoryCache>).saved[0]).not.toHaveProperty('waiting');
+
+    await transcriber.update(1, [longThumb(0.3, HASHES.a2!)], capture);
+    expect(published.at(-1)![0]!.waitingLines).toBeUndefined();
   });
 });

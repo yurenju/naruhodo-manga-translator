@@ -12,6 +12,7 @@ import type {
   CropResponse,
   FakeTranslatorConfig,
   KuromojiReadingsResponse,
+  LineBox,
   Message,
   ModelStatus,
   PageCandidate,
@@ -24,7 +25,7 @@ import type {
   ProposeNotesResponse,
   GuessSeriesResponse,
 } from '../shared/messages.ts';
-import { collectedBoxes, cutEdges, rejectInSlice, sliceOf, stripeFingerprint, toPageText, type Slice, type SliceEdges } from '../shared/long-page.ts';
+import { collectedBoxes, cutEdges, rejectInSlice, sliceOf, stripeFingerprint, toPageText, waitingBoxes, type CutBox, type Slice, type SliceEdges } from '../shared/long-page.ts';
 import { pageHash, type GrayImage } from '../shared/page-hash.ts';
 import type { BalloonText, EraseData, LooseText, PageText, RatioRect } from '../shared/page-text.ts';
 import { grayOfRgba, type RgbaImage } from '../shared/pixels.ts';
@@ -189,8 +190,9 @@ const pipeline = createLocalPipeline({
 /**
  * 從截圖裁出全解析度的 Page（Spread 的一頁用 subRect）跑本機流水線（座標換算與縮圖相同）；順便從同一張截圖算每個 Balloon 的擦除底色
  * （原地覆蓋用，canvas 網站的 canvas 是 tainted，content script 讀不到像素）。
+ * waiting：長 Page 的這一截裡被可見範圍邊緣切到、這次沒收的框（#283）。
  */
-async function analyze({ screenshot, frameMark, viewport, candidate, subRect, collected = [], column, notesNames = [], pipeline: config }: AnalyzeRequest): Promise<PageText> {
+async function analyze({ screenshot, frameMark, viewport, candidate, subRect, collected = [], column, notesNames = [], pipeline: config }: AnalyzeRequest): Promise<{ text: PageText; waiting?: LineBox[] }> {
   if (__E2E__ && config) pipeline.configure(config);
   const { bitmap } = await decodeScreenshot(screenshot, viewport, frameMark);
   try {
@@ -204,10 +206,13 @@ async function analyze({ screenshot, frameMark, viewport, candidate, subRect, co
     /** 被這一截的上緣／下緣切到的框（截圖像素）：有上一次的截圖時拼起來再辨識。 */
     const cutTop: Rows[] = [];
     const cutBottom: Rows[] = [];
+    /** 被切到、先不收的框：沒有被拼接補收的那些，content script 在上面畫等待中的外圈（#283）。 */
+    const cut: CutBox[] = [];
     const accept = slice
-      ? (box: RatioRect) => {
+      ? (box: RatioRect, kind: CutBox['kind']) => {
           const reason = rejectInSlice(box, slice, rect.height, collected, edges);
           if (reason) rejected.push({ box, reason });
+          if (reason === 'cut') cut.push({ box, kind });
           if (reason === 'cut' && edges) {
             const rows = { top: rect.y + box.y * rect.height, bottom: rect.y + (box.y + box.h) * rect.height };
             (cutEdges(box, rect.height, edges).top ? cutTop : cutBottom).push(rows);
@@ -242,9 +247,15 @@ async function analyze({ screenshot, frameMark, viewport, candidate, subRect, co
       });
     }
     // 長 Page：這一截的座標換成 Page 座標，transcriber 併進整個 Page
-    if (!slice) return text;
+    if (!slice) return { text };
     const onPage = toPageText(text, slice);
-    if (!column?.previous || cutTop.length + cutBottom.length === 0) return onPage;
+    // 這次收進來的（含拼接補收的）不再是等待中
+    const result = (page: PageText) => {
+      const waiting = waitingBoxes(cut, slice, [...collected, ...collectedBoxes(page)], column !== undefined);
+      if (__DEBUG__ && cut.length > 0) trace('longPage:waiting', { anchorId: candidate.anchorId, cut: cut.length, waiting });
+      return { text: page, ...(waiting.length > 0 ? { waiting } : {}) };
+    };
+    if (!column?.previous || cutTop.length + cutBottom.length === 0) return result(onPage);
     const stitched = await analyzeStitched({
       bitmap,
       viewport,
@@ -256,7 +267,7 @@ async function analyze({ screenshot, frameMark, viewport, candidate, subRect, co
       collected: [...collected, ...collectedBoxes(onPage)],
       notesNames,
     });
-    return stitched ? mergePasses(onPage, stitched) : onPage;
+    return result(stitched ? mergePasses(onPage, stitched) : onPage);
   } finally {
     bitmap.close();
   }
@@ -517,7 +528,7 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
   }
   if (message.type === 'offscreen:analyze') {
     analyze(message).then(
-      (text) => sendResponse({ text } satisfies AnalyzeResponse),
+      (result) => sendResponse(result satisfies AnalyzeResponse),
       (e: unknown) => sendResponse({ error: e instanceof Error ? e.message : String(e) } satisfies AnalyzeResponse),
     );
     return true;

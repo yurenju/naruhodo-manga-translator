@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resize, type GrayImage } from '../testing/image-degrade.ts';
 import { cropGray, readGray } from '../testing/synthetic.ts';
-import { addLines, cutEdges, matchingStripe, rejectInSlice, sameLongPage, sliceOf, stripeFingerprint, toPageBox, toPageText, withoutEdgeHalves } from './long-page.ts';
+import { addLines, cutEdges, matchingStripe, rejectInSlice, sameLongPage, sliceOf, stripeFingerprint, toPageBox, toPageText, waitingBoxes, withoutEdgeHalves, type CutBox } from './long-page.ts';
 import type { BalloonText, LooseText, PageText, RatioRect } from './page-text.ts';
 
 /** 合成頁上下接成一張長圖（像直式捲動漫畫那樣，接縫看不出來）。 */
@@ -273,5 +273,42 @@ describe('一串裡的元素：#282 之前被交界切成兩半的 Line', () => 
     const crossing = loose('l4', { x: 0.274, y: 0.705, w: 0.489, h: 0.52 });
 
     expect(withoutEdgeHalves({ balloons: [], looseText: [upperHalf, lowerHalf, inside, crossing] }).looseText.map((l) => l.id)).toEqual(['l3', 'l4']);
+  });
+});
+
+describe('被可見範圍邊緣切到、還在等的框（#283）', () => {
+  /** Page 的 30%～60% 這一截。 */
+  const slice = { top: 0.3, bottom: 0.6 };
+  const atBottom: CutBox = { box: { x: 0.1, y: 0.8, w: 0.2, h: 0.2 }, kind: 'balloon' };
+  const atTop: CutBox = { box: { x: 0.5, y: 0, w: 0.2, h: 0.1 }, kind: 'loose' };
+
+  it('換成 Page 座標，Balloon 與 Loose Text 都算', () => {
+    const waiting = waitingBoxes([atBottom, atTop], slice, [], false);
+
+    expect(waiting.map((w) => [w.id, w.kind])).toEqual([
+      ['w1', 'balloon'],
+      ['w2', 'loose'],
+    ]);
+    expect(waiting[0]!.box.y).toBeCloseTo(0.54);
+    expect(waiting[0]!.box.h).toBeCloseTo(0.06);
+    expect(waiting[1]!.box.y).toBeCloseTo(0.3);
+  });
+
+  it('跟已收 Line 重疊的不算：翻好的句子捲到邊緣時也會被偵測成被切到，它不是在等', () => {
+    const collected = [{ x: 0.1, y: 0.5, w: 0.2, h: 0.15 }];
+
+    expect(waitingBoxes([atBottom, atTop], slice, collected, false).map((w) => w.kind)).toEqual(['loose']);
+  });
+
+  it('直式排版的一串：每個 Page 辨識的都是整串看得到的範圍，同一個框只算在中心所在的 Page 上', () => {
+    // 整串看得到的範圍是這個 Page 的 60%～140%：範圍的下半是下一個 Page
+    const column = { top: 0.6, bottom: 1.4 };
+    const onThisPage: CutBox = { box: { x: 0.1, y: 0, w: 0.2, h: 0.1 }, kind: 'balloon' };
+    const onNextPage: CutBox = { box: { x: 0.1, y: 0.9, w: 0.2, h: 0.1 }, kind: 'balloon' };
+
+    expect(waitingBoxes([onThisPage, onNextPage], column, [], true)).toHaveLength(1);
+    expect(waitingBoxes([onThisPage, onNextPage], column, [], true)[0]!.box.y).toBeCloseTo(0.6);
+    // 單獨一個長 Page 不分歸屬
+    expect(waitingBoxes([onThisPage, onNextPage], column, [], false)).toHaveLength(2);
   });
 });

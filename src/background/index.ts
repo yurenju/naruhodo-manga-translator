@@ -51,6 +51,7 @@ import { isCached, MODEL_CACHE } from '../offscreen/models/model-store.ts';
 import { createExecutionProviderDetector } from './execution-provider.ts';
 import { modelStatusResponse } from './model-status.ts';
 import { ensureOffscreenDocument } from './offscreen.ts';
+import { createOutlineSync } from './outline-sync.ts';
 import { createOverlaySync } from './overlay-sync.ts';
 import { createPageStatusSync } from './page-status-sync.ts';
 import { createPaymentReturn } from './payment-return.ts';
@@ -279,7 +280,7 @@ const transcriber = createTranscriber({
       ...(__E2E__ ? { pipeline: pipelineConfig } : {}),
     });
     if ('error' in response) throw new Error(response.error);
-    return response.text;
+    return response.waiting ? { ...response.text, waiting: response.waiting } : response.text;
   },
   async kuromojiReadings(texts) {
     await ensureOffscreenDocument();
@@ -305,6 +306,7 @@ const transcriber = createTranscriber({
     // strip 一律送：side panel 自己知道是不是內建翻譯、有沒有登入，決定要不要顯示計費方式的說明（#282）
     notifyPanel({ type: 'pages:updated', tabId, pages, ...(strip ? { strip } : {}) });
     overlaySync.publish(tabId, pages);
+    outlineSync.publish(tabId, pages);
     void pageStatus.pagesUpdated(tabId, pages, strip !== undefined);
   },
   onJobEvent(event) {
@@ -417,6 +419,11 @@ const pageStatus = createPageStatusSync({
     stripTitles.set(tabId, strip);
     void showTabTitle(tabId, strip);
   },
+});
+
+const outlineSync = createOutlineSync((tabId, pages) => {
+  trace('outlines', { tabId, pages: pages.map(({ anchorId, pageHash, translating, waiting }) => ({ anchorId, pageHash, translating: translating.length, waiting: waiting.length })) });
+  chrome.tabs.sendMessage(tabId, { type: 'content:pageOutlines', pages } satisfies Message).catch(() => {});
 });
 
 const overlaySync = createOverlaySync({
@@ -652,6 +659,7 @@ const activation = createActivation({
       scanner.clear(tabId);
       transcriber.clear(tabId);
       pageStatus.clear(tabId);
+      outlineSync.reset(tabId);
     }
   },
 });
@@ -670,6 +678,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === 'loading') {
     transcriber.resetPages(tabId);
     pageStatus.reset(tabId);
+    outlineSync.reset(tabId);
   }
   void activation.handleTabUpdated(tabId, changeInfo);
 });
@@ -790,6 +799,7 @@ chrome.tabs.onRemoved.addListener((tabId, { windowId }) => {
   scanner.clear(tabId);
   transcriber.clear(tabId);
   pageStatus.clear(tabId);
+  outlineSync.reset(tabId);
 });
 
 chrome.runtime.onMessage.addListener((message: Message, sender, sendResponse) => {

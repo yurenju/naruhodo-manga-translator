@@ -29,10 +29,14 @@
  * 但辨識的範圍是整串看得到的那一塊，跨元素交界的框由中心所在的元素收；被可見範圍邊緣切到的框帶上這一串
  * 上一次的截圖，offscreen 拼起來再辨識。看到接得起來的交界（PageThumb.junctionAbove）這一串就是 Strip（條漫）：
  * Hosted Translation 改照句數計頁，累計記在這一串上（ColumnState.charge），不走長 Page 的接續。
+ *
+ * Page 上的外圈（#285、#283，shared/page-outlines.ts）：送出 ① 到回來之間，這次送去翻的句子列在 PageView.translatingLines；
+ * 長 Page 最近辨識的那一截裡被可見範圍邊緣切到、先不收的框列在 PageView.waitingLines。
  */
 import { addLines, collectedBoxes, matchingStripe, pickLines, replaceLines, sliceOf, withoutEdgeHalves, type Slice, type Stripe } from '../shared/long-page.ts';
 import { STRIP_WINDOW_MS } from '../shared/hosted-api.ts';
-import type { AnalyzeRequest, CropRequest, PageThumb, PageView, PreviousCapture, Rect, StripStatus } from '../shared/messages.ts';
+import type { AnalyzeRequest, CropRequest, LineBox, PageThumb, PageView, PreviousCapture, Rect, StripStatus } from '../shared/messages.ts';
+import { translatingLines } from '../shared/page-outlines.ts';
 import type { Capture } from './scan.ts';
 import { findSamePage } from '../shared/page-hash.ts';
 import { pageLines, type PageCharge, type PageText, type StripCharge } from '../shared/page-text.ts';
@@ -56,7 +60,8 @@ export interface JobEvent {
 }
 
 export interface TranscriberDeps {
-  analyze(request: AnalyzeRequest): Promise<PageText>;
+  /** waiting：長 Page 的這一截裡被可見範圍邊緣切到、先不收的框（Page 座標，#283）。 */
+  analyze(request: AnalyzeRequest): Promise<PageText & { waiting?: LineBox[] }>;
   /** 沒有 API key 時回傳 undefined。 */
   getTranslator(): Translator | undefined | Promise<Translator | undefined>;
   /** 目前會用來翻譯的模型與 prompt 版本（過時提示比對用）；沒有 Translator 時 undefined，就不比版本。 */
@@ -121,6 +126,8 @@ interface PageRecord {
   long?: LongPage;
   /** Retranslation（側邊欄的「重新翻譯」）：當作第一次看到，不拿快取的結果（長 Page 只拿身分）。 */
   ignoreCache?: true;
+  /** 已經送出 ①、還沒回來的每一次送的句子（#285）；長 Page 可能同時有兩截在翻。 */
+  sending?: PageText[];
 }
 
 interface LongPage {
@@ -134,6 +141,8 @@ interface LongPage {
   charge?: PageCharge;
   /** 最近一次看到它時所在的那一串（直式排版，#282）；單獨一個長 Page 沒有。 */
   column?: string;
+  /** 最近辨識的那一截裡被可見範圍邊緣切到、先不收的框（#283）；下一截辨識完整個換掉。 */
+  waiting?: LineBox[];
 }
 
 /** 一個 tab 裡直式排版的一串（#282）。 */
@@ -368,10 +377,17 @@ export function createTranscriber(deps: TranscriberDeps) {
 
   function publish(tab: TabState): void {
     if (!isCurrent(tab)) return;
-    const current = tab.pages.map((page): PageView => ({
-      ...page,
-      transcript: findSamePage(tab.records, page.pageHash)?.transcript ?? { state: 'analyzing' },
-    }));
+    const current = tab.pages.map((page): PageView => {
+      const record = findSamePage(tab.records, page.pageHash);
+      const translating = (record?.sending ?? []).flatMap(translatingLines);
+      const waiting = record?.long?.waiting ?? [];
+      return {
+        ...page,
+        transcript: record?.transcript ?? { state: 'analyzing' },
+        ...(translating.length > 0 ? { translatingLines: translating } : {}),
+        ...(waiting.length > 0 ? { waitingLines: waiting } : {}),
+      };
+    });
     const strip = stripStatus(tab);
     views.set(tab.tabId, { pages: current, ...(strip ? { strip } : {}) });
     deps.publish(tab.tabId, current, strip);
@@ -474,7 +490,13 @@ export function createTranscriber(deps: TranscriberDeps) {
     try {
       // OCR 讀成形近字的名字用 Notes 換回來（#228）；Series 還在猜（#186）時還沒有 Series，就不修
       const notesNames = record.seriesId === undefined ? [] : (await ledger.list(record.seriesId)).map((e) => e.原文);
-      text = await deps.analyze(notesNames.length > 0 ? { ...request, notesNames } : request);
+      const { waiting, ...analyzed } = await deps.analyze(notesNames.length > 0 ? { ...request, notesNames } : request);
+      text = analyzed;
+      // 等待中的外圈（#283）馬上換成這一截的：翻譯可能還要排隊
+      if (record.long && (waiting?.length || record.long.waiting?.length)) {
+        record.long.waiting = waiting ?? [];
+        publish(job.tab);
+      }
       trace('analyze:done', { pageHash: record.pageHash, anchorId: record.request.candidate.anchorId, ms: Date.now() - startedAt, balloons: text.balloons.length, looseText: text.looseText.length });
     } catch (e) {
       trace('analyze:error', { pageHash: record.pageHash, ms: Date.now() - startedAt, error: e });
@@ -539,8 +561,13 @@ export function createTranscriber(deps: TranscriberDeps) {
     }
     report(job, 'llm');
     const { long } = record;
+    const text = job.added ?? record.text!;
+    // 翻譯中的外圈（#285）：從送出到回來
+    record.sending = [...(record.sending ?? []), text];
+    publish(job.tab);
+    // translate 不會丟錯：翻譯失敗、額度用完都回成逐字稿
     const transcript = await pageTranslation.translate({
-      text: job.added ?? record.text!,
+      text,
       translator: job.translator,
       seriesId: record.seriesId,
       pageHash: record.pageHash,
@@ -548,6 +575,7 @@ export function createTranscriber(deps: TranscriberDeps) {
       priorPages: priorPages(job),
       ...(long ? { long: longRequest(job, long) } : {}),
     });
+    record.sending = record.sending.filter((sent) => sent !== text);
     complete(job, transcript);
   }
 
