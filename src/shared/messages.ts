@@ -154,16 +154,20 @@ export interface LineRef {
 
 /**
  * Page 上一句的外框（Page 座標）：外圈畫在這裡。Balloon 是泡泡外框（balloonBbox），Loose Text 是文字框（bbox）。
- * order：閱讀順序，外圈的明暗照它錯開。
+ * order：閱讀順序，翻譯中的光帶照它錯開。
  */
 export interface LineBox {
   id: string;
   kind: 'balloon' | 'loose';
   box: RatioRect;
   order: number;
+  /** 文字框（Page 座標）：翻譯中的底色掃光蓋在這附近。只有翻譯中的句子有。 */
+  textBox?: RatioRect;
+  /** 擦除底色的亮度（0～255）：底色掃光的顏色，跟之後蓋上去的擦除同色。只有翻譯中的句子有。 */
+  eraseLuminance?: number;
 }
 
-/** 一個 Page 上要畫的外圈：translating＝實線、原地淡入淡出（#285）；waiting＝虛線流動（#283）。 */
+/** 一個 Page 上要畫的外圈：translating＝底色掃光（#285）；waiting＝虛線流動（#283）。 */
 export interface PageOutlines extends PageOnAnchor {
   subRect?: RatioRect;
   translating: LineBox[];

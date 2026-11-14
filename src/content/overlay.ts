@@ -14,11 +14,11 @@
  * Page 上的狀態（#185）也在同一個 host 裡：蓋在 anchor 上、不縮放的一層，右上角小標籤（轉圈圈＋階段），翻完就拿掉。
  * 只有出問題時的紅色小標籤可以點；截圖時一律藏起來（不能被 OCR 讀到、也不能改變 Page hash）。
  *
- * Page 上的外圈（#285、#283，shared/page-outlines.ts）也在同一個 host 裡、同樣不縮放、截圖時藏起來：翻譯中的句子是實線、
- * 原地淡入淡出；被可見範圍邊緣切到、還在等的框是流動的虛線。譯文到了就整頁一次蓋上、同時收起外圈。
+ * Page 上的外圈（#285、#283，shared/page-outlines.ts）也在同一個 host 裡、同樣不縮放、截圖時藏起來：翻譯中的句子是日文上
+ * 一道擦除底色的光帶掃過；被可見範圍邊緣切到、還在等的框是流動的虛線。譯文到了就整頁一次蓋上、同時收起外圈。
  */
 import type { LineBox, LineRef, Rect } from '../shared/messages.ts';
-import { LOOSE_OUTLINE_PAD_PX, onAnchor, PULSE_STAGGER_MS, staggerRanks } from '../shared/page-outlines.ts';
+import { ERASE_WHITE, LOOSE_OUTLINE_PAD_PX, onAnchor, staggerRanks, WASH_STAGGER_MS, washArea } from '../shared/page-outlines.ts';
 import type { AnchorStatus, StatusAction } from '../shared/page-status.ts';
 import { findSamePage } from '../shared/page-hash.ts';
 import type { PageMode } from '../shared/page-mode.ts';
@@ -54,7 +54,42 @@ const REVEAL_FADE_MS = 200;
 const OUTLINE_RETIRE_MS = 1000;
 /** 外圈的線寬（畫面 px），跟高亮框一樣；Balloon 外圈的圓角是它的兩倍。 */
 const OUTLINE_SCREEN_PX = 2;
+/** 翻譯中的光帶掃一輪多久（ms）：前 3/4 在掃，剩下停一下，免得一整頁動個不停。 */
+const WASH_MS = 2400;
+/** 光帶最濃的地方的不透明度：日文像蒙上一層底色，還看得出來。 */
+const WASH_ALPHA = 0.85;
+/** 不要動畫（prefers-reduced-motion）時，日文上蓋一層不動的底色，這麼濃。 */
+const WASH_STILL_ALPHA = 0.35;
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * 翻譯中的一句：放在外框上的透明框，裡面一塊蓋住文字框附近（washArea）的光帶，顏色是擦除底色。
+ * 照閱讀順序錯開（rank）；輪到之前光帶還在框外，看不到。
+ */
+function washElement(line: LineBox, rank: number): HTMLElement {
+  const element = document.createElement('div');
+  element.className = 'rg t';
+  element.style.setProperty('--delay', `${rank * WASH_STAGGER_MS}ms`);
+  element.style.setProperty('--erase', String(line.eraseLuminance ?? ERASE_WHITE));
+  const { x, y, w, h } = washArea(line.box, line.textBox ?? line.box);
+  const wash = document.createElement('div');
+  wash.className = 'wash';
+  Object.assign(wash.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
+  element.append(wash);
+  return element;
+}
+
+/** 等待中的一句：流動的虛線框。 */
+function dashedRing(line: LineBox): SVGSVGElement {
+  const element = document.createElementNS(SVG_NS, 'svg');
+  element.setAttribute('class', 'rg w');
+  const rect = document.createElementNS(SVG_NS, 'rect');
+  rect.setAttribute('width', '100%');
+  rect.setAttribute('height', '100%');
+  rect.setAttribute('rx', String(line.kind === 'loose' ? LOOSE_OUTLINE_PAD_PX : 2 * OUTLINE_SCREEN_PX));
+  element.append(rect);
+  return element;
+}
 
 /** tooltip 與高亮框的顏色、字型取自 design tokens（跟 side panel 同一份，#71）；擦字與譯文的顏色跟著原稿算。 */
 const STYLE = `${TOKENS}
@@ -109,20 +144,30 @@ const STYLE = `${TOKENS}
   border-radius: 50%; animation: naru-rot 0.8s linear infinite; }
 @keyframes naru-rot { to { transform: rotate(360deg); } }
 :host([data-capturing]) .st, :host([data-status-hidden]) .st { display: none; }
-/* Page 上的外圈（#285、#283）：跟 anchor 一樣大、不縮放，線寬是畫面 px。t＝翻譯中（實線、原地淡入淡出），w＝等待中（虛線流動） */
+/* Page 上的外圈（#285、#283）：跟 anchor 一樣大、不縮放，線寬是畫面 px。t＝翻譯中（底色掃光），w＝等待中（虛線流動） */
 .rings { position: absolute; pointer-events: none; }
 .rg { position: absolute; overflow: visible; }
 .rg rect { fill: none; stroke: var(--naru-highlight); stroke-width: ${OUTLINE_SCREEN_PX}px; }
-.rg.t { animation: naru-pulse 1.6s ease-in-out infinite; }
 .rg.w rect { stroke-dasharray: 6 4; animation: naru-flow 1s linear infinite; }
 .rg.out { animation: naru-out ${REVEAL_FADE_MS}ms ease-out forwards; }
-@keyframes naru-pulse { 50% { opacity: 0.2; } }
+/*
+ * 翻譯中：日文上一道擦除底色（--erase）的直立光帶由右往左掃過（跟直書的行一樣方向），邊緣羽化成橢圓；不畫框，大部分泡泡不是方的。
+ * 光帶不斜：斜的光帶在直長的框上，停下來時兩端還留在框裡，下一輪又從另一角跳出來
+ */
+.wash { position: absolute; mask-image: radial-gradient(closest-side, #000 65%, transparent); }
+.wash::before { content: ''; position: absolute; inset: 0; background: no-repeat 0 0 / 300% 100%
+  linear-gradient(90deg, rgb(var(--erase) var(--erase) var(--erase) / 0) 35%, rgb(var(--erase) var(--erase) var(--erase) / ${WASH_ALPHA}) 50%, rgb(var(--erase) var(--erase) var(--erase) / 0) 65%);
+  animation: naru-wash ${WASH_MS}ms ease-in-out var(--delay, 0ms) infinite; }
+@keyframes naru-wash { 75%, 100% { background-position: 100% 0; } }
 @keyframes naru-flow { to { stroke-dashoffset: -10; } }
 @keyframes naru-out { to { opacity: 0; } }
 @keyframes naru-in { from { opacity: 0; } }
 /* 截圖時用 visibility 藏（不能被 OCR 讀到）：display:none 會讓動畫從頭開始，每截一次明暗就跳一下 */
 :host([data-capturing]) .rings, :host([data-status-hidden]) .rings { visibility: hidden; }
-@media (prefers-reduced-motion: reduce) { .rg.t, .rg.w rect { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .rg.w rect { animation: none; }
+  .wash::before { animation: none; background: rgb(var(--erase) var(--erase) var(--erase) / ${WASH_STILL_ALPHA}); }
+}
 `;
 
 const WHOLE_PAGE: RatioRect = { x: 0, y: 0, w: 1, h: 1 };
@@ -177,7 +222,7 @@ interface Entry {
 
 /** 畫在 anchor 上的一個外圈。 */
 interface Outline {
-  element: SVGSVGElement;
+  element: HTMLElement | SVGSVGElement;
   state: 'translating' | 'waiting';
   /** 所在的 Page（subKey）。 */
   sub: string;
@@ -415,7 +460,10 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     entry.outlines = undefined;
   }
 
-  /** 畫一個外圈（已經有就只更新位置）：位置用 anchor 的百分比，anchor 縮放時跟著走；Loose Text 往外擴、圓角大一點。 */
+  /**
+   * 畫一個外圈（已經有就只更新位置）：位置用 anchor 的百分比，anchor 縮放時跟著走。翻譯中是外框上的底色光帶；
+   * 等待中是虛線框，Loose Text 往外擴、圓角大一點。
+   */
   function drawOutline(entry: Entry, key: string, state: Outline['state'], sub: RatioRect, line: LineBox, rank: number): void {
     // 正在收起的同一句又要畫（重試）：換一個新的
     if (entry.outlines?.items.get(key)?.leaving) dropOutline(entry, key);
@@ -428,17 +476,9 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     }
     let outline = entry.outlines.items.get(key);
     if (!outline) {
-      const element = document.createElementNS(SVG_NS, 'svg');
-      element.setAttribute('class', `rg ${state === 'translating' ? 't' : 'w'}`);
+      const element = state === 'translating' ? washElement(line, rank) : dashedRing(line);
       element.dataset.outline = state;
       element.dataset.lineId = line.id;
-      const rect = document.createElementNS(SVG_NS, 'rect');
-      rect.setAttribute('width', '100%');
-      rect.setAttribute('height', '100%');
-      rect.setAttribute('rx', String(line.kind === 'loose' ? LOOSE_OUTLINE_PAD_PX : 2 * OUTLINE_SCREEN_PX));
-      element.append(rect);
-      // 翻譯中的明暗照閱讀順序錯開；輪到之前是不透明的
-      if (state === 'translating') element.style.animationDelay = `${rank * PULSE_STAGGER_MS}ms`;
       entry.outlines.layer.append(element);
       outline = { element, state, sub: subKey(sub), id: line.id, order: line.order };
       entry.outlines.items.set(key, outline);
@@ -446,7 +486,8 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     clearTimeout(outline.retire);
     outline.retire = undefined;
     const { x, y, w, h } = onAnchor(line.box, sub);
-    const pad = line.kind === 'loose' ? LOOSE_OUTLINE_PAD_PX : 0;
+    // 光帶的範圍是相對外框的比例（washArea），外框不往外擴
+    const pad = state === 'waiting' && line.kind === 'loose' ? LOOSE_OUTLINE_PAD_PX : 0;
     Object.assign(outline.element.style, {
       left: `calc(${x * 100}% - ${pad}px)`,
       top: `calc(${y * 100}% - ${pad}px)`,
@@ -502,8 +543,6 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     for (const [key, outline] of mine) {
       clearTimeout(outline.retire);
       outline.retire = undefined;
-      // 明暗錯開的延遲不能留給收起的動畫
-      outline.element.style.animationDelay = '';
       outline.element.classList.add('out');
       outline.leaving = [setTimeout(() => dropOutline(entry, key), REVEAL_FADE_MS)];
     }
@@ -646,7 +685,7 @@ export function createOverlay({ onHover, onStatusAction }: { onHover?: OnHover; 
     ];
     separateRegions(overlaid.map((o) => o.regions));
     const items = overlaid.map(({ kind, line, frame, regions }) => {
-      const luminance = line.eraseLuminance ?? 255;
+      const luminance = line.eraseLuminance ?? ERASE_WHITE;
       const erase = eraseElement(line, regions.erase, size);
       erase.dataset.eraseId = line.id;
       const vertical = isVertical(line.orientation, frame);

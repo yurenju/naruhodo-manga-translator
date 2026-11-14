@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LineBox, PageView } from './messages.ts';
-import { onAnchor, pageOutlines, staggerRanks, translatingLines } from './page-outlines.ts';
+import { onAnchor, pageOutlines, staggerRanks, translatingLines, washArea } from './page-outlines.ts';
 import type { BalloonText, LooseText } from './page-text.ts';
 
 const balloon = (id: string, order: number, overrides: Partial<BalloonText> = {}): BalloonText => ({
@@ -47,6 +47,42 @@ describe('送去翻譯的句子的外框（#285）', () => {
     const lines = translatingLines({ balloons: [balloon('b1', 1, { unreadable: true }), balloon('b2', 2)], looseText: [loose('l1', 3, { unreadable: true })] });
 
     expect(lines.map((l) => l.id)).toEqual(['b2']);
+  });
+
+  it('帶上文字框與擦除底色：底色掃光蓋在日文上、用擦除的顏色', () => {
+    const lines = translatingLines({ balloons: [balloon('b1', 1, { eraseLuminance: 12 })], looseText: [loose('l1', 2, { eraseLuminance: 250 })] });
+
+    expect(lines[0]).toMatchObject({ textBox: balloon('b1', 1).textBbox, eraseLuminance: 12 });
+    expect(lines[1]).toMatchObject({ textBox: loose('l1', 2).bbox, eraseLuminance: 250 });
+  });
+
+  it('沒有擦除底色（舊快取）當白底，跟擦除一樣', () => {
+    const [line] = translatingLines({ balloons: [balloon('b1', 1)], looseText: [] });
+
+    expect(line!.eraseLuminance).toBe(255);
+  });
+});
+
+describe('底色掃光的範圍', () => {
+  it('文字框往外擴 35%，換成外圈（泡泡外框）的比例', () => {
+    const box = { x: 0.1, y: 0.2, w: 0.4, h: 0.4 };
+    const text = { x: 0.2, y: 0.3, w: 0.2, h: 0.2 };
+
+    const area = washArea(box, text);
+
+    expect(area.x).toBeCloseTo(0.075);
+    expect(area.y).toBeCloseTo(0.075);
+    expect(area.w).toBeCloseTo(0.85);
+    expect(area.h).toBeCloseTo(0.85);
+  });
+
+  it('Loose Text 的外圈就是文字框：範圍比外圈大一圈', () => {
+    const text = { x: 0.2, y: 0.3, w: 0.2, h: 0.1 };
+
+    const area = washArea(text, text);
+
+    expect(area.x).toBeCloseTo(-0.35);
+    expect(area.w).toBeCloseTo(1.7);
   });
 });
 
