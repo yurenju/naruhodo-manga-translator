@@ -1,5 +1,5 @@
 /**
- * 翻譯中的外圈（#285）：送出翻譯到譯文蓋上之間，每一句外圈一圈藍框。
+ * 翻譯中的外圈（#285）：送出翻譯到譯文蓋上之間，每一句的日文上有一道擦除底色的光帶掃過。
  * unit 測不到的：SW 把送去翻的句子送到 content script、外圈真的畫在那一句的位置上（真實的 DOM 排版）、不擋點擊，
  * 譯文蓋上之後外圈都收掉。哪些句子要畫、錯開的順序在 src/shared/page-outlines.test.ts；什麼時候列出來在 transcribe 的 unit。
  * 等待中的外圈（#283）走同一個訊息與同一段繪製；被切到的框怎麼挑在 long-page 的 unit
@@ -36,7 +36,7 @@ const recordOutlines = (page: Page) =>
     const seen: Record<string, OutlineBox> = (window.__seenOutlines = {});
     const tick = () => {
       const host = document.querySelector('[data-naruhodo-overlay]');
-      for (const el of host?.shadowRoot?.querySelectorAll<SVGSVGElement>('[data-outline="translating"]') ?? []) {
+      for (const el of host?.shadowRoot?.querySelectorAll<HTMLElement>('[data-outline="translating"]') ?? []) {
         const { x, y, width, height } = el.getBoundingClientRect();
         // 截圖時外圈藏著（visibility），那一刻不記
         if (width === 0 || getComputedStyle(el).visibility === 'hidden') continue;
@@ -50,7 +50,7 @@ const recordOutlines = (page: Page) =>
 const seenOutlines = (page: Page): Promise<OutlineBox[]> => page.evaluate(() => Object.values(window.__seenOutlines ?? {}));
 const outlineCount = (page: Page) => page.locator('[data-naruhodo-overlay] [data-outline]').count();
 
-test('翻譯中每一句外圈一圈藍框，譯文蓋在同一個位置上，蓋上後外圈都收掉', async ({ context, sw, extensionId, mockSite }) => {
+test('翻譯中每一句都有光帶，譯文蓋在同一個位置上，蓋上後光帶都收掉', async ({ context, sw, extensionId, mockSite }) => {
   const { page } = await activateOnMockSite({ context, sw, extensionId, mockSite, beforeActivate: (_panel, page) => recordOutlines(page) });
 
   await expect.poll(async () => (await seenOutlines(page)).length).toBeGreaterThan(1);
