@@ -36,14 +36,12 @@ export function translatingLines({ balloons, looseText }: PageText): LineBox[] {
   ].sort((a, b) => a.order - b.order);
 }
 
-/** 底色掃光的範圍是文字框往外擴它寬高的這麼多倍，再往外羽化：光帶蓋住日文，不碰泡泡框線。 */
-const WASH_GROW = 0.35;
-
-/** 底色掃光的範圍（文字框往外擴 WASH_GROW），換成外圈 box 的比例；可以超出 0～1（Loose Text 的外圈就是文字框）。 */
+/**
+ * 底色掃光的範圍：文字框，換成外圈 box 的比例。不照比例往外擴（直長的文字框上下會擴出泡泡）；
+ * 往外留多少、邊緣怎麼羽化是畫面 px，在 content/overlay.ts。
+ */
 export function washArea(box: RatioRect, text: RatioRect): RatioRect {
-  const x = text.x - text.w * WASH_GROW;
-  const y = text.y - text.h * WASH_GROW;
-  return { x: (x - box.x) / box.w, y: (y - box.y) / box.h, w: (text.w * (1 + 2 * WASH_GROW)) / box.w, h: (text.h * (1 + 2 * WASH_GROW)) / box.h };
+  return { x: (text.x - box.x) / box.w, y: (text.y - box.y) / box.h, w: text.w / box.w, h: text.h / box.h };
 }
 
 /** 這個 tab 畫面上有外圈要畫的 Page；沒有外圈的 Page 不列（content script 會拿掉它上面的外圈）。 */

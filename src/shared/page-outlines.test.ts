@@ -64,25 +64,22 @@ describe('送去翻譯的句子的外框（#285）', () => {
 });
 
 describe('底色掃光的範圍', () => {
-  it('文字框往外擴 35%，換成外圈（泡泡外框）的比例', () => {
+  it('就是文字框，換成外圈（泡泡外框）的比例：不照比例往外擴，直長的文字框才不會擴出泡泡', () => {
     const box = { x: 0.1, y: 0.2, w: 0.4, h: 0.4 };
     const text = { x: 0.2, y: 0.3, w: 0.2, h: 0.2 };
 
     const area = washArea(box, text);
 
-    expect(area.x).toBeCloseTo(0.075);
-    expect(area.y).toBeCloseTo(0.075);
-    expect(area.w).toBeCloseTo(0.85);
-    expect(area.h).toBeCloseTo(0.85);
+    expect(area.x).toBeCloseTo(0.25);
+    expect(area.y).toBeCloseTo(0.25);
+    expect(area.w).toBeCloseTo(0.5);
+    expect(area.h).toBeCloseTo(0.5);
   });
 
-  it('Loose Text 的外圈就是文字框：範圍比外圈大一圈', () => {
+  it('Loose Text 的外圈就是文字框：範圍就是整個外圈', () => {
     const text = { x: 0.2, y: 0.3, w: 0.2, h: 0.1 };
 
-    const area = washArea(text, text);
-
-    expect(area.x).toBeCloseTo(-0.35);
-    expect(area.w).toBeCloseTo(1.7);
+    expect(washArea(text, text)).toEqual({ x: 0, y: 0, w: 1, h: 1 });
   });
 });
 

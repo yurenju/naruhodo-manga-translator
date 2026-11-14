@@ -60,10 +60,13 @@ const WASH_MS = 2400;
 const WASH_ALPHA = 0.85;
 /** 不要動畫（prefers-reduced-motion）時，日文上蓋一層不動的底色，這麼濃。 */
 const WASH_STILL_ALPHA = 0.35;
+/** 光帶比文字框往外多這麼多畫面 px，邊緣再用這麼寬羽化：日文整個蓋到，又不會跑出泡泡（固定 px，不照框的比例）。 */
+const WASH_PAD_PX = 8;
+const WASH_FEATHER_PX = 10;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
- * 翻譯中的一句：放在外框上的透明框，裡面一塊蓋住文字框附近（washArea）的光帶，顏色是擦除底色。
+ * 翻譯中的一句：放在外框上的透明框，裡面一塊蓋住文字框外面一小圈（washArea 加 WASH_PAD_PX）的光帶，顏色是擦除底色。
  * 照閱讀順序錯開（rank）；輪到之前光帶還在框外，看不到。
  */
 function washElement(line: LineBox, rank: number): HTMLElement {
@@ -74,7 +77,12 @@ function washElement(line: LineBox, rank: number): HTMLElement {
   const { x, y, w, h } = washArea(line.box, line.textBox ?? line.box);
   const wash = document.createElement('div');
   wash.className = 'wash';
-  Object.assign(wash.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
+  Object.assign(wash.style, {
+    left: `calc(${x * 100}% - ${WASH_PAD_PX}px)`,
+    top: `calc(${y * 100}% - ${WASH_PAD_PX}px)`,
+    width: `calc(${w * 100}% + ${2 * WASH_PAD_PX}px)`,
+    height: `calc(${h * 100}% + ${2 * WASH_PAD_PX}px)`,
+  });
   element.append(wash);
   return element;
 }
@@ -151,10 +159,12 @@ const STYLE = `${TOKENS}
 .rg.w rect { stroke-dasharray: 6 4; animation: naru-flow 1s linear infinite; }
 .rg.out { animation: naru-out ${REVEAL_FADE_MS}ms ease-out forwards; }
 /*
- * 翻譯中：日文上一道擦除底色（--erase）的直立光帶由右往左掃過（跟直書的行一樣方向），邊緣羽化成橢圓；不畫框，大部分泡泡不是方的。
+ * 翻譯中：日文上一道擦除底色（--erase）的直立光帶由右往左掃過（跟直書的行一樣方向），只蓋文字框外面一小圈、邊緣羽化；不畫框，大部分泡泡不是方的。
  * 光帶不斜：斜的光帶在直長的框上，停下來時兩端還留在框裡，下一輪又從另一角跳出來
  */
-.wash { position: absolute; mask-image: radial-gradient(closest-side, #000 65%, transparent); }
+.wash { position: absolute; mask-composite: intersect;
+  mask-image: linear-gradient(90deg, transparent, #000 ${WASH_FEATHER_PX}px, #000 calc(100% - ${WASH_FEATHER_PX}px), transparent),
+    linear-gradient(180deg, transparent, #000 ${WASH_FEATHER_PX}px, #000 calc(100% - ${WASH_FEATHER_PX}px), transparent); }
 .wash::before { content: ''; position: absolute; inset: 0; background: no-repeat 0 0 / 300% 100%
   linear-gradient(90deg, rgb(var(--erase) var(--erase) var(--erase) / 0) 35%, rgb(var(--erase) var(--erase) var(--erase) / ${WASH_ALPHA}) 50%, rgb(var(--erase) var(--erase) var(--erase) / 0) 65%);
   animation: naru-wash ${WASH_MS}ms ease-in-out var(--delay, 0ms) infinite; }
