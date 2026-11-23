@@ -63,6 +63,12 @@ describe('猜作品原名', () => {
         practice: 0,
         strip: 0,
         lines: null,
+        // 猜作品名稱不屬於任何作品，觀察欄位（#341）都沒有
+        series_id: null,
+        notes_entries: null,
+        notes_sent_entries: null,
+        suspect_lines: null,
+        retranslation: null,
       },
     ]);
     for (const content of ['範例作品', '作者', '網站']) expect(JSON.stringify(results)).not.toContain(content);

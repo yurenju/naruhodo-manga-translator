@@ -146,7 +146,8 @@ export async function deleteAccount(db: D1Database, accountId: string, now: numb
       .bind(await sha256(email ?? ''), now, accountId),
     db.prepare('DELETE FROM verify_attempts WHERE email_hash = ?').bind(await sha256(email ?? '')),
     db.prepare('DELETE FROM otps WHERE email = (SELECT email FROM accounts WHERE id = ?)').bind(accountId),
-    db.prepare('UPDATE usage_records SET account_id = NULL WHERE account_id = ?').bind(accountId),
+    // 匿名保留的用量紀錄連作品 ID 一起拿掉（#341）：只剩數字，一串紀錄拼不出某人連讀同一部作品的樣子
+    db.prepare('UPDATE usage_records SET account_id = NULL, series_id = NULL WHERE account_id = ?').bind(accountId),
     ...['sessions', 'quotas', 'subscriptions', 'charges', 'accounts'].map((table) =>
       db.prepare(`DELETE FROM ${table} WHERE ${table === 'accounts' ? 'id' : 'account_id'} = ?`).bind(accountId),
     ),

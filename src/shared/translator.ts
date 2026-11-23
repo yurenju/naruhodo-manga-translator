@@ -33,7 +33,7 @@ export interface TranslatedLine {
 /** 這部 Series 在目前這批之前最近看過、已經翻好的頁，依讀者看過的順序（舊的在前）。 */
 export type PriorPage = TranslatedLine[];
 
-export interface TranslateInput {
+export interface TranslateInput extends UsageObservations {
   /** 作品名：Series 的 Original Title（#186），沒有就是讀者取的名稱；未命名的 Provisional Series 不送。 */
   seriesName?: string;
   /**
@@ -65,8 +65,21 @@ export interface TranslateInput {
   stripUsageRecordId?: number;
 }
 
+/**
+ * Hosted Translation 的用量紀錄要記的觀察欄位（#341）：只有數字、旗標與外掛產生的隨機作品 ID，**不進 prompt**。
+ * 只有新版外掛會送，Worker 沒收到就存 NULL（讀者可能只同意過舊版，ADR 0015）。Own API Key 也帶著，但 claude-request.ts 不放進 request body，不會送到 Anthropic。
+ */
+export interface UsageObservations {
+  /** 外掛產生的隨機作品 ID（Series.id，UUID），看不出是哪部作品。Worker 只存這個欄位，不從 Notes 條目拿。 */
+  seriesId?: string;
+  /** 這部作品目前 Series Notes 一共幾條（不是這次送了幾條）；① 與 ② 填同一個數字。 */
+  notesEntries?: number;
+  /** 讀者要求的 Retranslation（側邊欄的「重新翻譯」、過時提示只重翻一頁）；翻譯失敗後的「重試」不算。 */
+  retranslation?: boolean;
+}
+
 /** ② 的輸入：這一頁的原文與 ① 的譯文（unreadable 的不送）。 */
-export interface NotesInput {
+export interface NotesInput extends UsageObservations {
   seriesNotes: NotesEntry[];
   /** 依閱讀順序。 */
   items: TranslatedLine[];

@@ -280,7 +280,7 @@ describe('用量紀錄', () => {
     expect(await quota(token)).toEqual({ plan: 'free', remaining: 100 });
   });
 
-  it('翻譯與 Notes 各寫一筆：只有時間、種類、四種 tokens、依價目表算的成本與模型，沒有原文、譯文、Series 名稱或網址', async () => {
+  it('翻譯與 Notes 各寫一筆：只有時間、種類、四種 tokens、依價目表算的成本、模型與觀察欄位的數字，沒有原文、譯文、Series 名稱或網址', async () => {
     const email = freshEmail();
     const token = await signIn(email);
     fakeAnthropic([ok, notesOk]);
@@ -294,7 +294,7 @@ describe('用量紀錄', () => {
     )
       .bind(email)
       .all();
-    const record = (kind: string) => ({
+    const record = (kind: string, observed: Record<string, number | null>) => ({
       id: expect.any(Number),
       account_id: expect.any(String),
       created_at: expect.any(Number),
@@ -308,9 +308,16 @@ describe('用量紀錄', () => {
       page_record_id: null,
       practice: 0,
       strip: 0,
-      lines: null,
+      // 觀察欄位（#341）：這個請求是舊版外掛的樣子，作品 ID、Notes 總條數、Retranslation 沒送
+      series_id: null,
+      notes_entries: null,
+      retranslation: null,
+      ...observed,
     });
-    expect(results).toEqual([record('translate'), record('notes')]);
+    expect(results).toEqual([
+      record('translate', { notes_sent_entries: 1, suspect_lines: 0, lines: 1 }),
+      record('notes', { notes_sent_entries: 0, suspect_lines: null, lines: null }),
+    ]);
     const stored = JSON.stringify(results);
     for (const content of ['おはよう', '早安', '星屑バンド', '霧島湊', 'パン屋', '麵包店', 'manga.example']) expect(stored).not.toContain(content);
   });

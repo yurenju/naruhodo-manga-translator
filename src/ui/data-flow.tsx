@@ -1,8 +1,9 @@
 /**
  * 兩種翻譯模式的資料流向說明（#93）：讀者按「同意並寄送驗證碼」「同意並儲存」「同意並啟用翻譯」時同意的就是這些文字。
  * 內建翻譯：onboarding 第 2 步與設定的登入（SignIn）；自備金鑰：onboarding 的「使用自備金鑰」與 side panel 的資料使用說明卡。
- * 內容要跟 PRIVACY.md 一致；資料處理方式改了，兩邊一起改，並把 shared/data-consent.ts 裡那個模式的 DATA_CONSENT_VERSION 加一、
- * CONSENT_CHANGES 改寫成這次改了什麼（跟那個模式無關的升版寫 undefined）。
+ * 內容要跟 PRIVACY.md 一致，兩邊一起改。是不是 Material Change（要重新同意）照 ADR 0015 判斷：是的話把
+ * shared/data-consent-version.ts 裡那個模式的 DATA_CONSENT_VERSION 加一、CONSENT_CHANGES 改寫成這次改了什麼（跟那個模式無關的升版寫 undefined）；
+ * 不是的話（界線內的新數字、新設定、改寫文字）不升版，文字仍要涵蓋新的欄位。
  */
 import { CONSENT_CHANGES } from '../shared/data-consent-version.ts';
 import type { TranslationMode } from '../shared/translation-mode.ts';
@@ -15,7 +16,7 @@ export function HostedDataFlow() {
     <ul>
       <li>{LOCAL}</li>
       <li>辨識出的日文文字、同一部作品前幾頁的原文與譯文、作品的角色與用語、作品名稱，以及用來判斷是哪部作品的網頁標題，會傳到 Naruhodo 的服務，再交給 Anthropic 翻譯。Naruhodo 的服務不保存這些文字與作品名。</li>
-      <li>Naruhodo 的服務會保存你的 email、登入紀錄、剩餘頁數、訂閱狀態，以及每次翻譯與猜作品名稱的用量（只有數字、不含內容，刪除帳號後匿名保留）；驗證碼信由 Resend 寄出。</li>
+      <li>Naruhodo 的服務會保存你的 email、登入紀錄、剩餘頁數、訂閱狀態，以及每次翻譯與猜作品名稱的用量（只有數字與外掛產生的隨機作品編號，不含內容，刪除帳號後匿名保留）；驗證碼信由 Resend 寄出。</li>
     </ul>
   );
 }

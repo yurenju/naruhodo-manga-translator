@@ -3,7 +3,7 @@
  * Free Pages 不動，訂閱結束後剩下的照常可用。D1 schema 在 worker/migrations/0002_free_pages.sql、0003_subscriptions.sql。
  */
 import { FREE_PAGES, PRICE_USD, STRIP_WINDOW_MS, type Quota } from '../../src/shared/hosted-api.ts';
-import type { CallInfo } from '../../src/shared/translator.ts';
+import type { CallInfo, UsageObservations } from '../../src/shared/translator.ts';
 import { sha256 } from './hash.ts';
 import { activeSubscription, monthlyCycle } from './subscription.ts';
 
@@ -121,7 +121,7 @@ const STRIP_ROOT = `SELECT id FROM usage_records WHERE id = ?2 AND account_id = 
   AND created_at >= ?3 - ${STRIP_WINDOW_MS}`;
 
 /** 一串 Strip 裡 id 比 ?2 小的翻譯紀錄一共幾句（?1 是那一串的第一筆）：同時送來的請求各自只算排在自己前面的，不會重複或漏算。 */
-const STRIP_LINES_BEFORE = `SELECT COALESCE(SUM(lines), 0) AS lines FROM usage_records WHERE (id = ?1 OR page_record_id = ?1) AND kind = 'translate' AND id < ?2`;
+const STRIP_LINES_BEFORE = `SELECT COALESCE(SUM(lines), 0) AS lines FROM usage_records WHERE (id = ?1 OR page_record_id = ?1) AND kind = 'translate' AND strip = 1 AND id < ?2`;
 
 /** 送出前看：這一串到目前累計幾句；不能接著累計（不是自己的、過期、不是 Strip 的第一筆）是 undefined。 */
 export async function stripLines(db: D1Database, accountId: string, rootId: number, now: number): Promise<number | undefined> {
@@ -136,6 +136,16 @@ export async function stripLinesBefore(db: D1Database, rootId: number, id: numbe
   return row?.lines ?? 0;
 }
 
+/** 用量紀錄的觀察欄位（#341、migration 0015）：外掛送來的（UsageObservations）加上 Worker 自己數的。 */
+export interface StoredObservations extends UsageObservations {
+  /** 這次呼叫實際送了幾條完整的 Notes 條目。 */
+  notesSentEntries?: number;
+  /** ① 有幾句 Suspect Line 再問了一次。 */
+  suspectLines?: number;
+  /** ① 這次翻了幾句（Strip 照它計頁）。 */
+  lines?: number;
+}
+
 /**
  * 一次 Anthropic 呼叫的用量：只有時間、種類、tokens、成本與模型，不存任何內容；回傳這筆紀錄的 id 與它歸屬的翻譯紀錄。
  * pageRecordId 是 client 帶來的同一頁的翻譯紀錄 id，條件不符就當作沒帶（歸屬是 undefined）：
@@ -143,8 +153,9 @@ export async function stripLinesBefore(db: D1Database, rootId: number, id: numbe
  * - 翻譯（長 Page 的接續）：要能接續（CONTINUABLE）才記；記了就是不扣頁的接續。
  * - 猜作品原名：不屬於任何一頁，呼叫端不帶。
  * practice：Practice Spread 的翻譯（#169），不扣頁、不算進任何額度。
- * stripLines：Strip 的翻譯（#282）這次翻了幾句；這時 pageRecordId 是 client 帶來的那一串的第一筆，能接著累計（STRIP_ROOT）才記，
- * 否則這一筆自己是新的一串的第一筆。
+ * strip：Strip 的翻譯（#282）；這時 pageRecordId 是 client 帶來的那一串的第一筆，能接著累計（STRIP_ROOT）才記，
+ * 否則這一筆自己是新的一串的第一筆。這一筆的句數是 observed.lines（Strip 照它計頁）。
+ * observed：觀察欄位（#341），只有數字、旗標與外掛產生的隨機作品 ID；沒有的存 NULL。
  */
 export async function recordUsage(
   db: D1Database,
@@ -154,14 +165,16 @@ export async function recordUsage(
   now: number,
   pageRecordId?: number,
   practice = false,
-  stripLines?: number,
+  strip = false,
+  observed: StoredObservations = {},
 ): Promise<{ id: number; pageRecordId?: number }> {
-  const strip = kind === 'translate' && stripLines !== undefined;
-  const page = strip ? STRIP_ROOT : kind === 'translate' ? CONTINUABLE : `SELECT id FROM usage_records WHERE id = ?2 AND account_id = ?1 AND kind = 'translate'`;
+  const stripTranslation = kind === 'translate' && strip;
+  const page = stripTranslation ? STRIP_ROOT : kind === 'translate' ? CONTINUABLE : `SELECT id FROM usage_records WHERE id = ?2 AND account_id = ?1 AND kind = 'translate'`;
   const row = await db
     .prepare(
-      `INSERT INTO usage_records (account_id, created_at, kind, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, model, page_record_id, practice, strip, lines)
-       VALUES (?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, (${page}), ?11, ?12, ?13)
+      `INSERT INTO usage_records (account_id, created_at, kind, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, model, page_record_id, practice, strip, lines,
+         series_id, notes_entries, notes_sent_entries, suspect_lines, retranslation)
+       VALUES (?1, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, (${page}), ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
        RETURNING id, page_record_id`,
     )
     // ?1～?3 的位置由 CONTINUABLE 決定；其餘照欄位順序
@@ -177,8 +190,13 @@ export async function recordUsage(
       usage.costUsd,
       model,
       practice ? 1 : 0,
-      strip ? 1 : 0,
-      strip ? stripLines : null,
+      stripTranslation ? 1 : 0,
+      observed.lines ?? null,
+      observed.seriesId ?? null,
+      observed.notesEntries ?? null,
+      observed.notesSentEntries ?? null,
+      observed.suspectLines ?? null,
+      observed.retranslation === undefined ? null : observed.retranslation ? 1 : 0,
     )
     .first<{ id: number; page_record_id: number | null }>();
   return { id: row!.id, ...(row!.page_record_id === null ? {} : { pageRecordId: row!.page_record_id }) };

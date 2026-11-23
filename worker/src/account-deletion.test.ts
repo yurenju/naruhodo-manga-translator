@@ -160,6 +160,19 @@ describe('刪除帳號', () => {
     expect(record).toEqual({ account_id: null, kind: 'translate', input_tokens: 1000 });
   });
 
+  it('匿名保留的用量紀錄拿掉作品 ID：一串紀錄拼不出某人連讀同一部作品的樣子，只剩數字（#341）', async () => {
+    const token = await signIn();
+    fakeAnthropic([ok]);
+    const seriesId = '3f2b8c1e-5d4a-4e7b-9c6f-1a2b3c4d5e6f';
+    const translated = await post(TRANSLATE_PATH, { ...input, seriesId, notesEntries: 3, retranslation: false }, { token });
+    const { usageRecordId } = (await translated.json()) as { usageRecordId: number };
+
+    expect((await del(ACCOUNT_PATH, token)).status).toBe(204);
+
+    const record = await env.DB.prepare('SELECT account_id, series_id, notes_entries, lines FROM usage_records WHERE id = ?').bind(usageRecordId).first();
+    expect(record).toEqual({ account_id: null, series_id: null, notes_entries: 3, lines: 1 });
+  });
+
   it('寄了驗證碼還沒用（例如在別台電腦寄的）：刪除時這個 email 的驗證碼也一起刪掉，D1 裡查不到 email', async () => {
     const email = freshEmail();
     const token = await signIn(email);

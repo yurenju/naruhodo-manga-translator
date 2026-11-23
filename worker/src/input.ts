@@ -3,7 +3,7 @@
  * Notes 條目裡多出來的 key）一律丟掉：Notes 條目會原樣序列化進 system prompt，不能讓 client 塞任意欄位（ADR 0006）。
  * 格式不對回 undefined（Worker 回 400）。
  */
-import type { NotesEntry, NotesInput, PriorPage, TitleSignals, TranslatedLine, TranslateInput } from '../../src/shared/translator.ts';
+import type { NotesEntry, NotesInput, PriorPage, TitleSignals, TranslatedLine, TranslateInput, UsageObservations } from '../../src/shared/translator.ts';
 
 type Item = TranslateInput['items'][number];
 
@@ -51,6 +51,22 @@ function note(v: unknown): NotesEntry | undefined {
   return entry;
 }
 
+/** Series.id 是 crypto.randomUUID()：只存長得像隨機 UUID 的，client 送來作品名之類的東西也不會存進用量紀錄（ADR 0015）。 */
+const RANDOM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * 用量紀錄的觀察欄位（#341）：只有新版外掛會送，不對或沒送就當作沒帶（存 NULL），請求照常處理。
+ * 不從 Notes 條目拿 seriesId：舊版外掛的讀者只同意過不存作品 ID 的那版。
+ */
+function observations(body: Record<string, unknown>): UsageObservations {
+  const { seriesId, notesEntries, retranslation } = body;
+  return {
+    ...(isString(seriesId) && RANDOM_ID.test(seriesId) ? { seriesId: seriesId.toLowerCase() } : {}),
+    ...(Number.isSafeInteger(notesEntries) && (notesEntries as number) >= 0 ? { notesEntries: notesEntries as number } : {}),
+    ...(typeof retranslation === 'boolean' ? { retranslation } : {}),
+  };
+}
+
 /** 作品名是讀者打的 Series 名稱，會原樣放進 user message；比這長的不是作品名。 */
 const MAX_SERIES_NAME = 200;
 
@@ -77,6 +93,7 @@ export function parseTranslateInput(body: unknown): TranslateInput | undefined {
     ...(Number.isSafeInteger(page) ? { pageUsageRecordId: page as number } : {}),
     ...(strip ? { strip: true as const } : {}),
     ...(strip && Number.isSafeInteger(stripRecord) ? { stripUsageRecordId: stripRecord as number } : {}),
+    ...observations(body),
   };
 }
 
@@ -87,7 +104,7 @@ export function parseNotesInput(body: unknown): NotesInput | undefined {
   if (!seriesNotes || !items) return undefined;
   // 歸屬哪一頁只影響用量紀錄，不對就當作沒帶，Notes 照常整理
   const page = body.pageUsageRecordId;
-  return { seriesNotes, items, ...(Number.isSafeInteger(page) ? { pageUsageRecordId: page as number } : {}) };
+  return { seriesNotes, items, ...(Number.isSafeInteger(page) ? { pageUsageRecordId: page as number } : {}), ...observations(body) };
 }
 
 /** 頁面標題的每一段文字最長幾個字、最多幾個標題列（#186）：作品名不會比這長，超過的不是標題。 */

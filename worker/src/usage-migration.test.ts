@@ -47,8 +47,10 @@ describe('migration 0007：重建 usage_records', () => {
     ]);
     await applyD1Migrations(db, env.TEST_MIGRATIONS);
 
-    // strip、lines 是 0014 加的（#282）：之前的紀錄都不是 Strip
-    expect(await rows()).toEqual(OLD_ROWS.map((r) => ({ ...r, cache_write_tokens: null, model: null, strip: 0, lines: null })));
+    // strip、lines 是 0014 加的（#282）：之前的紀錄都不是 Strip；觀察欄位是 0015 加的（#341）
+    expect(await rows()).toEqual(
+      OLD_ROWS.map((r) => ({ ...r, cache_write_tokens: null, model: null, strip: 0, lines: null, series_id: null, notes_entries: null, notes_sent_entries: null, suspect_lines: null, retranslation: null })),
+    );
     // 接續的判斷不變：0006 的資料裡只有 A 自己扣過頁、1 小時內的那次翻譯（id 1）能被 A 接續。
     // 現在的 continuable 會讀 0014 才有的欄位，所以只能在套完全部 migration 之後問
     expect((await continuability()).filter(([, , ok]) => ok)).toEqual([[1, A, true]]);

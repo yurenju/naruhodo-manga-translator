@@ -176,6 +176,10 @@ describe('逐字稿：本機流水線＋Translator', () => {
         { id: 'b1', kind: 'balloon', 原文: '今日は', orientation: 'vertical' },
         { id: 'l1', kind: 'loose', 原文: 'ドン', orientation: 'horizontal' },
       ],
+      // 用量紀錄的觀察欄位（#341），不進 prompt
+      seriesId: 'series-1',
+      notesEntries: 0,
+      retranslation: false,
     });
     const last = published.at(-1)![0]!.transcript;
     expect(last.state === 'done' && last.translated).toBe(true);
@@ -1223,7 +1227,15 @@ describe('Series Notes 累積（#37、ADR 0005）', () => {
     await transcriber.update(1, [thumb('a1')], capture);
     await transcriber.notesSettled();
 
-    expect(notesInputs).toEqual([{ seriesNotes: [note('明日', '明天')], items: [{ kind: 'balloon', 原文: '今日は', 譯文: '譯-b1' }] }]);
+    expect(notesInputs).toEqual([
+      {
+        seriesNotes: [note('明日', '明天')],
+        items: [{ kind: 'balloon', 原文: '今日は', 譯文: '譯-b1' }],
+        seriesId: 'series-1',
+        notesEntries: 1,
+        retranslation: false,
+      },
+    ]);
   });
 
   it('① 帶回用量紀錄 id（Hosted Translation）時，② 把它帶回去，Notes 的用量歸到這一頁', async () => {
@@ -2410,5 +2422,62 @@ describe('Page 上的外圈（#285、#283）', () => {
 
     await transcriber.update(1, [longThumb(0.3, HASHES.a2!)], capture);
     expect(published.at(-1)![0]!.waitingLines).toBeUndefined();
+  });
+});
+
+describe('用量紀錄的觀察欄位（#341）', () => {
+  /** 每次 ① 與 ② 送出的觀察欄位。 */
+  const observed = ({ seriesId, notesEntries, retranslation }: TranslateInput | NotesInput) => ({ seriesId, notesEntries, retranslation });
+
+  it('① 與 ② 都帶作品 ID 與這部作品目前的 Notes 總條數；第一次翻譯不是 Retranslation', async () => {
+    const inputs: TranslateInput[] = [];
+    const notesInputs: NotesInput[] = [];
+    const translator = translatorWithNotes([], inputs, notesInputs);
+    const { transcriber } = setup({ getTranslator: () => translator, notes: memoryNotes([note('明日', '明天'), note('今日', '今天')]) });
+
+    await transcriber.update(1, [thumb('a1')], capture);
+    await transcriber.notesSettled();
+
+    expect([...inputs, ...notesInputs].map(observed)).toEqual([
+      { seriesId: 'series-1', notesEntries: 2, retranslation: false },
+      { seriesId: 'series-1', notesEntries: 2, retranslation: false },
+    ]);
+  });
+
+  it('側邊欄的「重新翻譯」：重新來過的 ① 與 ② 是 Retranslation', async () => {
+    const inputs: TranslateInput[] = [];
+    const notesInputs: NotesInput[] = [];
+    const { transcriber } = setup({ getTranslator: () => translatorWithNotes([], inputs, notesInputs) });
+    await transcriber.update(1, [thumb('a1')], capture);
+    await transcriber.notesSettled();
+
+    transcriber.retranslate(1);
+    await transcriber.update(1, [thumb('a1')], capture);
+    await transcriber.notesSettled();
+
+    expect(inputs.map((i) => i.retranslation)).toEqual([false, true]);
+    expect(notesInputs.map((i) => i.retranslation)).toEqual([false, true]);
+  });
+
+  it('過時提示的「重新翻譯」重翻已經翻好的那一頁：是 Retranslation', async () => {
+    const inputs: TranslateInput[] = [];
+    const { transcriber } = setup({ getTranslator: () => translatorReturning('譯', inputs) });
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    await transcriber.translate(1, transcriber.get(1)[0]!.pageHash);
+
+    expect(inputs.map((i) => i.retranslation)).toEqual([false, true]);
+  });
+
+  it('翻譯失敗後按「重試」：那頁還沒翻好過，不是 Retranslation', async () => {
+    const inputs: TranslateInput[] = [];
+    let translator: Translator = { ...noNotes, translatePage: async () => Promise.reject(new Error('Claude API 500：boom')) };
+    const { transcriber } = setup({ getTranslator: () => translator });
+    await transcriber.update(1, [thumb('a1')], capture);
+
+    translator = translatorReturning('譯', inputs);
+    await transcriber.translate(1, transcriber.get(1)[0]!.pageHash);
+
+    expect(inputs.map((i) => i.retranslation)).toEqual([false]);
   });
 });
