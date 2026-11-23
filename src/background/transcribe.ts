@@ -131,6 +131,8 @@ interface PageRecord {
   long?: LongPage;
   /** Retranslation（側邊欄的「重新翻譯」）：當作第一次看到，不拿快取的結果（長 Page 只拿身分）。 */
   ignoreCache?: true;
+  /** 下一次送出的 ① 是讀者要求的 Retranslation（用量紀錄的觀察欄位，#341）；送出就清掉，長 Page 之後捲到的截不算。 */
+  retranslation?: true;
   /** 已經送出 ①、還沒回來的每一次送的句子（#285）；長 Page 可能同時有兩截在翻。 */
   sending?: PageText[];
 }
@@ -225,6 +227,8 @@ interface Job extends QueuedJob {
   prior: SeenPage[];
   /** Series 還在猜時先排進本機段的頁（#186）：翻譯前等它、記到這頁上、再查一次快取。 */
   seriesPending?: Promise<string | undefined>;
+  /** 過時提示的「重新翻譯」重翻已經翻好的頁（Retranslation，#341）。 */
+  retranslation?: true;
   resolve(): void;
 }
 
@@ -577,6 +581,8 @@ export function createTranscriber(deps: TranscriberDeps) {
     const text = job.added ?? record.text!;
     // 翻譯中的外圈（#285）：從送出到回來
     record.sending = [...(record.sending ?? []), text];
+    const retranslation = job.retranslation === true || record.retranslation === true;
+    record.retranslation = undefined;
     publish(job.tab);
     // translate 不會丟錯：翻譯失敗、額度用完都回成逐字稿
     const transcript = await pageTranslation.translate({
@@ -587,6 +593,7 @@ export function createTranscriber(deps: TranscriberDeps) {
       group: job.group,
       priorPages: priorPages(job),
       ...(long ? { long: longRequest(job, long) } : {}),
+      retranslation,
     });
     record.sending = record.sending.filter((sent) => sent !== text);
     complete(job, transcript);
@@ -733,7 +740,7 @@ export function createTranscriber(deps: TranscriberDeps) {
         request: analyzeRequestOf(page, capture!, previous(page)),
         transcript: { state: 'analyzing' },
         settled: Promise.resolve(),
-        ...(restarted.has(page.anchorId) ? { ignoreCache: true as const } : {}),
+        ...(restarted.has(page.anchorId) ? { ignoreCache: true as const, retranslation: true as const } : {}),
         ...(page.visible
           ? { long: { anchorId: page.anchorId, stripes: page.stripes ?? [], slice: sliceOf(page.rect, analyzedRect(page)!), ...(page.column ? { column: page.column.id } : {}) } }
           : {}),
@@ -848,6 +855,8 @@ export function createTranscriber(deps: TranscriberDeps) {
         record.transcript = { ...record.transcript, translating: true };
         const job = newJob({ tab, record, batch, index, group: groupOf(record) });
         job.translator = translator;
+        // 已經翻好的頁再翻一次（過時提示的「重新翻譯」）才是 Retranslation；翻譯失敗、沒有 key 的頁是第一次翻好
+        if (record.transcript.translated) job.retranslation = true;
         queue.enqueueLlm(job);
       } else continue;
       started.push(record);

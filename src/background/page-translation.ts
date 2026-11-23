@@ -12,7 +12,7 @@ import { pageLines, type PageCharge, type PageText, type PageTranslation, type R
 import { staleReason, usedNotes, type StaleReason, type TranslatorVersion } from '../shared/series-notes.ts';
 import { seriesNameForLlm, seriesZhTitleForLlm, type Series } from '../shared/series.ts';
 import { createTrace } from '../shared/trace.ts';
-import type { NotesChanges, NotesEntry, PriorPage, TranslateInput, TranslateOutput, Translator } from '../shared/translator.ts';
+import type { NotesChanges, NotesEntry, PriorPage, TranslateInput, TranslateOutput, Translator, UsageObservations } from '../shared/translator.ts';
 import { QuotaExhaustedError } from './hosted-translator.ts';
 import type { NotesLedger, SnapshotGroup } from './notes-ledger.ts';
 
@@ -51,6 +51,8 @@ export interface TranslateRequest {
   priorPages: PriorPage[];
   /** 長 Page（spec #142）才有：text 只是新收的 Line。 */
   long?: LongPageRequest;
+  /** 讀者要求的 Retranslation（側邊欄的「重新翻譯」、過時提示只重翻一頁）：只記在用量紀錄（#341）。 */
+  retranslation?: boolean;
 }
 
 /** 長 Page 的一次翻譯：只翻新收的 Line，顯示與快取的是整個 Page。 */
@@ -135,6 +137,7 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
    * ②：這頁的原文＋① 的譯文送去整理 Notes。送出的這一刻拿號碼牌，notes_changes 依 ② 送出順序套用；
    * Spread 的兩頁（同一組）共用一份快照。失敗就跳過，只讓出順序。
    * pageUsageRecordId 是 ① 的 usageRecordId（Hosted Translation 才有），Worker 用它把 Notes 的用量歸到這一頁。
+   * observed 跟 ① 送的一樣（#341）：Notes 總條數填 ① 那時的數字。
    */
   async function proposeNotes(
     translator: Translator,
@@ -143,6 +146,7 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
     group: SnapshotGroup,
     text: PageText,
     pageUsageRecordId: number | undefined,
+    observed: UsageObservations,
   ): Promise<void> {
     const turn = ledger.checkout(seriesId, group);
     const startedAt = Date.now();
@@ -152,6 +156,7 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
         seriesNotes: await turn.notes,
         items: pageLines(text),
         ...(pageUsageRecordId === undefined ? {} : { pageUsageRecordId }),
+        ...observed,
       });
       trace('notes:done', { pageHash, ms: Date.now() - startedAt, model: output.model, usage: output.usage });
       changes = output.notes_changes;
@@ -170,11 +175,13 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
   }
 
   /** 翻譯一頁（①）；只有翻譯成功才寫快取，接著在背景整理 Notes（②）。 */
-  async function translate({ text, translator, seriesId, pageHash, group, priorPages, long }: TranslateRequest): Promise<Transcript> {
+  async function translate({ text, translator, seriesId, pageHash, group, priorPages, long, retranslation = false }: TranslateRequest): Promise<Transcript> {
     const whole = long?.whole ?? ((part: PageText) => part);
     if (!translator) return { state: 'done', text: whole(text), translated: false };
     // 送出時的 Notes 快照：送進 prompt，也是快取的 usedNotes
     const [seriesNotes, series] = seriesId === undefined ? [[], undefined] : await Promise.all([ledger.list(seriesId), getSeries(seriesId)]);
+    // 用量紀錄的觀察欄位（#341，Hosted Translation 才會存）：外掛產生的隨機作品 ID 與數字，不進 prompt
+    const observed: UsageObservations = { ...(seriesId === undefined ? {} : { seriesId }), notesEntries: seriesNotes.length, retranslation };
     let output: TranslateOutput;
     const startedAt = Date.now();
     try {
@@ -188,6 +195,7 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
         ...(continues === undefined ? {} : { pageUsageRecordId: continues }),
         ...(strip ? { strip: true as const } : {}),
         ...(stripContinues === undefined ? {} : { stripUsageRecordId: stripContinues }),
+        ...observed,
       });
       trace('translate:done', {
         pageHash,
@@ -241,7 +249,7 @@ export function createPageTranslation({ cache, ledger, getSeries, translatorVers
         console.warn('cache save failed', e);
         return true;
       });
-      if (saved) inBackground(proposeNotes(translator, seriesId, pageHash, group, translated, output.usageRecordId));
+      if (saved) inBackground(proposeNotes(translator, seriesId, pageHash, group, translated, output.usageRecordId, observed));
     }
     return { state: 'done', text: page, translated: true, translation: { source: 'translated', model, latencyMs, usage } };
   }

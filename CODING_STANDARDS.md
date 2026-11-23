@@ -32,6 +32,12 @@ A new file in `worker/migrations/` only creates tables, or adds columns that are
 
 Why: the Worker deploys on merge to main (ADR 0008). The migration lands seconds before the new code, so the old code runs against the new schema; and `wrangler rollback` restores the previous code but not the previous schema. Set as a rule when automatic deploys were chosen, before any incident.
 
+## Data changes are checked for a Material Change
+
+A change to `worker/migrations/`, to what the Worker stores, or to what the extension sends off the reader's computer comes with the checklist in [docs/agents/privacy-changes.md](docs/agents/privacy-changes.md): whether it is a Material Change (then the consent version goes up), and that PRIVACY.md and the consent card in `src/ui/data-flow.tsx` still cover it. Newly stored data the extension supplies comes only from fields that only the new extension sends; counts the Worker takes from the request itself (how many entries or Lines it carried) need no new field.
+
+Why: Hosted Translation's consent reached version 5 in its first three weeks because every new usage field meant asking again; ADR 0015 made only Material Changes ask again, which works only if every data change is checked against it. The Worker cannot tell which version a reader agreed to, so reading new data from fields older extensions already send would store it for readers who never agreed.
+
 ## The hosted API only adds
 
 A change to a path in `src/shared/hosted-api.ts`, or to what the Worker accepts or returns there, keeps every existing field and path working: add fields, add paths, never rename or remove. A breaking change gets a new path, with the old one kept until no supported extension version calls it.

@@ -38,7 +38,7 @@ import {
   type Quota,
   type VerifyCodeResponse,
 } from '../../src/shared/hosted-api.ts';
-import type { CallInfo, SeriesGuessOutput, TranslateOutput, Translator } from '../../src/shared/translator.ts';
+import type { CallInfo, SeriesGuessOutput, TranslateOutput, Translator, UsageObservations } from '../../src/shared/translator.ts';
 import { accountEmail, authenticate, deleteAccount, revokeSession, sendCode, verifyCode } from './auth.ts';
 import {
   continuable,
@@ -52,6 +52,7 @@ import {
   stripLinesBefore,
   setDailyFreePages,
   setFreePages,
+  type StoredObservations,
   type QuotaContext,
   type UsageKind,
 } from './quota.ts';
@@ -158,14 +159,29 @@ interface StripInput {
   root?: number;
 }
 
+/** llm 的每種請求各自怎麼看輸入；沒給的就是沒有（不歸屬哪一頁、不是試翻、不是 Strip、沒有觀察欄位）。 */
+interface LlmRules<I, O> {
+  pageRecord?: (input: I) => number | undefined;
+  practice?: (input: I) => boolean;
+  strip?: (input: I) => StripInput | undefined;
+  /** 用量紀錄的觀察欄位（#341）：只有數字、旗標與外掛產生的隨機作品 ID。 */
+  observe?: (input: I, output: O) => StoredObservations;
+}
+
+/** ① 與 ② 共用的觀察欄位：外掛送來的照存（沒送的 parse 時就沒有），送了幾條完整的 Notes 條目由 Worker 數。 */
+const notesObserved = ({ seriesId, notesEntries, retranslation, seriesNotes }: UsageObservations & { seriesNotes: readonly unknown[] }): StoredObservations => ({
+  seriesId,
+  notesEntries,
+  retranslation,
+  notesSentEntries: seriesNotes.length,
+});
+
 const llm =
-  <I,>(
+  <I, O extends CallInfo>(
     kind: UsageKind,
     parse: (body: unknown) => I | undefined,
-    run: (t: Translator, input: I) => Promise<CallInfo>,
-    pageRecord: (input: I) => number | undefined = () => undefined,
-    practice: (input: I) => boolean = () => false,
-    strip: (input: I) => StripInput | undefined = () => undefined,
+    run: (t: Translator, input: I) => Promise<O>,
+    { pageRecord = () => undefined, practice = () => false, strip = () => undefined, observe = () => ({}) }: LlmRules<I, O> = {},
   ): AuthedHandler =>
   async ({ request, env, now }, accountId) => {
     const input = parse(await jsonBody(request));
@@ -193,13 +209,13 @@ const llm =
           : page !== undefined && (await continuable(env.DB, accountId, page, now));
       if (blocked && !(await free())) return blocked;
     }
-    let output: CallInfo;
+    let output: O;
     try {
       output = await run(translator(env), input);
     } catch (e) {
       return anthropicFailed(kind, e);
     }
-    const record = await recordUsage(env.DB, accountId, kind, output, now, page, isPractice, stripInput?.lines);
+    const record = await recordUsage(env.DB, accountId, kind, output, now, page, isPractice, stripInput !== undefined, observe(input, output));
     if (stripInput) {
       // 這一串排在這筆前面的句數加上這次的，跨過幾個 8 句就扣幾頁；第一頁就扣不到回 402（譯文丟掉），之後扣不到的照樣回譯文
       const root = record.pageRecordId ?? record.id;
@@ -281,12 +297,17 @@ const ROUTES: Record<string, Handler> = {
       'translate',
       parseTranslateInput,
       async (t, input) => withEmptyReadings(await t.translatePage(input)),
-      (input) => input.pageUsageRecordId,
-      (input) => isPracticeSpreadPage(input.items.map((item) => item.原文), practiceSpread as PracticeSpreadText),
-      (input) => (input.strip ? { lines: input.items.length, ...(input.stripUsageRecordId === undefined ? {} : { root: input.stripUsageRecordId }) } : undefined),
+      {
+        pageRecord: (input) => input.pageUsageRecordId,
+        practice: (input) => isPracticeSpreadPage(input.items.map((item) => item.原文), practiceSpread as PracticeSpreadText),
+        strip: (input) => (input.strip ? { lines: input.items.length, ...(input.stripUsageRecordId === undefined ? {} : { root: input.stripUsageRecordId }) } : undefined),
+        observe: (input, output) => ({ ...notesObserved(input), suspectLines: output.recheck?.asked ?? 0, lines: input.items.length }),
+      },
     ),
   ),
-  [`POST ${NOTES_PATH}`]: authed(llm('notes', parseNotesInput, (t, input) => t.proposeNotes(input), (input) => input.pageUsageRecordId)),
+  [`POST ${NOTES_PATH}`]: authed(
+    llm('notes', parseNotesInput, (t, input) => t.proposeNotes(input), { pageRecord: (input) => input.pageUsageRecordId, observe: notesObserved }),
+  ),
   // 猜作品原名（#186）：不看也不扣額度，成功的呼叫照樣寫一筆用量紀錄（#238，不屬於任何一頁）；濫用由依 Account 的頻率限制擋
   [`POST ${SERIES_GUESS_PATH}`]: authed(async ({ request, env, now }, accountId) => {
     const input = parseTitleSignals(await jsonBody(request));

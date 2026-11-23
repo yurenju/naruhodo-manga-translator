@@ -100,6 +100,10 @@ _Avoid_: context (that word is avoided for Series Notes), history
 The reader asking for Pages that are already translated to be translated again; each counts as a Translated Page like the first time. Asked from the side panel, it covers every Page on screen and starts over from recognizing the Page, as if the Page had never been seen, and the result replaces the earlier one; asked from a stale Page's hint, it covers only that Page and keeps its recognized text.
 _Avoid_: refresh, redo, rescan
 
+**Suspect Line** (可疑句)
+A Line whose translation came back breaking the translation rules (empty, still in kana, with stray English), so it is asked again on its own before the Page is shown; part of the same Translated Page, never a Retranslation.
+_Avoid_: retranslated line, re-ask
+
 **Practice Spread** (試翻跨頁)
 Our own original Spread that a newly installed reader translates for the first time, on a page of our website. It is translated for real, like any other Spread, but never counts as Translated Pages.
 _Avoid_: demo (that is the simulated showcase on the homepage), sample page
@@ -135,8 +139,12 @@ A reader identified by an email address, needed for Hosted Translation. Holds th
 _Avoid_: user (ambiguous with reader), member, profile
 
 **Data Use Consent** (資料使用同意)
-The reader's agreement to how the current translation mode sends text out of the browser, given after reading that mode's data-flow disclosure and before any text is sent. Kept per mode (Hosted Translation, Own API Key), each with its own version; when a mode's data handling changes, its version goes up, that mode's earlier consent no longer counts, and the reader is asked again with a one-line summary of what changed. Separate from signing in: an expired consent never signs the reader out of their Account; until they agree again, Pages show only the original and its Reading.
+The reader's agreement to how the current translation mode sends text out of the browser, given after reading that mode's data-flow disclosure and before any text is sent. Kept per mode (Hosted Translation, Own API Key), each with its own version; when a mode's data handling has a Material Change, its version goes up, that mode's earlier consent no longer counts, and the reader is asked again with a one-line summary of what changed. Separate from signing in: an expired consent never signs the reader out of their Account; until they agree again, Pages show only the original and its Reading.
 _Avoid_: permission (that is Chrome's), opt-in, terms (that is the 服務條款), consentExpired (as a UI state name)
+
+**Material Change** (重大變更)
+A change to how data is handled that the reader agreed to without knowing about: a promise loosened, a new kind of content leaving the reader's computer, a new third party, a use beyond the stated purpose, or data kept longer. New numbers about the requests or about how the reader uses the extension, new settings and rewording are not Material Changes; they go only into the policy's history.
+_Avoid_: policy update, data change
 
 **Translated Page** (已翻譯頁)
 The unit every limit counts: one Page whose translation came back from Hosted Translation, including one the reader asked to translate again. Viewing an already translated Page again, a translation that failed, or the Practice Spread is not a Translated Page; a Spread is two. A Strip has no Pages, so every 8 Lines translated from it count as one Translated Page, rounded up, the first Line counting the first; blank space and how the site cut the Strip do not matter.

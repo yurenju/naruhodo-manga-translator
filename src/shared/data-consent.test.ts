@@ -8,7 +8,7 @@ describe('資料使用同意', () => {
 
   it('依翻譯模式各自記：只同意了自備金鑰的說明，內建翻譯還沒同意', () => {
     expect(readConsent({ ownKey: 5 })).toEqual({ hosted: 'none', ownKey: 'agreed' });
-    expect(readConsent({ hosted: 5, ownKey: 5 })).toEqual({ hosted: 'agreed', ownKey: 'agreed' });
+    expect(readConsent({ hosted: 6, ownKey: 5 })).toEqual({ hosted: 'agreed', ownKey: 'agreed' });
   });
 
   it('版本 2 的說明還寫著不送作品名（#144 起會送）：兩種模式都要重新同意', () => {
@@ -21,6 +21,10 @@ describe('資料使用同意', () => {
 
   it('版本 4 的說明沒寫刪除帳號後用量紀錄匿名保留、猜作品也記用量（#238）：要重新同意', () => {
     expect(readConsent({ hosted: 4, ownKey: 4 })).toEqual({ hosted: 'outdated', ownKey: 'outdated' });
+  });
+
+  it('版本 5 的內建翻譯說明沒寫用量紀錄會記外掛產生的隨機作品 ID、也用來改善服務（#341，Material Change）：內建翻譯要重新同意，自備金鑰不用', () => {
+    expect(readConsent({ hosted: 5, ownKey: 5 })).toEqual({ hosted: 'outdated', ownKey: 'agreed' });
   });
 
   it('沒有同意過', () => {

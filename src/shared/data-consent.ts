@@ -6,8 +6,8 @@
  * （src/ui/data-flow.tsx），同意也各自記：內建翻譯在「同意並寄送驗證碼」或補同意（side panel 的說明卡、onboarding 的補同意畫面）時，
  * 自備金鑰在說明卡或 onboarding 的「同意並儲存」時。
  *
- * 存在 chrome.storage.local，值是 `{ hosted?: 版本, ownKey?: 版本 }`。某個模式的資料處理方式改變時，把那個模式的 DATA_CONSENT_VERSION 加一、
- * 並改寫它的 CONSENT_CHANGES（都在 data-consent-version.ts）：那個模式舊的同意就失效，會再問一次（政策要求資料處理改變時主動告知），另一個模式不受影響。
+ * 存在 chrome.storage.local，值是 `{ hosted?: 版本, ownKey?: 版本 }`。某個模式的資料處理方式有 Material Change（ADR 0015）時，把那個模式的
+ * DATA_CONSENT_VERSION 加一、並改寫它的 CONSENT_CHANGES（都在 data-consent-version.ts）：那個模式舊的同意就失效，會再問一次，另一個模式不受影響。
  * 同意過期不會登出（GLOSSARY 的 Data Use Consent）：內建翻譯還登入著的讀者只要再按一次同意，不用重收驗證碼。
  * 版本 1（#93 以前）只有自備金鑰、存的是數字。
  */

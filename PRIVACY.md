@@ -1,6 +1,6 @@
 # Naruhodo Privacy Policy
 
-Effective date: 2026-11-12
+Effective date: 2026-11-23
 Publisher: Sad Coder, Inc.
 
 Naruhodo is a Chrome extension that translates Japanese manga on screen into Traditional Chinese, in place. This policy explains what data the extension and the Naruhodo service handle, where the data goes, and how long it is kept.
@@ -10,7 +10,15 @@ Naruhodo can translate in two ways. You choose one in the extension's settings, 
 - **Hosted Translation** (the default): you sign in with your email address. Text is sent to the Naruhodo service, which has it translated by Anthropic. New accounts get 100 free pages; after that, translation requires a subscription (quarterly or yearly), paid through Paddle.
 - **Own API Key**: you enter your own Anthropic API key. Your browser sends text directly to Anthropic, and the Naruhodo service is not involved.
 
-The extension contains no analytics, advertising or tracking code.
+## Our commitments
+
+These are the promises this policy is built on. We will not loosen any of them without asking for your consent again (see [Changes to this policy](#changes-to-this-policy)):
+
+1. **We don't keep what you read.** The Naruhodo service does not store the manga's text, translations, Series Notes, images, series names, page titles or page addresses. It may keep measurements about your requests and how you use the extension, and random identifiers the extension generates, which by themselves do not say which manga or page they are about.
+2. **The extension never sends images or page addresses.**
+3. **No advertising, no selling data, no third-party tracking.** We do not sell your data or use it for advertising, and the extension contains no third-party analytics or tracking code.
+
+The rest of this policy describes what is handled today. Where it lists examples ("such as"), the exact set may grow within these commitments; such additions are recorded in this file's history rather than asked for again.
 
 ## Data that stays on your computer
 
@@ -22,7 +30,7 @@ These are processed and stored only inside the extension on your computer, in ei
 - **Series Notes**: per-series names, glossary and notes on how characters speak, and suggested changes to them.
 - **Anthropic API key** (Own API Key only): stored in the extension's own local database. Web pages and the script the extension injects into them cannot read it, and it is never included in export files.
 - **Sign-in** (Hosted Translation only): your email address and the sign-in token for the Naruhodo service, stored in the same local database as the API key. It is never included in export files.
-- **Settings**: which translation mode you use, single-page or two-page spread mode, your progress through the setup pages, whether you dismissed the Hosted Translation hint, and the tabs where you have started the extension.
+- **Settings and progress**: your choices in the extension, such as which translation mode you use or single-page or two-page spread mode, and where you are in using it, such as your progress through the setup pages, the hints you have dismissed and the tabs where you have started the extension.
 - **Data consent status**: for each translation mode, whether you agreed to the data-use explanation and which version of it you agreed to.
 - **OCR models**: the text-detection and OCR models downloaded from Hugging Face (see below). They contain none of your data.
 
@@ -38,7 +46,7 @@ In both modes, the extension sends, for each page: the Japanese text recognized 
 
 To tell which series a page belongs to, the extension also sends the page's title text (the browser tab title, the `og:title` tag and the first few headings) and gets back the series' original title and a Chinese translation of it. This happens about once per chapter or volume, not for every page, and only when the page address does not already match a series you chose. Your list of series is not sent. **No images or page addresses are sent.** Before sending anything, the extension explains this and asks for your consent, separately for each mode; nothing is sent before you agree.
 
-- **With Hosted Translation**, this text goes to the Naruhodo service, which passes it to Anthropic with our API key and returns the translation. The request also carries your sign-in token and a random identifier the extension generated for the series. **The Naruhodo service does not store this text, the page titles or the series name**, and does not pass the series identifier to Anthropic.
+- **With Hosted Translation**, this text goes to the Naruhodo service, which passes it to Anthropic with our API key and returns the translation. The request also carries your sign-in token, a random identifier the extension generated for the series, and numbers and flags about the request itself, such as how many Series Notes entries the series has and whether you asked for the page to be translated again. **The Naruhodo service does not store this text, the page titles or the series name**, and does not pass the series identifier to Anthropic. The extension may also send the Naruhodo service measurements about how you use it, within the commitments above.
 - **With Own API Key**, your browser sends this text directly to Anthropic with your API key.
 
 ### Third parties
@@ -61,7 +69,7 @@ The report is numbers for debugging: where each sentence was found on the page, 
 
 ## Data the Naruhodo service keeps
 
-Only Hosted Translation uses the Naruhodo service. It keeps:
+Only Hosted Translation uses the Naruhodo service. It uses the data below only to provide, protect, bill for and improve Naruhodo, and keeps:
 
 | Data | Purpose |
 |---|---|
@@ -70,7 +78,7 @@ Only Hosted Translation uses the Naruhodo service. It keeps:
 | A SHA-256 hash of your email address and how many sign-in codes were tried for it in the past hour | Limiting how many sign-in codes can be tried. Deleted when you sign in. Otherwise the count expires one hour after the first try and is deleted later, the next time anyone requests a sign-in code |
 | A hash of each sign-in token, when it was created and last used, and when you signed out | Keeping you signed in. A token stops working after 180 days without use, or when you sign out |
 | Free pages remaining; for subscribers, the start of the current monthly period and pages used in it | Your page quota |
-| One usage record for each successful translation, Series Notes or series title guess request: the time, the kind of request, the AI model used, token counts (including tokens written to and read from Anthropic's prompt cache) and cost, whether it was the practice page on our website, and for a Series Notes request, which page's translation record it belongs to | Usage and cost accounting. Usage records contain no text, translations, series names, page titles or page addresses |
+| Usage records: measurements and classifications of your requests and of how you use the extension, such as, for each successful translation, Series Notes or series title guess request, the kind of request, the AI model used, token counts and cost, how many sentences and Series Notes entries it involved, and whether it was a retranslation or the practice page on our website; and random identifiers the extension generated, such as the one for the series. The exact fields are defined in the service's [database migrations](https://github.com/yurenju/naruhodo-manga-translator/tree/main/worker/migrations) | Usage and cost accounting, and improving Naruhodo. Usage records contain no text, translations, series names, page titles or page addresses |
 | A SHA-256 hash of each email address that has received free pages, and when | Making sure free pages are given only once per email address |
 | A SHA-256 hash of each email address that has had a subscription payment refunded, or whose account was deleted while a refund was being processed, and when | Making sure only the first refund for an email address can be requested in the extension; later ones are handled by email (see the [Refund Policy](/refund)) |
 | Your Paddle subscription and customer identifiers, subscription status, billing period (quarterly or yearly), start date, end of the paid period, whether cancellation is scheduled, and the time of the last update from Paddle | Your subscription |
@@ -104,7 +112,7 @@ Data on your computer stays until you delete it:
 **Deleting your account** (Settings → Delete account in the extension):
 
 - If you have a subscription, it is cancelled first: it stays usable until the end of the paid quarter or year and will not renew. If a renewal payment has failed and is still being retried, or the subscription is paused, it is cancelled immediately, so no further payment is attempted. **Payments already made are not refunded automatically.** If the cancellation fails, nothing is deleted and you can try again.
-- The service then deletes your account, all of your sign-in tokens (signing you out on every computer), your page quota, your subscription record and payment records, any sign-in code not yet used for your email address, and the count of sign-in codes tried for it. Your usage records are kept anonymously: the link to your account is removed, and only the numbers stay, so that our costs can be checked against Anthropic's bills.
+- The service then deletes your account, all of your sign-in tokens (signing you out on every computer), your page quota, your subscription record and payment records, any sign-in code not yet used for your email address, and the count of sign-in codes tried for it. Your usage records are kept anonymously: the link to your account and the random identifiers are removed, and only the numbers stay.
 - The service keeps only the SHA-256 hash of your email address, with when it received free pages and, if you have had a refund, when that was. Registering again with the same email address therefore does not give free pages again, and a later refund is requested by writing to us. It also keeps the anonymous usage records and the payment notification identifiers described above. **After deletion, the service keeps no copy of your email address.**
 - Data held by third parties is not deleted by the Naruhodo service: Paddle keeps its customer, subscription and transaction records under its own policy and its legal record-keeping obligations, and Resend keeps its email delivery records under its own policy.
 - On your computer, deleting your account only signs you out. The translation cache, Series, Series Notes and settings stay.
@@ -117,7 +125,7 @@ All connections use HTTPS. The Naruhodo service stores sign-in codes and sign-in
 
 ## Limited Use
 
-Naruhodo's use and transfer of information complies with the [Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/policies), including the Limited Use requirements. Data is used only to provide translation and the account and subscription that pay for it; it is not sold, not used for advertising, and not used to determine creditworthiness.
+Naruhodo's use and transfer of information complies with the [Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/policies), including the Limited Use requirements. Data is used only to provide, protect, bill for and improve Naruhodo, including the account and subscription that pay for it; it is not sold, not used for advertising, and not used to determine creditworthiness.
 
 ## Your rights
 
@@ -139,7 +147,17 @@ Naruhodo is not directed at children under 13, and we do not knowingly collect p
 
 ## Changes to this policy
 
-When our data handling changes, we will update this policy and its effective date, and the extension will explain the change and ask for your consent again before sending any more text. Past versions are available in this file's history on GitHub.
+We update this policy and its effective date whenever what it describes changes. Past versions are available in this file's history on GitHub.
+
+For a **material change**, the extension also explains the change and asks for your consent again before sending any more text. A material change is any of:
+
+- loosening one of the commitments above;
+- a new kind of content leaving your computer: images, page addresses, page titles, or anything else that shows what you read. New numbers or flags about the requests or how you use the extension (such as a count of entries, or whether a page was translated again) are not a new kind of content, even when the extension sends them;
+- a new third party receiving your data;
+- using data beyond providing, protecting, billing for and improving Naruhodo;
+- keeping data longer than this policy says.
+
+Other changes, such as recording a new measurement within the commitments, adding a setting, or rewording, are recorded only in this file's history.
 
 ## Contact
 
