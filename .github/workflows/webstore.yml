@@ -29,7 +29,8 @@ jobs:
       group: webstore
       cancel-in-progress: false
     steps:
-      # 這個 job 讀得到 CWS_SERVICE_ACCOUNT_KEY；只從 main 跑，其他 branch 改過的 workflow 拿不到這把 key
+      # 這個檢查防的是在別的 branch 上誤按：改得了這個檔案的人也刪得掉它，所以不是 CWS_SERVICE_ACCOUNT_KEY 的安全界線。
+      # 這把 key 是 repo 層級的 secret，靠的是 repo 沒有協作者、fork PR 拿不到 secrets（CODING_STANDARDS.md）。
       - name: 只允許從 main 上傳
         if: github.ref != 'refs/heads/main'
         run: |
