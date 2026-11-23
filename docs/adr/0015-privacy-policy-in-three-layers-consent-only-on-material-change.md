@@ -17,10 +17,10 @@
 1. 漫畫的文字、譯文、Series Notes 只送去翻譯，服務不保存。
 2. **We don't keep what you read**：
 
-   > The Naruhodo service does not store the manga's text, translations, Series Notes, images, series names, page titles or page addresses. It may keep measurements about your requests and random identifiers the extension generates, which by themselves do not say which manga or page they are about.
+   > The Naruhodo service does not store the manga's text, translations, Series Notes, images, series names, page titles or page addresses. It may keep measurements about your requests and how you use the extension, and random identifiers the extension generates, which by themselves do not say which manga or page they are about.
 
-3. 圖片與網址不離開讀者的電腦。
-4. 不做廣告、不賣資料、外掛裡沒有追蹤程式。
+3. 外掛不會送出圖片與網址。
+4. 不做廣告、不賣資料、外掛裡沒有第三方的分析或追蹤程式。
 
 ③ 寫成類別：用量紀錄是「關於請求本身的量測與分類（數量、大小、時間、結果），以及外掛產生的隨機作品 ID」，用「such as」舉例，實際欄位以 `worker/migrations/` 為準；本機的設定清單是「設定與使用進度」一個類別。用途一次寫廣：提供、保護、計費與改善這個服務（Limited Use 段落用同一句）。
 
@@ -39,6 +39,7 @@
 ## 不直覺的地方
 
 - **界線刻意比「我們沒辦法知道你讀了什麼」寬鬆。** 外掛產生的隨機作品 ID（`Series.id`，UUID）可以存，以後能按作品看成本隨閱讀深度的變化；作品名、頁面標題、網址不行。單看 ID 說不出是哪部作品，但一串紀錄看得出「某人某段時間連讀同一部多少頁」，所以刪除帳號時匿名保留的用量紀錄會把 `series_id` 設成 NULL，維持「only the numbers stay」。Worker 也只收長得像 UUID 的作品 ID，client 送作品名過來不會存。
+- **第 4 條只擋第三方的追蹤。** 原本政策寫「外掛裡沒有分析或追蹤程式」，會連外掛端自己的使用量測（新手卡在哪一步、功能有沒有人用、本機的錯誤）都擋住，這些只有外掛看得到、Worker 量不到。趁這次本來就要升版一起放寬：自己的量測受第 2 條同一條界線約束（不含內容、作品名、標題、網址），政策只寫成「how you use the extension」這個類別，不列量哪些東西。第三方的分析程式照樣不行。
 - **Worker 不知道讀者同意的是第幾版。** 同意記在外掛本機，而 Chrome 更新外掛要幾小時到幾天，這段期間舊版外掛還在呼叫新版 Worker（ADR 0008）。外掛其實早就把作品 ID 送到 Worker（每個 Notes 條目都帶 `seriesId`），如果 Worker 從那裡拿來存，只同意過舊版的讀者也會被存下作品 ID。所以**新存的資料只從新版外掛才會送的欄位拿**：作品 ID 只取請求最上層的 `seriesId`，沒送就存 NULL；`notesEntries`、`retranslation` 同理。這樣 Worker 先部署也沒關係。
 - **Worker 自己數得出的數字不需要新版外掛。** 送了幾條 Notes 條目、翻了幾句、補問了幾句 Suspect Line 是 Worker 處理請求時本來就看得到的請求本身的量測，舊版外掛的請求也照記。
 

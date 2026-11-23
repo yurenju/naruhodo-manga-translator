@@ -13,7 +13,7 @@ export const DATA_CONSENT_VERSION: Readonly<Record<TranslationMode, number>> = {
  * 升版時跟著改（data-flow.tsx 開頭的 checklist）。
  */
 export const CONSENT_CHANGES: Readonly<Record<TranslationMode, string | undefined>> = {
-  hosted: '用量紀錄會記外掛產生的隨機作品編號（看不出是哪部作品），也用來改善成本與翻譯品質；之後在這個範圍內新增的數字不會再問你。',
+  hosted: '用量紀錄會記外掛產生的隨機作品編號（看不出是哪部作品）與外掛的使用情況，也用來改善成本與翻譯品質；之後在這個範圍內新增的數字不會再問你。',
   // Own API Key 沒有用量紀錄，政策改成類別寫法不算 Material Change（#341）
   ownKey: undefined,
 };
