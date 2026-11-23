@@ -6,10 +6,10 @@ Run this checklist when a change touches `worker/migrations/`, what the Worker s
 
 It is if any of these is true (GLOSSARY: Material Change):
 
-- [ ] It loosens one of the four commitments in PRIVACY.md "Our commitments".
+- [ ] It loosens one of the commitments in PRIVACY.md "Our commitments".
 - [ ] A new kind of content leaves the reader's computer: images, page addresses, page titles, or anything else that shows what they read. Numbers or flags about the request itself (a count, whether it was a Retranslation) are not a new kind of content, even when the extension has to send them.
 - [ ] A new third party receives the reader's data.
-- [ ] Data is used beyond providing, protecting, billing for and improving the service.
+- [ ] Data is used beyond providing, protecting, billing for and improving Naruhodo (the extension and the service).
 - [ ] Data is kept longer than PRIVACY.md says.
 
 The Worker may store random identifiers the extension generates (a series ID), never series names, page titles or page addresses. Anonymous usage records lose the series ID when the account is deleted (`deleteAccount` in `worker/src/auth.ts`).

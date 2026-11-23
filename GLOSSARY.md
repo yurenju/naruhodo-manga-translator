@@ -143,7 +143,7 @@ The reader's agreement to how the current translation mode sends text out of the
 _Avoid_: permission (that is Chrome's), opt-in, terms (that is the 服務條款), consentExpired (as a UI state name)
 
 **Material Change** (重大變更)
-A change to how data is handled that the reader agreed to without knowing about: a promise loosened, a new kind of content leaving the reader's computer, a new third party, a use beyond the stated purpose, or data kept longer. New numbers about the requests themselves, new settings and rewording are not Material Changes; they go only into the policy's history.
+A change to how data is handled that the reader agreed to without knowing about: a promise loosened, a new kind of content leaving the reader's computer, a new third party, a use beyond the stated purpose, or data kept longer. New numbers about the requests or about how the reader uses the extension, new settings and rewording are not Material Changes; they go only into the policy's history.
 _Avoid_: policy update, data change
 
 **Translated Page** (已翻譯頁)
